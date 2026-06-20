@@ -1,32 +1,24 @@
 import { WalkToAction, UseObjectAction } from './Action.js';
 import { Logger } from '../utils/Logger.js';
 
-/**
- * Translates the Sim's most critical need into a [WalkTo → UseObject] action pair.
- */
+const NEED_EMOJI = {
+  hunger: '🍔 Hungry', energy: '😴 Sleepy', bladder: '🚽 Need WC',
+  hygiene: '🚿 Dirty', social: '👋 Lonely', fun: '🎮 Bored',
+  comfort: '🛋️ Tired', room: '🌿 Stuffy',
+};
+
 export class NeedDrivenPlanner {
-  constructor(sim) {
-    this._sim = sim;
-  }
+  constructor(sim) { this._sim = sim; this.lastNeedLabel = ''; }
 
   plan() {
     const need = this._sim.needs.mostCritical(35);
     if (!need) return [];
-
     const furniture = this._sim._world.getFurnitureFor(need);
-    if (!furniture) {
-      Logger.warn(`[Planner] No furniture found for need: ${need}`);
-      return [];
-    }
-
-    Logger.info(`[Planner] Need "${need}" critical → heading to ${furniture.id}`);
-
-    // Walk to cell adjacent to furniture if furniture cell is blocked
-    const tx = furniture.gx;
-    const tz = furniture.gz + 1; // one cell south
-
+    if (!furniture) { Logger.warn(`[Planner] No furniture for: ${need}`); return []; }
+    this.lastNeedLabel = NEED_EMOJI[need] || need;
+    Logger.info(`[Planner] "${need}" critical → ${furniture.id}`);
     return [
-      new WalkToAction(this._sim, this._sim._world, tx, tz),
+      new WalkToAction(this._sim, this._sim._world, furniture.gx, furniture.gz + 1),
       new UseObjectAction(this._sim, furniture, 6),
     ];
   }

@@ -1,54 +1,57 @@
 # Sims Clone
 
-A browser-based isometric life simulation game built with **Three.js** and vanilla ES6 modules. Inspired by The Sims 1.
+A browser-based isometric life simulation game built with **Three.js** and vanilla ES6 modules.
 
 ## Quick Start
 
 ```bash
+git clone https://github.com/timetravel0/sims-clone.git
+cd sims-clone
 npx serve .
-# or
-python3 -m http.server 8080
+# open http://localhost:3000
 ```
 
-Open `http://localhost:3000` (or 8080).
+No build step. Pure ES modules via importmap.
 
-No build step needed — pure ES modules via importmap.
+## Features
+
+| Feature | Details |
+|---|---|
+| **Multi-Sim** | 3 Sims (Alex, Sam, Jo) — click a portrait or a Sim to select |
+| **Build Mode** | 🔨 button opens furniture catalog; click tiles to place |
+| **Save / Load** | IndexedDB slot 1 — 💾 / 📂 buttons |
+| **Day/Night Cycle** | 4-minute in-game day; sunrise/sunset sky + star particles |
+| **Speech Bubbles** | Sim shows need emoji when AI planner kicks in |
+| **8 Needs** | hunger, energy, bladder, hygiene, social, fun, comfort, room |
+| **A\* Pathfinding** | Click any floor tile to move selected Sim |
 
 ## Architecture
 
 ```
 src/
-├── core/         Game loop, event bus, orchestrator
-├── world/        TileMap 16×16, 3D world builder, isometric camera
-├── entities/     Sim (mesh + brain + needs), Furniture
-├── ai/           A* pathfinder, Action system, Need-driven planner
-├── ui/           Needs panel, UI manager
+├── core/         Game, GameLoop, EventBus
+├── world/        TileMap, World, IsometricCamera, DayNightCycle, BuildMode
+├── entities/     Sim, SimNeeds, SimBrain, Furniture
+├── ai/           Pathfinder, Action, ActionQueue, NeedDrivenPlanner
+├── systems/      SaveLoad (IndexedDB)
+├── ui/           UIManager, NeedsPanel, SimSelector, ClockDisplay, BuildPanel, SpeechBubble
 └── utils/        Logger
 ```
 
-## Gameplay
+## Controls
 
-- **Click on a tile** to move the Sim there.
-- **8 needs** (hunger, energy, bladder, hygiene, social, fun, comfort, room) decay over time.
-- When a need drops below **35%**, the AI planner autonomously sends the Sim to the correct furniture.
-- **Speed controls** (1× / 2× / 5×) and **pause** in the bottom toolbar.
-
-## Furniture
-
-| Object  | Satisfies |
-|---------|----------|
-| Fridge  | Hunger   |
-| Bed     | Energy   |
-| Toilet  | Bladder  |
-| Shower  | Hygiene  |
-| Couch   | Comfort  |
-| TV      | Fun      |
+- **Click floor tile** → move selected Sim
+- **Click Sim mesh** → select that Sim
+- **Click portrait** (top-left) → select Sim
+- **🔨 Build** → toggle build mode, click catalog item then tile to place
+- **💾 Save / 📂 Load** → persist/restore to IndexedDB slot 1
+- **1× 2× 5×** → simulation speed
+- **⏸ Pause** → freeze simulation
 
 ## Next Steps
 
-- [ ] Multi-Sim support
-- [ ] Door / room system
-- [ ] Build mode (place furniture)
-- [ ] Save / load (IndexedDB)
-- [ ] Sim moods & speech bubbles
-- [ ] Day/night cycle
+- [ ] Doors & room system
+- [ ] Sim moods (composite of needs → single mood score)
+- [ ] Social interactions between Sims
+- [ ] Wall painting & floor tiling in build mode
+- [ ] Multiple save slots UI
