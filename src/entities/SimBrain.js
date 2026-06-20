@@ -3,35 +3,47 @@ import { ActionQueue }       from '../ai/ActionQueue.js';
 import { IdleAction }        from '../ai/Action.js';
 import { SocialAction }      from '../ai/SocialAction.js';
 
-/**
- * SimBrain — personality-aware controller.
- * Outgoing Sims seek social interaction more aggressively.
- * Neurotic Sims interrupt tasks when mood drops suddenly.
- */
 export class SimBrain {
   constructor(sim) {
-    this._sim             = sim;
-    this._planner         = new NeedDrivenPlanner(sim);
-    this._queue           = new ActionQueue();
-    this._socialCooldown  = 0;
-    this._lastMoodTier    = sim.mood.tier;
+    this._sim            = sim;
+    this._planner        = new NeedDrivenPlanner(sim);
+    this._queue          = new ActionQueue();
+    this._socialCooldown = 0;
+    this._lastMoodTier   = sim.mood.tier;
+    this._playerOverride = false; // true while player-driven action is running
+  }
+
+  /**
+   * override() — player (or drama engine) injects actions.
+   * Accepts a single Action or an array of Actions.
+   * Sets _playerOverride so AI won't interrupt immediately.
+   */
+  override(actions) {
+    this._queue.clear();
+    const list = Array.isArray(actions) ? actions : [actions];
+    this._queue.push(...list);
+    this._playerOverride = true;
   }
 
   update(dt) {
     this._queue.update(dt);
     if (this._socialCooldown > 0) this._socialCooldown -= dt;
 
-    // Neurotic Sim: if mood drops to miserable, interrupt current task
+    // Neurotic mood crash: interrupt only AI tasks, never player overrides
     const p = this._sim.personality;
-    if (p.neurotic > 0.4 &&
+    if (!this._playerOverride &&
+        p.neurotic > 0.4 &&
         this._sim.mood.tier === 'miserable' &&
         this._lastMoodTier !== 'miserable') {
       this._queue.clear();
     }
     this._lastMoodTier = this._sim.mood.tier;
 
+    // Once queue is empty, clear override flag
+    if (this._queue.isEmpty()) this._playerOverride = false;
     if (!this._queue.isEmpty()) return;
 
+    // --- AI planning (only when player hasn't taken over) ---
     // 1. Physical needs
     const actions = this._planner.plan();
     if (actions.length > 0) {
@@ -40,37 +52,27 @@ export class SimBrain {
       return;
     }
 
-    // 2. Social — threshold lowered for outgoing Sims
-    const threshold = 40 + p.outgoing * 20; // outgoing → 60, introvert → 20
+    // 2. Social need
+    const threshold = 40 + p.outgoing * 20;
     if (this._sim.needs.get('social') < threshold && this._socialCooldown <= 0) {
       const target = this._findSocialTarget();
       if (target) {
-        // Introvert: longer cooldown after interaction
         this._socialCooldown = p.outgoing > 0 ? 10 : 25;
         this._queue.push(new SocialAction(this._sim, target, this._sim._world));
         return;
       }
     }
 
-    // 3. Idle — playful Sims fidget more
-    const idleDuration = p.playful > 0.3 ? 1 : 3;
-    this._queue.push(new IdleAction(this._sim, idleDuration));
+    // 3. Idle
+    this._queue.push(new IdleAction(this._sim, p.playful > 0.3 ? 1 : 3));
   }
 
   _findSocialTarget() {
-    const game   = window._game;
-    if (!game)   return null;
+    const game = window._game;
+    if (!game) return null;
     const others = game.sims.filter(s => s.id !== this._sim.id);
-    if (others.length === 0) return null;
-    // Outgoing: picks whoever is closest
-    // Introverted: avoids enemies (score < -20)
-    const { socialManager } = window._socialManager
-      ? { socialManager: window._socialManager }
-      : require?.('../systems/SocialManager.js') ?? {};
-    // Simple: return first available target
-    return others[Math.floor(Math.random() * others.length)];
+    return others.length ? others[Math.floor(Math.random() * others.length)] : null;
   }
 
-  override(action) { this._queue.clear(); this._queue.push(action); }
-  get busy()       { return !this._queue.isEmpty(); }
+  get busy() { return !this._queue.isEmpty(); }
 }
