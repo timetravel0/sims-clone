@@ -4,14 +4,14 @@ import { bus } from '../core/EventBus.js';
  * ContextMenu — right-click on a Sim or furniture tile shows available
  * player-driven actions.
  *
- * Uses game.camera (IsometricCamera wrapper) → .camera (THREE.Camera).
+ * THREE is accessed via window._THREE (set in main.js before any module loads).
+ * game.camera → IsometricCamera wrapper → .camera → THREE.Camera
  */
 export class ContextMenu {
   constructor(game, renderer) {
-    this._game     = game;
-    this._renderer = renderer;
-    this._raycaster = new (await import('three').catch(() => null))?.Raycaster?.() || null;
-    this._el = this._build();
+    this._game      = game;
+    this._renderer  = renderer;
+    this._el        = this._build();
     document.body.appendChild(this._el);
     this._hide();
 
@@ -47,13 +47,12 @@ export class ContextMenu {
         'padding:6px 12px','cursor:pointer','font-size:12px',
         'border-radius:6px','transition:background .12s'
       ].join(';');
-      btn.onmouseenter = () => btn.style.background = 'rgba(255,255,255,0.08)';
-      btn.onmouseleave = () => btn.style.background = 'none';
+      btn.onmouseenter = () => { btn.style.background = 'rgba(255,255,255,0.08)'; };
+      btn.onmouseleave = () => { btn.style.background = 'none'; };
       btn.onclick = ev => { ev.stopPropagation(); item.action(); this._hide(); };
       this._el.appendChild(btn);
     }
     this._el.style.display = 'block';
-    // re-read size after display
     const w = this._el.offsetWidth, h = this._el.offsetHeight;
     this._el.style.left = Math.min(x, window.innerWidth  - w - 8) + 'px';
     this._el.style.top  = Math.min(y, window.innerHeight - h - 8) + 'px';
@@ -63,54 +62,51 @@ export class ContextMenu {
 
   _onRightClick(e) {
     const THREE = window._THREE;
-    if (!THREE) return;
+    if (!THREE) { console.warn('[ContextMenu] THREE not ready yet'); return; }
 
     const rc   = new THREE.Raycaster();
     const rect = this._renderer.domElement.getBoundingClientRect();
     const mx   =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
     const my   = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
 
-    // game.camera is the IsometricCamera wrapper; .camera is the THREE camera
     const cam = this._game.camera?.camera;
-    if (!cam) return;
+    if (!cam) { console.warn('[ContextMenu] camera not ready'); return; }
     rc.setFromCamera({ x: mx, y: my }, cam);
 
     const selectedSim = this._game.selectedSim;
     const otherSims   = this._game.sims.filter(s => s !== selectedSim);
-    const items = [];
+    const items       = [];
 
-    // ── Hit: other Sims ────────────────────────────────────────────────────
+    // ── Hit: other Sims ─────────────────────────────
     const simHits = rc.intersectObjects(otherSims.map(s => s.mesh), true);
     if (simHits.length) {
       const hit    = simHits[0].object;
       const target = otherSims.find(s =>
         s.mesh === hit || s.mesh === hit.parent || s.mesh === hit.parent?.parent);
       if (target) {
-        items.push({ label: `💬 Chat with ${target.name}`,      action: () => this._triggerSocial(selectedSim, target, 'chat') });
-        items.push({ label: `😄 Tell joke to ${target.name}`,  action: () => this._triggerSocial(selectedSim, target, 'joke') });
-        items.push({ label: `🌟 Compliment ${target.name}`,    action: () => this._triggerSocial(selectedSim, target, 'compliment') });
-        items.push({ label: `🤗 Hug ${target.name}`,           action: () => this._triggerSocial(selectedSim, target, 'hug') });
-        items.push({ label: `😤 Argue with ${target.name}`,    action: () => this._triggerSocial(selectedSim, target, 'argue') });
+        items.push({ label: `💬 Chat with ${target.name}`,     action: () => this._triggerSocial(selectedSim, target, 'chat') });
+        items.push({ label: `😄 Tell joke to ${target.name}`, action: () => this._triggerSocial(selectedSim, target, 'joke') });
+        items.push({ label: `🌟 Compliment ${target.name}`,   action: () => this._triggerSocial(selectedSim, target, 'compliment') });
+        items.push({ label: `🤗 Hug ${target.name}`,          action: () => this._triggerSocial(selectedSim, target, 'hug') });
+        items.push({ label: `😤 Argue with ${target.name}`,   action: () => this._triggerSocial(selectedSim, target, 'argue') });
         this._show(e.clientX, e.clientY, items);
         return;
       }
     }
 
-    // ── Hit: ground / furniture ────────────────────────────────────────────
+    // ── Hit: ground / furniture ───────────────────────────
     const groundHits = rc.intersectObjects(this._game.world.groundMeshes);
     if (groundHits.length) {
-      const p  = groundHits[0].point;
-      const gx = Math.round(p.x), gz = Math.round(p.z);
-      const furniture = this._game.world.furniture?.find(
-        f => f.gx === gx && f.gz === gz
-      );
-      if (furniture) {
-        items.push({ label: `🛋 Use ${furniture.id}`, action: () => this._triggerUse(selectedSim, furniture) });
-        if (furniture.social) {
+      const p   = groundHits[0].point;
+      const gx  = Math.round(p.x), gz = Math.round(p.z);
+      const fur = this._game.world.furniture?.find(f => f.gx === gx && f.gz === gz);
+      if (fur) {
+        items.push({ label: `🛋 Use ${fur.id}`, action: () => this._triggerUse(selectedSim, fur) });
+        if (fur.social) {
           for (const other of otherSims) {
             items.push({
-              label:  `👥 Invite ${other.name} to ${furniture.id}`,
-              action: () => this._triggerSocialFurniture(selectedSim, other, furniture),
+              label:  `👥 Invite ${other.name} to ${fur.id}`,
+              action: () => this._triggerSocialFurniture(selectedSim, other, fur),
             });
           }
         }
@@ -119,7 +115,7 @@ export class ContextMenu {
       }
     }
 
-    // ── Hit: any Sim (select) ──────────────────────────────────────────────
+    // ── Hit: any Sim → select ─────────────────────────────
     const anyHits = rc.intersectObjects(this._game.sims.map(s => s.mesh), true);
     if (anyHits.length) {
       const hit = anyHits[0].object;
@@ -132,6 +128,7 @@ export class ContextMenu {
     }
   }
 
+  // ── Action helpers ───────────────────────────────────────
   _ac()  { return window._actionClasses       || {}; }
   _sac() { return window._socialActionClasses || {}; }
 
