@@ -3,21 +3,23 @@ import { SimSelector }       from './SimSelector.js';
 import { ClockDisplay }      from './ClockDisplay.js';
 import { BuildPanel }        from './BuildPanel.js';
 import { RelationshipPanel } from './RelationshipPanel.js';
+import { SimStatusLog }      from './SimStatusLog.js';
 import { bus }               from '../core/EventBus.js';
 
 export class UIManager {
   constructor(sims, selectedSim, _bus) {
-    this._sims     = sims;
-    this._panel    = new NeedsPanel(selectedSim.name);
-    this._selector = new SimSelector(sims);
-    this._clock    = new ClockDisplay();
-    this._build    = new BuildPanel();
-    this._rel      = new RelationshipPanel();
+    this._sims      = sims;
+    this._panel     = new NeedsPanel(selectedSim.name);
+    this._selector  = new SimSelector(sims);
+    this._clock     = new ClockDisplay();
+    this._build     = new BuildPanel();
+    this._rel       = new RelationshipPanel();
+    this._statusLog = new SimStatusLog();   // ← nuovo
 
-    bus.on('sim:selected', ({ sim }) => this._panel.setSimName(sim.name));
-    bus.on('simNeeds:update', ({ simId, values }) => {
+    bus.on('sim:selected',    ({ sim })             => this._panel.setSimName(sim.name));
+    bus.on('simNeeds:update', ({ simId, values })   => {
       if (window._game?.selectedSim?.id === simId) this._panel.update(values);
     });
-    bus.on('daynight:update', ({ hour }) => this._clock.update(hour));
+    bus.on('daynight:update', ({ hour })            => this._clock.update(hour));
   }
 }
