@@ -1,21 +1,27 @@
 import * as THREE from 'three';
 import { TileMap, TILE } from './TileMap.js';
 import { Furniture } from '../entities/Furniture.js';
+import { DoorManager } from './DoorManager.js';
 
 const FLOOR_COLOR = 0x4a3f35;
 const WALL_COLOR  = 0x2e2620;
 
 export class World {
   constructor(scene) {
-    this._scene = scene;
+    this._scene  = scene;
+    this.scene   = scene; // exposed for DoorManager
     this.tilemap = new TileMap(16, 16);
     this.groundMeshes = [];
-    this.furniture = [];
+    this.furniture    = [];
     this._floorMat = new THREE.MeshLambertMaterial({ color: FLOOR_COLOR });
     this._wallMat  = new THREE.MeshLambertMaterial({ color: WALL_COLOR });
+
     this._buildFloor();
     this._buildWalls();
     this._placeFurniture();
+
+    this.doorManager = new DoorManager(this);
+    this._placeDoors();
   }
 
   _buildFloor() {
@@ -61,6 +67,12 @@ export class World {
     for (const item of items) this._addFurniture(item);
   }
 
+  _placeDoors() {
+    // Two doors on the bottom wall
+    this.doorManager.addDoor({ gx: 5,  gz: 0,  axis: 'z' });
+    this.doorManager.addDoor({ gx: 10, gz: 15, axis: 'z' });
+  }
+
   _addFurniture(item) {
     const f = new Furniture(item);
     this._scene.add(f.mesh);
@@ -69,25 +81,26 @@ export class World {
     return f;
   }
 
-  /** Called by BuildMode to place a new piece of furniture */
   placeFurniture(item) {
     if (!this.tilemap.isWalkable(item.gx, item.gz)) return false;
     this._addFurniture(item);
     return true;
   }
 
-  /** Remove furniture at grid position */
   removeFurniture(gx, gz) {
     const idx = this.furniture.findIndex(f => f.gx === gx && f.gz === gz);
     if (idx < 0) return false;
-    const f = this.furniture[idx];
+    const f = this.furniture.splice(idx, 1)[0];
     this._scene.remove(f.mesh);
-    this.tilemap.set(gx, gz, 0);
-    this.furniture.splice(idx, 1);
+    this.tilemap.set(gx, gz, TILE.FLOOR);
     return true;
   }
 
   getFurnitureFor(needKey) {
     return this.furniture.find(f => f.needTarget === needKey) || null;
+  }
+
+  update(dt) {
+    this.doorManager.update(dt);
   }
 }

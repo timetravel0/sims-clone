@@ -1,6 +1,6 @@
 # Sims Clone
 
-A browser-based isometric life simulation game built with **Three.js** and vanilla ES6 modules.
+Browser-based isometric life sim — **Three.js** + vanilla ES6 modules. No build step.
 
 ## Quick Start
 
@@ -11,19 +11,45 @@ npx serve .
 # open http://localhost:3000
 ```
 
-No build step. Pure ES modules via importmap.
-
 ## Features
 
 | Feature | Details |
 |---|---|
-| **Multi-Sim** | 3 Sims (Alex, Sam, Jo) — click a portrait or a Sim to select |
-| **Build Mode** | 🔨 button opens furniture catalog; click tiles to place |
-| **Save / Load** | IndexedDB slot 1 — 💾 / 📂 buttons |
-| **Day/Night Cycle** | 4-minute in-game day; sunrise/sunset sky + star particles |
-| **Speech Bubbles** | Sim shows need emoji when AI planner kicks in |
+| **Multi-Sim** | 3 Sims (Alex, Sam, Jo) — click portrait or mesh to select |
 | **8 Needs** | hunger, energy, bladder, hygiene, social, fun, comfort, room |
-| **A\* Pathfinding** | Click any floor tile to move selected Sim |
+| **AI Planner** | Autonomous need satisfaction + social seeking |
+| **Doors** | Animated swing doors; auto-open when path crosses them |
+| **Social Interactions** | chat, joke, compliment, hug, argue — affect relationship score |
+| **Relationship Panel** | ♥ button shows Friend/Enemy scores per Sim |
+| **Object Registry** | Central catalog; register custom objects in 5 lines |
+| **Build Mode** | 🔨 button — place any registered object on the grid |
+| **Day/Night Cycle** | 4-min day; sunrise/sunset sky, star particles, sun arc |
+| **Speech Bubbles** | Need emoji + social action shown above Sim head |
+| **Save / Load** | IndexedDB slot 1 persists needs, positions, relationships |
+
+## Adding a Custom Object
+
+```js
+import { ObjectRegistry } from './src/systems/ObjectRegistry.js';
+import { bus } from './src/core/EventBus.js';
+
+ObjectRegistry.register({
+  id:          'hot_spring',
+  label:       'Hot Spring',
+  color:       0x00acc1,
+  needTarget:  'comfort',
+  restoreRate: 40,
+  onUse: (sim) => {
+    sim.needs.restore('hygiene', 8);
+    sim.needs.restore('social',  4);
+  }
+});
+
+// Notify BuildPanel to refresh its catalog
+bus.emit('registry:updated', {});
+```
+
+The object immediately appears in Build Mode — no other changes needed.
 
 ## Architecture
 
@@ -31,27 +57,24 @@ No build step. Pure ES modules via importmap.
 src/
 ├── core/         Game, GameLoop, EventBus
 ├── world/        TileMap, World, IsometricCamera, DayNightCycle, BuildMode
+│                 Door, DoorManager
 ├── entities/     Sim, SimNeeds, SimBrain, Furniture
-├── ai/           Pathfinder, Action, ActionQueue, NeedDrivenPlanner
-├── systems/      SaveLoad (IndexedDB)
-├── ui/           UIManager, NeedsPanel, SimSelector, ClockDisplay, BuildPanel, SpeechBubble
+├── ai/           Pathfinder, Action, ActionQueue, NeedDrivenPlanner, SocialAction
+├── systems/      SaveLoad, SocialManager, ObjectRegistry
+├── ui/           UIManager, NeedsPanel, SimSelector, ClockDisplay
+│                 BuildPanel, RelationshipPanel, SpeechBubble, ClockDisplay
 └── utils/        Logger
 ```
 
 ## Controls
 
-- **Click floor tile** → move selected Sim
-- **Click Sim mesh** → select that Sim
-- **Click portrait** (top-left) → select Sim
-- **🔨 Build** → toggle build mode, click catalog item then tile to place
-- **💾 Save / 📂 Load** → persist/restore to IndexedDB slot 1
-- **1× 2× 5×** → simulation speed
-- **⏸ Pause** → freeze simulation
-
-## Next Steps
-
-- [ ] Doors & room system
-- [ ] Sim moods (composite of needs → single mood score)
-- [ ] Social interactions between Sims
-- [ ] Wall painting & floor tiling in build mode
-- [ ] Multiple save slots UI
+| Input | Action |
+|---|---|
+| Click floor tile | Move selected Sim |
+| Click Sim | Select Sim |
+| Click portrait (top-left) | Select Sim |
+| 🔨 Build | Toggle build mode |
+| ♥ Relations | Toggle relationship panel |
+| 💾 Save / 📂 Load | IndexedDB slot 1 |
+| 1× 2× 5× | Simulation speed |
+| ⏸ Pause | Freeze simulation |
