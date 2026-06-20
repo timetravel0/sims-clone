@@ -9,27 +9,38 @@ export class SimBrain {
     this._planner        = new NeedDrivenPlanner(sim);
     this._queue          = new ActionQueue();
     this._socialCooldown = 0;
-    this._lastMoodTier   = sim.mood.tier;
-    this._playerOverride = false; // true while player-driven action is running
+    this._lastMoodTier   = null;
+    this._playerOverride = false;
+    this._overrideTimer  = 0; // safety timeout so override never locks AI forever
   }
 
   /**
-   * override() — player (or drama engine) injects actions.
-   * Accepts a single Action or an array of Actions.
-   * Sets _playerOverride so AI won't interrupt immediately.
+   * Inject player-driven actions.
+   * Sets a safety timer: if the queue is still running after 30s, release override.
    */
   override(actions) {
     this._queue.clear();
     const list = Array.isArray(actions) ? actions : [actions];
     this._queue.push(...list);
     this._playerOverride = true;
+    this._overrideTimer  = 30; // seconds
   }
 
   update(dt) {
+    // Tick override safety timer
+    if (this._playerOverride) {
+      this._overrideTimer -= dt;
+      if (this._overrideTimer <= 0 || this._queue.isEmpty()) {
+        this._playerOverride = false;
+        this._overrideTimer  = 0;
+      }
+    }
+
+    // Advance current action queue
     this._queue.update(dt);
     if (this._socialCooldown > 0) this._socialCooldown -= dt;
 
-    // Neurotic mood crash: interrupt only AI tasks, never player overrides
+    // Neurotic mood crash: only interrupt AI tasks, never player override
     const p = this._sim.personality;
     if (!this._playerOverride &&
         p.neurotic > 0.4 &&
@@ -37,24 +48,28 @@ export class SimBrain {
         this._lastMoodTier !== 'miserable') {
       this._queue.clear();
     }
-    this._lastMoodTier = this._sim.mood.tier;
+    this._lastMoodTier = this._sim.mood?.tier ?? null;
 
-    // Once queue is empty, clear override flag
-    if (this._queue.isEmpty()) this._playerOverride = false;
+    // While player override is active, don't plan
+    if (this._playerOverride) return;
+
+    // Queue is busy with AI actions — wait
     if (!this._queue.isEmpty()) return;
 
-    // --- AI planning (only when player hasn't taken over) ---
-    // 1. Physical needs
-    const actions = this._planner.plan();
-    if (actions.length > 0) {
+    // ── AI planning ──────────────────────────────────────────────────────────
+
+    // 1. Physical / primary needs (hunger, energy, bladder, hygiene, comfort…)
+    const needActions = this._planner.plan();
+    if (needActions.length > 0) {
       this._sim.showBubble(this._planner.lastNeedLabel);
-      this._queue.push(...actions);
+      this._queue.push(...needActions);
       return;
     }
 
-    // 2. Social need
-    const threshold = 40 + p.outgoing * 20;
-    if (this._sim.needs.get('social') < threshold && this._socialCooldown <= 0) {
+    // 2. Social need (only when physical needs are satisfied)
+    const socialVal   = this._sim.needs.get('social');
+    const threshold   = 40 + p.outgoing * 20;
+    if (socialVal < threshold && this._socialCooldown <= 0) {
       const target = this._findSocialTarget();
       if (target) {
         this._socialCooldown = p.outgoing > 0 ? 10 : 25;
@@ -63,8 +78,9 @@ export class SimBrain {
       }
     }
 
-    // 3. Idle
-    this._queue.push(new IdleAction(this._sim, p.playful > 0.3 ? 1 : 3));
+    // 3. Idle — short for playful sims, longer for introverts
+    const idleDur = p.playful > 0.3 ? 1.5 : 3.5;
+    this._queue.push(new IdleAction(this._sim, idleDur));
   }
 
   _findSocialTarget() {
