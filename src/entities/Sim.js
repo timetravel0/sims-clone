@@ -13,6 +13,7 @@ export class Sim {
   constructor(scene, world, _bus, name = 'Sim', color = 0x4fc3f7, traits = {}) {
     this.id        = `sim_${++_idCounter}`;
     this.name      = name;
+    this.color     = color;   // stored so UI (SimSelector, portraits) can read it
     this._scene    = scene;
     this._world    = world;
     this.gx        = 1;
@@ -23,22 +24,14 @@ export class Sim {
     this._path     = [];
     this._selected = false;
 
-    // Personality (randomised unless traits provided)
     this.personality = new Personality(traits);
-
-    // Needs (personality-aware decay)
     this.needs = new SimNeeds(this.personality);
     this.needs._emit = (vals) => bus.emit('simNeeds:update', { simId: this.id, values: vals });
-
-    // Mood
-    this.mood = new Mood(this);
-
-    // Brain / AI
+    this.mood  = new Mood(this);
     this.brain = new SimBrain(this);
 
-    // Mesh
     this._buildMesh(color);
-    this._bubble = null;
+    this._bubble      = null;
     this._bubbleTimer = 0;
 
     scene.add(this.mesh);
@@ -62,7 +55,9 @@ export class Sim {
     this.mesh.add(head);
     // Selection ring
     const ringGeo = new THREE.RingGeometry(0.28, 0.35, 24);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0 });
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0
+    });
     this._ring = new THREE.Mesh(ringGeo, ringMat);
     this._ring.rotation.x = -Math.PI / 2;
     this._ring.position.y = 0.05;
@@ -96,7 +91,6 @@ export class Sim {
   }
 
   showBubble(text, duration = 1.5) {
-    // Use DOM overlay
     const el = document.getElementById(`bubble-${this.id}`);
     if (!el) return;
     el.textContent   = text;
@@ -110,7 +104,6 @@ export class Sim {
     this.mood.recalculate(this.needs.getAll(), this.personality);
     this.brain.update(dt);
     this._updateBubble(dt);
-    // Mood ring tint
     const moodColor = this.mood.info?.color || '#fff';
     this._ring.material.color.set(moodColor);
   }
@@ -128,8 +121,8 @@ export class Sim {
       this._path.shift();
       bus.emit('sim:arrived', { gx: this.gx, gz: this.gz });
     } else {
-      this.worldX += (dx/dist)*step;
-      this.worldZ += (dz/dist)*step;
+      this.worldX += (dx / dist) * step;
+      this.worldZ += (dz / dist) * step;
     }
     this.mesh.position.set(this.worldX, 0, this.worldZ);
     this.isMoving = this._path.length > 0;
@@ -146,10 +139,13 @@ export class Sim {
 
   serialise() {
     return {
-      id: this.id, name: this.name,
-      gx: this.gx, gz: this.gz,
-      needs: this.needs.serialise(),
-      mood:  this.mood.serialise(),
+      id:          this.id,
+      name:        this.name,
+      color:       this.color,
+      gx:          this.gx,
+      gz:          this.gz,
+      needs:       this.needs.serialise(),
+      mood:        this.mood.serialise(),
       personality: this.personality.serialise(),
     };
   }
