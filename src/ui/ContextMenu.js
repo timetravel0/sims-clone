@@ -1,18 +1,17 @@
 import { bus } from '../core/EventBus.js';
 
 /**
- * ContextMenu — right-click on a Sim or furniture tile shows a radial
- * menu of available actions the PLAYER can trigger manually.
+ * ContextMenu — right-click on a Sim or furniture tile shows available
+ * player-driven actions.
  *
- * Emits:
- *   'player:useFurniture'  { sim, furniture }
- *   'player:socialAction'  { simA, simB, type }
+ * Uses game.camera (IsometricCamera wrapper) → .camera (THREE.Camera).
  */
 export class ContextMenu {
   constructor(game, renderer) {
     this._game     = game;
     this._renderer = renderer;
-    this._el       = this._build();
+    this._raycaster = new (await import('three').catch(() => null))?.Raycaster?.() || null;
+    this._el = this._build();
     document.body.appendChild(this._el);
     this._hide();
 
@@ -20,7 +19,7 @@ export class ContextMenu {
       e.preventDefault();
       this._onRightClick(e);
     });
-    document.addEventListener('click', () => this._hide());
+    document.addEventListener('click',   () => this._hide());
     document.addEventListener('keydown', e => { if (e.key === 'Escape') this._hide(); });
   }
 
@@ -38,7 +37,7 @@ export class ContextMenu {
 
   _show(x, y, items) {
     this._el.innerHTML = '';
-    if (items.length === 0) return;
+    if (!items.length) return;
     for (const item of items) {
       const btn = document.createElement('button');
       btn.textContent = item.label;
@@ -50,74 +49,68 @@ export class ContextMenu {
       ].join(';');
       btn.onmouseenter = () => btn.style.background = 'rgba(255,255,255,0.08)';
       btn.onmouseleave = () => btn.style.background = 'none';
-      btn.onclick = (e) => { e.stopPropagation(); item.action(); this._hide(); };
+      btn.onclick = ev => { ev.stopPropagation(); item.action(); this._hide(); };
       this._el.appendChild(btn);
     }
-    // Separator style for groups
     this._el.style.display = 'block';
-    const rect = this._el.getBoundingClientRect();
-    const clampX = Math.min(x, window.innerWidth  - rect.width  - 8);
-    const clampY = Math.min(y, window.innerHeight - rect.height - 8);
-    this._el.style.left = clampX + 'px';
-    this._el.style.top  = clampY + 'px';
+    // re-read size after display
+    const w = this._el.offsetWidth, h = this._el.offsetHeight;
+    this._el.style.left = Math.min(x, window.innerWidth  - w - 8) + 'px';
+    this._el.style.top  = Math.min(y, window.innerHeight - h - 8) + 'px';
   }
 
   _hide() { this._el.style.display = 'none'; }
 
   _onRightClick(e) {
-    const raycaster = new (window.THREE || {}).Raycaster?.() ||
-      this._game._raycaster;
-    const mouse = { x: 0, y: 0 };
-    const rect  = this._renderer.domElement.getBoundingClientRect();
-    mouse.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
-    mouse.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+    const THREE = window._THREE;
+    if (!THREE) return;
 
-    const cam = this._game._camera?.camera;
+    const rc   = new THREE.Raycaster();
+    const rect = this._renderer.domElement.getBoundingClientRect();
+    const mx   =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+    const my   = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+
+    // game.camera is the IsometricCamera wrapper; .camera is the THREE camera
+    const cam = this._game.camera?.camera;
     if (!cam) return;
-    raycaster.setFromCamera(mouse, cam);
+    rc.setFromCamera({ x: mx, y: my }, cam);
 
     const selectedSim = this._game.selectedSim;
+    const otherSims   = this._game.sims.filter(s => s !== selectedSim);
     const items = [];
 
-    // --- Hit test: other Sims ---
-    const otherSims = this._game.sims.filter(s => s !== selectedSim);
-    const simHits   = raycaster.intersectObjects(
-      otherSims.map(s => s.mesh), true
-    );
-    if (simHits.length > 0) {
-      const hitMesh = simHits[0].object;
-      const target  = otherSims.find(s =>
-        s.mesh === hitMesh ||
-        s.mesh === hitMesh.parent ||
-        s.mesh === hitMesh.parent?.parent
-      );
+    // ── Hit: other Sims ────────────────────────────────────────────────────
+    const simHits = rc.intersectObjects(otherSims.map(s => s.mesh), true);
+    if (simHits.length) {
+      const hit    = simHits[0].object;
+      const target = otherSims.find(s =>
+        s.mesh === hit || s.mesh === hit.parent || s.mesh === hit.parent?.parent);
       if (target) {
-        items.push({ label: `💬 Chat with ${target.name}`,       action: () => this._triggerSocial(selectedSim, target, 'chat') });
-        items.push({ label: `😄 Tell joke to ${target.name}`,   action: () => this._triggerSocial(selectedSim, target, 'joke') });
-        items.push({ label: `🌟 Compliment ${target.name}`,      action: () => this._triggerSocial(selectedSim, target, 'compliment') });
-        items.push({ label: `🤗 Hug ${target.name}`,             action: () => this._triggerSocial(selectedSim, target, 'hug') });
-        items.push({ label: `😠 Argue with ${target.name}`,      action: () => this._triggerSocial(selectedSim, target, 'argue') });
+        items.push({ label: `💬 Chat with ${target.name}`,      action: () => this._triggerSocial(selectedSim, target, 'chat') });
+        items.push({ label: `😄 Tell joke to ${target.name}`,  action: () => this._triggerSocial(selectedSim, target, 'joke') });
+        items.push({ label: `🌟 Compliment ${target.name}`,    action: () => this._triggerSocial(selectedSim, target, 'compliment') });
+        items.push({ label: `🤗 Hug ${target.name}`,           action: () => this._triggerSocial(selectedSim, target, 'hug') });
+        items.push({ label: `😤 Argue with ${target.name}`,    action: () => this._triggerSocial(selectedSim, target, 'argue') });
         this._show(e.clientX, e.clientY, items);
         return;
       }
     }
 
-    // --- Hit test: furniture tiles ---
-    const groundHits = raycaster.intersectObjects(this._game.world.groundMeshes);
-    if (groundHits.length > 0) {
+    // ── Hit: ground / furniture ────────────────────────────────────────────
+    const groundHits = rc.intersectObjects(this._game.world.groundMeshes);
+    if (groundHits.length) {
       const p  = groundHits[0].point;
       const gx = Math.round(p.x), gz = Math.round(p.z);
-      const furniture = this._game.world.furniture.find(
+      const furniture = this._game.world.furniture?.find(
         f => f.gx === gx && f.gz === gz
       );
       if (furniture) {
         items.push({ label: `🛋 Use ${furniture.id}`, action: () => this._triggerUse(selectedSim, furniture) });
-        // Social furniture: invite another Sim
         if (furniture.social) {
           for (const other of otherSims) {
             items.push({
-              label: `👥 Invite ${other.name} to ${furniture.id}`,
-              action: () => this._triggerSocialFurniture(selectedSim, other, furniture)
+              label:  `👥 Invite ${other.name} to ${furniture.id}`,
+              action: () => this._triggerSocialFurniture(selectedSim, other, furniture),
             });
           }
         }
@@ -126,10 +119,10 @@ export class ContextMenu {
       }
     }
 
-    // --- Fallback: select Sim under cursor ---
-    const allSimHits = raycaster.intersectObjects(this._game.sims.map(s => s.mesh), true);
-    if (allSimHits.length > 0) {
-      const hit = allSimHits[0].object;
+    // ── Hit: any Sim (select) ──────────────────────────────────────────────
+    const anyHits = rc.intersectObjects(this._game.sims.map(s => s.mesh), true);
+    if (anyHits.length) {
+      const hit = anyHits[0].object;
       const idx = this._game.sims.findIndex(s =>
         s.mesh === hit || s.mesh === hit.parent || s.mesh === hit.parent?.parent);
       if (idx >= 0) {
@@ -139,8 +132,12 @@ export class ContextMenu {
     }
   }
 
+  _ac()  { return window._actionClasses       || {}; }
+  _sac() { return window._socialActionClasses || {}; }
+
   _triggerUse(sim, furniture) {
-    const { WalkToAction, UseObjectAction } = this._actions();
+    const { WalkToAction, UseObjectAction } = this._ac();
+    if (!WalkToAction) return;
     sim.brain.override([
       new WalkToAction(sim, this._game.world, furniture.gx, furniture.gz + 1),
       new UseObjectAction(sim, furniture, 6),
@@ -149,14 +146,16 @@ export class ContextMenu {
   }
 
   _triggerSocial(simA, simB, type) {
-    const { SocialAction } = this._socialActions();
+    const { SocialAction } = this._sac();
+    if (!SocialAction) return;
     simA.brain.override([new SocialAction(simA, simB, this._game.world, type)]);
     bus.emit('player:socialAction', { simA, simB, type });
   }
 
   _triggerSocialFurniture(simA, simB, furniture) {
-    const { WalkToAction, UseObjectAction } = this._actions();
-    const { SocialAction } = this._socialActions();
+    const { WalkToAction, UseObjectAction } = this._ac();
+    const { SocialAction }                  = this._sac();
+    if (!WalkToAction || !SocialAction) return;
     simA.brain.override([
       new WalkToAction(simA, this._game.world, furniture.gx, furniture.gz + 1),
       new UseObjectAction(simA, furniture, 4),
@@ -166,13 +165,5 @@ export class ContextMenu {
       new WalkToAction(simB, this._game.world, furniture.gx, furniture.gz - 1),
       new UseObjectAction(simB, furniture, 4),
     ]);
-  }
-
-  // Lazy imports to avoid circular deps
-  _actions() {
-    return window._actionClasses || {};
-  }
-  _socialActions() {
-    return window._socialActionClasses || {};
   }
 }
