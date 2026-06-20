@@ -10,7 +10,7 @@
       font-family:'Segoe UI',system-ui,sans-serif; }
     #canvas-container { position:fixed; inset:0; }
 
-    /* Toolbar */
+    /* ── Toolbar ────────────────────────────────────────────── */
     #toolbar {
       position:fixed; bottom:0; left:0; right:0; z-index:50;
       display:flex; align-items:center; gap:8px; padding:7px 14px;
@@ -27,23 +27,32 @@
     .tb-sep { width:1px; height:18px; background:rgba(255,255,255,0.1); margin:0 2px; }
     #clock  { margin-left:auto; font-size:12px; font-weight:600; color:#ffd580; min-width:60px; text-align:right; }
 
-    /* Needs panel */
+    /* ── Needs panel (top-right) ────────────────────────────── */
     #needs-panel {
       position:fixed; top:16px; right:16px; z-index:50;
       background:rgba(14,13,11,0.85); backdrop-filter:blur(8px);
       border:1px solid rgba(255,255,255,0.08); border-radius:10px;
       padding:12px 15px; min-width:185px;
     }
-    #needs-panel h3 { color:#eee; font-size:11px; margin-bottom:6px;
+    #needs-panel h3 { color:#eee; font-size:11px; margin-bottom:4px;
       text-transform:uppercase; letter-spacing:.08em; }
-    #sim-mood   { font-size:13px; margin-bottom:4px; }
-    #sim-traits { color:#666; font-size:10px; margin-bottom:8px; font-style:italic; }
+    #sim-mood   { font-size:13px; margin-bottom:2px; }
+    #sim-traits { color:#666; font-size:10px; margin-bottom:6px; font-style:italic; }
+    /* Sim status: what they're doing + missing need */
+    #sim-status {
+      font-size:10px; color:#ffd580; margin-bottom:8px;
+      min-height:14px; letter-spacing:.02em;
+    }
+    #sim-missing {
+      font-size:10px; color:#ef9a9a; margin-bottom:8px;
+      min-height:14px;
+    }
     .need-row  { display:flex; align-items:center; gap:7px; margin-bottom:5px; }
     .need-label { color:#999; font-size:11px; width:56px; text-align:right; }
     .need-bar-bg { flex:1; height:5px; background:rgba(255,255,255,0.08); border-radius:999px; overflow:hidden; }
     .need-bar-fill { height:100%; border-radius:999px; transition:width .4s,background .4s; }
 
-    /* Sim portraits */
+    /* ── Sim portraits (top-left, above story log) ───────────── */
     #sim-selector { position:fixed; top:16px; left:16px; z-index:50; display:flex; gap:8px; }
     .sim-portrait {
       width:38px; height:38px; border-radius:50%; border:2px solid;
@@ -54,40 +63,47 @@
     .sim-portrait:hover { transform:scale(1.12); }
     .sim-mood-dot { font-size:10px; }
 
-    /* Context menu */
-    #ctx-menu hr {
-      border:none; border-top:1px solid rgba(255,255,255,0.08);
-      margin:4px 8px;
-    }
-
-    /* Tooltip hint */
-    #hint {
-      position:fixed; bottom:44px; left:50%; transform:translateX(-50%);
-      z-index:45; font-size:11px; color:rgba(255,255,255,0.3);
-      pointer-events:none; white-space:nowrap;
-    }
-
-    /* Story log */
+    /* ── Story log (left sidebar, always visible) ───────────── */
     #story-panel {
-      position:fixed; top:16px; left:50%; transform:translateX(-50%);
-      z-index:50; width:340px; max-width:92vw;
-      background:rgba(14,13,11,0.88); backdrop-filter:blur(8px);
+      position:fixed; top:62px; left:16px; z-index:50;
+      width:230px;
+      background:rgba(14,13,11,0.82); backdrop-filter:blur(8px);
       border:1px solid rgba(255,255,255,0.08); border-radius:10px;
-      padding:10px 13px; display:none;
+      padding:10px 12px;
+      /* visible by default — toggle only hides it */
+      display:flex; flex-direction:column;
+      max-height:calc(100vh - 110px);
     }
-    #story-panel h3 { color:#eee; font-size:11px; margin-bottom:8px;
-      text-transform:uppercase; letter-spacing:.08em; }
-    #story-log { max-height:260px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; }
-    .log-entry { display:flex; align-items:flex-start; gap:6px; font-size:11px; }
-    .log-dot   { flex-shrink:0; width:7px; height:7px; border-radius:50%; margin-top:3px; }
-    .log-time  { color:#555; min-width:44px; flex-shrink:0; }
+    #story-panel.hidden { display:none; }
+    #story-panel-header {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:8px;
+    }
+    #story-panel-header h3 {
+      color:#eee; font-size:11px;
+      text-transform:uppercase; letter-spacing:.08em;
+    }
+    #btn-story-close {
+      background:none; border:none; color:#555; font-size:13px;
+      cursor:pointer; padding:0 2px; line-height:1;
+    }
+    #btn-story-close:hover { color:#aaa; }
+    #story-log {
+      flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:3px;
+      scrollbar-width:thin; scrollbar-color:rgba(255,255,255,0.1) transparent;
+    }
+    .log-entry { display:flex; align-items:flex-start; gap:6px; font-size:10px; }
+    .log-dot   { flex-shrink:0; width:6px; height:6px; border-radius:50%; margin-top:3px; }
+    .log-time  { color:#444; min-width:40px; flex-shrink:0; }
     .log-text  { color:#bbb; line-height:1.4; }
-    .cat-drama   .log-text { color:#ef9a9a; }
+    .cat-drama    .log-text { color:#ef9a9a; }
     .cat-positive .log-text { color:#a5d6a7; }
-    .cat-mood    .log-text { color:#ffd54f; }
-    .cat-gossip  .log-text { color:#ce93d8; }
+    .cat-mood     .log-text { color:#ffd54f; }
+    .cat-gossip   .log-text { color:#ce93d8; }
+    .cat-action   .log-text { color:#80cbc4; }
+    .cat-need     .log-text { color:#ffcc80; }
 
-    /* Relations panel */
+    /* ── Relations panel (bottom-right) ─────────────────────── */
     #rel-panel {
       display:none; position:fixed; bottom:48px; right:16px; z-index:50;
       background:rgba(14,13,11,0.88); backdrop-filter:blur(8px);
@@ -97,13 +113,14 @@
     #rel-panel h3 { color:#eee; font-size:11px; margin-bottom:8px;
       text-transform:uppercase; letter-spacing:.08em; }
     .rel-row  { display:flex; align-items:center; gap:7px; margin-bottom:5px; }
-    .rel-name { color:#ccc; font-size:11px; width:44px; }
+    .rel-name { color:#ccc; font-size:11px; width:52px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .rel-bar-wrap { flex:1; height:5px; background:rgba(255,255,255,0.08); border-radius:999px; overflow:hidden; }
     .rel-bar  { height:100%; border-radius:999px; transition:width .4s; }
-    .rel-label { font-size:10px; width:46px; text-align:right; }
+    .rel-label { font-size:10px; width:50px; text-align:right; }
+    .rel-score { font-size:10px; color:#555; width:28px; text-align:right; }
     .rel-empty { color:#666; font-size:11px; }
 
-    /* Build panel */
+    /* ── Build panel ─────────────────────────────────────────── */
     #build-panel {
       display:none; position:fixed; bottom:48px; left:50%; transform:translateX(-50%);
       z-index:60; background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
@@ -122,7 +139,7 @@
     .ci-swatch { display:inline-block; width:9px; height:9px; border-radius:2px; flex-shrink:0; }
     .ci-social { font-size:9px; color:#ffd54f; margin-left:2px; }
 
-    /* Speech bubbles */
+    /* ── Speech bubbles ──────────────────────────────────────── */
     #bubbles { position:fixed; inset:0; pointer-events:none; z-index:30; }
     .bubble {
       position:absolute; background:rgba(20,19,17,0.92);
@@ -133,7 +150,14 @@
       white-space:nowrap; pointer-events:none;
     }
 
-    /* Drama toast */
+    /* ── Hint ────────────────────────────────────────────────── */
+    #hint {
+      position:fixed; bottom:44px; left:50%; transform:translateX(-50%);
+      z-index:45; font-size:11px; color:rgba(255,255,255,0.3);
+      pointer-events:none; white-space:nowrap;
+    }
+
+    /* ── Drama toast ─────────────────────────────────────────── */
     #drama-toast {
       position:fixed; top:70px; left:50%; transform:translateX(-50%);
       z-index:70; pointer-events:none;
@@ -156,15 +180,22 @@
   <div id="bubbles"></div>
   <div id="drama-toast"></div>
 
+  <!-- Needs panel -->
   <div id="needs-panel">
     <h3 id="sim-name">Sim</h3>
     <div id="sim-mood"></div>
     <div id="sim-traits"></div>
+    <div id="sim-status"></div>
+    <div id="sim-missing"></div>
     <div id="needs-bars"></div>
   </div>
 
+  <!-- Story log: left sidebar, always open -->
   <div id="story-panel">
-    <h3>📖 Story</h3>
+    <div id="story-panel-header">
+      <h3>📖 Story</h3>
+      <button id="btn-story-close" title="Close log">✕</button>
+    </div>
     <div id="story-log"></div>
   </div>
 
