@@ -1,31 +1,65 @@
 import { bus } from '../core/EventBus.js';
 
-export const NEED_KEYS = ['hunger', 'energy', 'bladder', 'hygiene', 'social', 'fun', 'comfort', 'room'];
-
-const DECAY_RATE = {
-  hunger: 1.5, energy: 1.2, bladder: 2.0,
-  hygiene: 0.8, social: 0.6, fun: 1.0, comfort: 0.9, room: 0.3,
+/**
+ * SimNeeds — 8 need axes with personality-modulated decay rates.
+ * neurotic  → faster decay for social, fun, hygiene
+ * ambitious → slower decay but mood penalty sharper (handled by Mood)
+ * playful   → fun decays slower
+ * outgoing  → social decays faster (needs interaction)
+ */
+const BASE_DECAY = {
+  hunger:  3.0,
+  energy:  2.5,
+  bladder: 4.0,
+  hygiene: 2.0,
+  social:  2.5,
+  fun:     2.2,
+  comfort: 1.8,
+  room:    0.5,
 };
 
 export class SimNeeds {
-  constructor(simId) {
-    this._simId = simId;
+  constructor(personality) {
+    this._personality = personality;
     this._values = {};
-    for (const k of NEED_KEYS) this._values[k] = 80;
+    for (const k of Object.keys(BASE_DECAY)) this._values[k] = 100;
+    this._decayMults = this._computeDecay();
+    this._emit = null; // set by Sim after construction
   }
-  get(key) { return this._values[key]; }
-  set(key, val) { this._values[key] = Math.min(100, Math.max(0, val)); }
-  restore(key, amount) { this.set(key, this._values[key] + amount); }
-  mostCritical(threshold = 40) {
-    let worst = null, worstVal = threshold;
-    for (const k of NEED_KEYS) {
-      if (this._values[k] < worstVal) { worst = k; worstVal = this._values[k]; }
+
+  _computeDecay() {
+    const p   = this._personality;
+    const m   = {};
+    const base = { ...BASE_DECAY };
+    // Personality modifiers
+    for (const k of Object.keys(base)) {
+      let mult = 1.0;
+      if (p.neurotic  > 0 && ['social','fun','hygiene'].includes(k)) mult += p.neurotic * 0.4;
+      if (p.playful   > 0 && k === 'fun')    mult -= p.playful  * 0.25;
+      if (p.outgoing  > 0 && k === 'social') mult += p.outgoing * 0.3;
+      if (p.ambitious > 0) mult -= p.ambitious * 0.1; // ambitious → stoic
+      m[k] = Math.max(0.3, base[k] * mult);
     }
-    return worst;
+    return m;
   }
+
   update(dt) {
-    for (const k of NEED_KEYS) this._values[k] = Math.max(0, this._values[k] - DECAY_RATE[k] * dt);
-    bus.emit('simNeeds:update', { simId: this._simId, values: { ...this._values } });
+    for (const k of Object.keys(this._values)) {
+      this._values[k] = Math.max(0, this._values[k] - this._decayMults[k] * dt);
+    }
+    if (this._emit) this._emit(this._values);
   }
-  snapshot() { return { ...this._values }; }
+
+  get(key)          { return this._values[key] ?? 0; }
+  getAll()          { return { ...this._values }; }
+  restore(key, amt) { this._values[key] = Math.min(100, (this._values[key] ?? 0) + amt); }
+  decay(key, amt)   { this._values[key] = Math.max(0, (this._values[key] ?? 0) - amt); }
+
+  mostCritical() {
+    return Object.entries(this._values)
+      .sort((a,b) => a[1] - b[1])[0];
+  }
+
+  serialise() { return { ...this._values }; }
+  restore_state(data) { Object.assign(this._values, data); }
 }
