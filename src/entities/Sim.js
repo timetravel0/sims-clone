@@ -1,19 +1,20 @@
-import * as THREE     from 'three';
-import { SimNeeds }   from './SimNeeds.js';
-import { SimBrain }   from './SimBrain.js';
-import { Pathfinder } from '../ai/Pathfinder.js';
-import { Mood }       from './Mood.js';
-import { Personality} from './Personality.js';
-import { bus }        from '../core/EventBus.js';
+import * as THREE       from 'three';
+import { SimNeeds }     from './SimNeeds.js';
+import { SimBrain }     from './SimBrain.js';
+import { SimEmotions }  from './SimEmotions.js';
+import { Pathfinder }   from '../ai/Pathfinder.js';
+import { Mood }         from './Mood.js';
+import { Personality }  from './Personality.js';
+import { bus }          from '../core/EventBus.js';
 
 let _idCounter = 0;
-const SPEED = 3.5; // tiles/sec
+const SPEED = 3.5;
 
 export class Sim {
   constructor(scene, world, _bus, name = 'Sim', color = 0x4fc3f7, traits = {}) {
     this.id        = `sim_${++_idCounter}`;
     this.name      = name;
-    this.color     = color;   // stored so UI (SimSelector, portraits) can read it
+    this.color     = color;
     this._scene    = scene;
     this._world    = world;
     this.gx        = 1;
@@ -25,10 +26,11 @@ export class Sim {
     this._selected = false;
 
     this.personality = new Personality(traits);
-    this.needs = new SimNeeds(this.personality);
+    this.needs       = new SimNeeds(this.personality);
     this.needs._emit = (vals) => bus.emit('simNeeds:update', { simId: this.id, values: vals });
-    this.mood  = new Mood(this);
-    this.brain = new SimBrain(this);
+    this.mood        = new Mood(this);
+    this.emotions    = new SimEmotions(this);   // ← Sprint 1
+    this.brain       = new SimBrain(this);
 
     this._buildMesh(color);
     this._bubble      = null;
@@ -39,21 +41,16 @@ export class Sim {
 
   _buildMesh(color) {
     this.mesh = new THREE.Group();
-    // Body
     const bodyGeo = new THREE.CapsuleGeometry(0.22, 0.55, 4, 8);
     const bodyMat = new THREE.MeshLambertMaterial({ color });
     const body    = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.y = 0.55;
-    body.castShadow = true;
+    body.position.y = 0.55; body.castShadow = true;
     this.mesh.add(body);
-    // Head
     const headGeo = new THREE.SphereGeometry(0.18, 8, 8);
     const headMat = new THREE.MeshLambertMaterial({ color: 0xf5cba7 });
     const head    = new THREE.Mesh(headGeo, headMat);
-    head.position.y = 1.1;
-    head.castShadow = true;
+    head.position.y = 1.1; head.castShadow = true;
     this.mesh.add(head);
-    // Selection ring
     const ringGeo = new THREE.RingGeometry(0.28, 0.35, 24);
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0
@@ -85,44 +82,42 @@ export class Sim {
     }
   }
 
-  startPath(path) {
-    this._path    = path;
-    this.isMoving = path.length > 0;
-  }
+  startPath(path) { this._path = path; this.isMoving = path.length > 0; }
 
   showBubble(text, duration = 1.5) {
     const el = document.getElementById(`bubble-${this.id}`);
     if (!el) return;
-    el.textContent   = text;
-    el.style.opacity = '1';
+    el.textContent = text; el.style.opacity = '1';
     this._bubbleTimer = duration;
   }
 
   update(dt) {
     this._moveAlongPath(dt);
     this.needs.update(dt);
-    this.mood.recalculate(this.needs.getAll(), this.personality);
+    this.emotions.update(dt);                               // ← Sprint 1
+    this.mood.recalculate(this.needs.getAll(), this.personality, this.emotions.moodBonus); // ← bonus
     this.brain.update(dt);
     this._updateBubble(dt);
-    const moodColor = this.mood.info?.color || '#fff';
-    this._ring.material.color.set(moodColor);
+    // Ring colour reflects dominant emotion > mood tier
+    const dom = this.emotions.dominant;
+    const ringColor = dom ? dom.def.color : (this.mood.info?.color || '#fff');
+    this._ring.material.color.set(ringColor);
   }
 
   _moveAlongPath(dt) {
     if (this._path.length === 0) { this.isMoving = false; return; }
     const target = this._path[0];
-    const tx = target.x, tz = target.z;
-    const dx = tx - this.worldX, dz = tz - this.worldZ;
+    const dx = target.x - this.worldX, dz = target.z - this.worldZ;
     const dist = Math.sqrt(dx*dx + dz*dz);
     const step = SPEED * dt;
     if (dist <= step) {
-      this.worldX = tx; this.worldZ = tz;
-      this.gx = tx; this.gz = tz;
+      this.worldX = target.x; this.worldZ = target.z;
+      this.gx = target.x; this.gz = target.z;
       this._path.shift();
-      bus.emit('sim:arrived', { gx: this.gx, gz: this.gz });
+      bus.emit('sim:arrived', { simId: this.id, gx: this.gx, gz: this.gz });
     } else {
-      this.worldX += (dx / dist) * step;
-      this.worldZ += (dz / dist) * step;
+      this.worldX += (dx/dist)*step;
+      this.worldZ += (dz/dist)*step;
     }
     this.mesh.position.set(this.worldX, 0, this.worldZ);
     this.isMoving = this._path.length > 0;
@@ -139,13 +134,11 @@ export class Sim {
 
   serialise() {
     return {
-      id:          this.id,
-      name:        this.name,
-      color:       this.color,
-      gx:          this.gx,
-      gz:          this.gz,
+      id: this.id, name: this.name, color: this.color,
+      gx: this.gx, gz: this.gz,
       needs:       this.needs.serialise(),
       mood:        this.mood.serialise(),
+      emotions:    this.emotions.serialise(),
       personality: this.personality.serialise(),
     };
   }
@@ -155,5 +148,6 @@ export class Sim {
     this.mesh.position.set(data.gx, 0, data.gz);
     this.needs.restore_state(data.needs);
     this.mood.restore(data.mood);
+    this.emotions.restore(data.emotions || {});
   }
 }
