@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sims Clone</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0e0d0b; font-family: 'Segoe UI', sans-serif; }
+    #canvas-container { position: fixed; inset: 0; }
+    #ui-overlay {
+      position: fixed; inset: 0; pointer-events: none;
+      display: flex; flex-direction: column; justify-content: flex-end;
+    }
+    #toolbar {
+      pointer-events: all;
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px;
+      background: rgba(14,13,11,0.85);
+      backdrop-filter: blur(8px);
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    #toolbar button {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+      color: #ccc; border-radius: 6px; padding: 4px 12px; cursor: pointer;
+      font-size: 13px; transition: background 0.15s;
+    }
+    #toolbar button:hover { background: rgba(255,255,255,0.16); }
+    #toolbar button.active { background: #01696f; color: #fff; border-color: #01696f; }
+    #speed-label { color: #aaa; font-size: 13px; margin-left: auto; }
+    #needs-panel {
+      pointer-events: none;
+      position: fixed; top: 16px; right: 16px;
+      background: rgba(14,13,11,0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 12px 16px;
+      min-width: 180px;
+    }
+    #needs-panel h3 { color: #eee; font-size: 13px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .need-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+    .need-label { color: #aaa; font-size: 11px; width: 64px; text-align: right; }
+    .need-bar-bg { flex: 1; height: 6px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden; }
+    .need-bar-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease, background 0.4s; }
+    #log {
+      pointer-events: none;
+      position: fixed; bottom: 60px; left: 16px;
+      color: rgba(255,255,255,0.4); font-size: 11px;
+      display: flex; flex-direction: column-reverse; gap: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="ui-overlay">
+    <div id="toolbar">
+      <button id="btn-pause">⏸ Pause</button>
+      <button id="btn-1x" class="active">1×</button>
+      <button id="btn-2x">2×</button>
+      <button id="btn-5x">5×</button>
+      <span id="speed-label">Speed: 1×</span>
+    </div>
+  </div>
+  <div id="needs-panel">
+    <h3 id="sim-name">Sim</h3>
+    <div id="needs-bars"></div>
+  </div>
+  <div id="log"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
