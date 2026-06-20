@@ -1,8 +1,4 @@
-/**
- * Fixed-timestep game loop.
- * UPDATE_RATE: 20 ticks/sec (50ms per tick) — independent of render FPS.
- */
-const UPDATE_RATE = 20; // ticks per second
+const UPDATE_RATE = 20;
 const TICK_MS = 1000 / UPDATE_RATE;
 
 export class GameLoop {
@@ -35,24 +31,20 @@ export class GameLoop {
   }
 
   get paused() { return this._paused; }
-
   setSpeed(s) { this._speed = Math.max(0.1, s); }
 
   _tick(now) {
     if (!this._running) return;
     this._rafId = requestAnimationFrame(this._tick.bind(this));
-
     const wall = now - this._lastTime;
     this._lastTime = now;
-
     if (!this._paused) {
       this._accumulator += wall * this._speed;
       while (this._accumulator >= TICK_MS) {
-        this._onUpdate(TICK_MS / 1000); // dt in seconds
+        this._onUpdate(TICK_MS / 1000);
         this._accumulator -= TICK_MS;
       }
     }
-
     this._onRender();
   }
 }

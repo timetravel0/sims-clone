@@ -1,0 +1,36 @@
+import { FURNITURE_CATALOG } from '../world/BuildMode.js';
+import { bus } from '../core/EventBus.js';
+
+export class BuildPanel {
+  constructor() {
+    this._el = document.getElementById('build-panel');
+    this._btn = document.getElementById('btn-build');
+    if (!this._el) return;
+
+    // Populate catalog
+    const list = this._el.querySelector('#build-catalog');
+    FURNITURE_CATALOG.forEach(item => {
+      const btn = document.createElement('button');
+      btn.className = 'catalog-item';
+      const hex = `#${item.color.toString(16).padStart(6,'0')}`;
+      btn.innerHTML = `<span class="ci-swatch" style="background:${hex}"></span>${item.label}`;
+      btn.addEventListener('click', () => {
+        window._game?.buildMode.selectCatalogItem(item);
+        list.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+      list.appendChild(btn);
+    });
+
+    this._btn?.addEventListener('click', () => {
+      const bm = window._game?.buildMode;
+      if (!bm) return;
+      bm.setActive(!bm.active);
+    });
+
+    bus.on('buildMode:changed', ({ active }) => {
+      this._el.style.display = active ? 'block' : 'none';
+      this._btn?.classList.toggle('active', active);
+    });
+  }
+}

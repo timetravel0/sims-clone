@@ -11,7 +11,8 @@ export class World {
     this.tilemap = new TileMap(16, 16);
     this.groundMeshes = [];
     this.furniture = [];
-
+    this._floorMat = new THREE.MeshLambertMaterial({ color: FLOOR_COLOR });
+    this._wallMat  = new THREE.MeshLambertMaterial({ color: WALL_COLOR });
     this._buildFloor();
     this._buildWalls();
     this._placeFurniture();
@@ -19,15 +20,13 @@ export class World {
 
   _buildFloor() {
     const geo = new THREE.BoxGeometry(1, 0.1, 1);
-    const mat = new THREE.MeshLambertMaterial({ color: FLOOR_COLOR });
     for (let z = 0; z < this.tilemap.height; z++) {
       for (let x = 0; x < this.tilemap.width; x++) {
         if (this.tilemap.get(x, z) !== TILE.WALL) {
-          const mesh = new THREE.Mesh(geo, mat);
+          const mesh = new THREE.Mesh(geo, this._floorMat);
           mesh.position.set(x, -0.05, z);
           mesh.receiveShadow = true;
-          mesh.userData.gridX = x;
-          mesh.userData.gridZ = z;
+          mesh.userData = { gridX: x, gridZ: z, isGround: true };
           this._scene.add(mesh);
           this.groundMeshes.push(mesh);
         }
@@ -37,11 +36,10 @@ export class World {
 
   _buildWalls() {
     const geo = new THREE.BoxGeometry(1, 1.5, 1);
-    const mat = new THREE.MeshLambertMaterial({ color: WALL_COLOR });
     for (let z = 0; z < this.tilemap.height; z++) {
       for (let x = 0; x < this.tilemap.width; x++) {
         if (this.tilemap.get(x, z) === TILE.WALL) {
-          const mesh = new THREE.Mesh(geo, mat);
+          const mesh = new THREE.Mesh(geo, this._wallMat);
           mesh.position.set(x, 0.75, z);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
@@ -60,12 +58,33 @@ export class World {
       { id: 'tv',     gx: 8,  gz: 5,  color: 0x1a1a2e, needTarget: 'fun',     restoreRate: 20 },
       { id: 'shower', gx: 8,  gz: 12, color: 0xa8d8ea, needTarget: 'hygiene', restoreRate: 35 },
     ];
-    for (const item of items) {
-      const f = new Furniture(item);
-      this._scene.add(f.mesh);
-      this.tilemap.set(item.gx, item.gz, TILE.FURNITURE);
-      this.furniture.push(f);
-    }
+    for (const item of items) this._addFurniture(item);
+  }
+
+  _addFurniture(item) {
+    const f = new Furniture(item);
+    this._scene.add(f.mesh);
+    this.tilemap.set(item.gx, item.gz, TILE.FURNITURE);
+    this.furniture.push(f);
+    return f;
+  }
+
+  /** Called by BuildMode to place a new piece of furniture */
+  placeFurniture(item) {
+    if (!this.tilemap.isWalkable(item.gx, item.gz)) return false;
+    this._addFurniture(item);
+    return true;
+  }
+
+  /** Remove furniture at grid position */
+  removeFurniture(gx, gz) {
+    const idx = this.furniture.findIndex(f => f.gx === gx && f.gz === gz);
+    if (idx < 0) return false;
+    const f = this.furniture[idx];
+    this._scene.remove(f.mesh);
+    this.tilemap.set(gx, gz, 0);
+    this.furniture.splice(idx, 1);
+    return true;
   }
 
   getFurnitureFor(needKey) {
