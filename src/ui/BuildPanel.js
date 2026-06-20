@@ -20,7 +20,6 @@ export class BuildPanel {
       this._btn?.classList.toggle('active', active);
     });
 
-    // Re-populate if new objects are registered at runtime
     bus.on('registry:updated', () => this._populate());
   }
 
@@ -31,7 +30,9 @@ export class BuildPanel {
       const btn = document.createElement('button');
       btn.className = 'catalog-item';
       const hex = `#${item.color.toString(16).padStart(6, '0')}`;
-      btn.innerHTML = `<span class="ci-swatch" style="background:${hex}"></span>${item.label}`;
+      const socialBadge = item.social ? '<span class="ci-social">✦</span>' : '';
+      btn.innerHTML =
+        `<span class="ci-swatch" style="background:${hex}"></span>${item.label}${socialBadge}`;
       btn.addEventListener('click', () => {
         window._game?.buildMode.selectCatalogItem(item);
         this._list.querySelectorAll('button').forEach(b => b.classList.remove('active'));

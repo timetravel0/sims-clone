@@ -13,8 +13,7 @@
     /* Toolbar */
     #toolbar {
       position:fixed; bottom:0; left:0; right:0; z-index:50;
-      display:flex; align-items:center; gap:8px;
-      padding:7px 14px;
+      display:flex; align-items:center; gap:8px; padding:7px 14px;
       background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
       border-top:1px solid rgba(255,255,255,0.07);
     }
@@ -35,11 +34,11 @@
       border:1px solid rgba(255,255,255,0.08); border-radius:10px;
       padding:12px 15px; min-width:185px;
     }
-    #needs-panel h3 { color:#eee; font-size:11px; margin-bottom:8px;
+    #needs-panel h3 { color:#eee; font-size:11px; margin-bottom:6px;
       text-transform:uppercase; letter-spacing:.08em; }
-    #sim-mood { font-size:13px; margin-bottom:6px; }
+    #sim-mood   { font-size:13px; margin-bottom:4px; }
     #sim-traits { color:#666; font-size:10px; margin-bottom:8px; font-style:italic; }
-    .need-row { display:flex; align-items:center; gap:7px; margin-bottom:5px; }
+    .need-row  { display:flex; align-items:center; gap:7px; margin-bottom:5px; }
     .need-label { color:#999; font-size:11px; width:56px; text-align:right; }
     .need-bar-bg { flex:1; height:5px; background:rgba(255,255,255,0.08); border-radius:999px; overflow:hidden; }
     .need-bar-fill { height:100%; border-radius:999px; transition:width .4s,background .4s; }
@@ -47,14 +46,26 @@
     /* Sim portraits */
     #sim-selector { position:fixed; top:16px; left:16px; z-index:50; display:flex; gap:8px; }
     .sim-portrait {
-      width:36px; height:36px; border-radius:50%; border:2px solid;
+      width:38px; height:38px; border-radius:50%; border:2px solid;
       cursor:pointer; font-size:11px; font-weight:700; color:#fff;
       display:flex; align-items:center; justify-content:center;
-      flex-direction:column; gap:1px;
-      transition:transform .15s;
+      flex-direction:column; gap:1px; transition:transform .15s;
     }
-    .sim-portrait:hover  { transform:scale(1.12); }
+    .sim-portrait:hover { transform:scale(1.12); }
     .sim-mood-dot { font-size:10px; }
+
+    /* Context menu */
+    #ctx-menu hr {
+      border:none; border-top:1px solid rgba(255,255,255,0.08);
+      margin:4px 8px;
+    }
+
+    /* Tooltip hint */
+    #hint {
+      position:fixed; bottom:44px; left:50%; transform:translateX(-50%);
+      z-index:45; font-size:11px; color:rgba(255,255,255,0.3);
+      pointer-events:none; white-space:nowrap;
+    }
 
     /* Story log */
     #story-panel {
@@ -62,22 +73,21 @@
       z-index:50; width:340px; max-width:92vw;
       background:rgba(14,13,11,0.88); backdrop-filter:blur(8px);
       border:1px solid rgba(255,255,255,0.08); border-radius:10px;
-      padding:10px 13px;
-      display:none;
+      padding:10px 13px; display:none;
     }
     #story-panel h3 { color:#eee; font-size:11px; margin-bottom:8px;
       text-transform:uppercase; letter-spacing:.08em; }
     #story-log { max-height:260px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; }
-    .log-entry  { display:flex; align-items:flex-start; gap:6px; font-size:11px; }
-    .log-dot    { flex-shrink:0; width:7px; height:7px; border-radius:50%; margin-top:3px; }
-    .log-time   { color:#555; min-width:44px; flex-shrink:0; }
-    .log-text   { color:#bbb; line-height:1.4; }
-    .cat-drama  .log-text { color:#ef9a9a; }
+    .log-entry { display:flex; align-items:flex-start; gap:6px; font-size:11px; }
+    .log-dot   { flex-shrink:0; width:7px; height:7px; border-radius:50%; margin-top:3px; }
+    .log-time  { color:#555; min-width:44px; flex-shrink:0; }
+    .log-text  { color:#bbb; line-height:1.4; }
+    .cat-drama   .log-text { color:#ef9a9a; }
     .cat-positive .log-text { color:#a5d6a7; }
-    .cat-mood   .log-text { color:#ffd54f; }
-    .cat-gossip .log-text { color:#ce93d8; }
+    .cat-mood    .log-text { color:#ffd54f; }
+    .cat-gossip  .log-text { color:#ce93d8; }
 
-    /* Relationship panel */
+    /* Relations panel */
     #rel-panel {
       display:none; position:fixed; bottom:48px; right:16px; z-index:50;
       background:rgba(14,13,11,0.88); backdrop-filter:blur(8px);
@@ -110,13 +120,14 @@
     .catalog-item:hover  { background:rgba(255,255,255,0.14); }
     .catalog-item.active { border-color:#01696f; color:#fff; }
     .ci-swatch { display:inline-block; width:9px; height:9px; border-radius:2px; flex-shrink:0; }
+    .ci-social { font-size:9px; color:#ffd54f; margin-left:2px; }
 
     /* Speech bubbles */
     #bubbles { position:fixed; inset:0; pointer-events:none; z-index:30; }
     .bubble {
-      position:absolute; background:rgba(20,19,17,0.9);
-      border:1px solid rgba(255,255,255,0.12); border-radius:8px;
-      padding:3px 7px; font-size:11px; color:#eee;
+      position:absolute; background:rgba(20,19,17,0.92);
+      border:1px solid rgba(255,255,255,0.13); border-radius:8px;
+      padding:3px 8px; font-size:11px; color:#eee;
       transform:translate(-50%,-100%);
       transition:opacity .3s; opacity:0;
       white-space:nowrap; pointer-events:none;
@@ -133,16 +144,10 @@
       font-size:12px; text-align:center; margin-bottom:6px;
       animation:toastIn .3s ease, toastOut .4s ease 2.8s forwards;
     }
-    .toast.positive {
-      background:rgba(102,187,106,0.15); border-color:rgba(102,187,106,0.35);
-      color:#a5d6a7;
-    }
-    .toast.mood {
-      background:rgba(255,213,79,0.12); border-color:rgba(255,213,79,0.3);
-      color:#ffd54f;
-    }
+    .toast.positive { background:rgba(102,187,106,0.15); border-color:rgba(102,187,106,0.35); color:#a5d6a7; }
+    .toast.mood     { background:rgba(255,213,79,0.12);  border-color:rgba(255,213,79,0.3);   color:#ffd54f; }
     @keyframes toastIn  { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
-    @keyframes toastOut { to{opacity:0;transform:translateY(-8px)} }
+    @keyframes toastOut { to  {opacity:0;transform:translateY(-8px)} }
   </style>
 </head>
 <body>
@@ -164,10 +169,13 @@
   </div>
 
   <div id="rel-panel"></div>
+
   <div id="build-panel">
-    <p>Select an object then click a tile to place it</p>
+    <p>Select an object then click a tile to place it. ✦ = social</p>
     <div id="build-catalog"></div>
   </div>
+
+  <div id="hint">Left-click: move / select &nbsp;|&nbsp; Right-click: actions</div>
 
   <div id="toolbar">
     <button id="btn-pause">⏸ Pause</button>

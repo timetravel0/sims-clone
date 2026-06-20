@@ -11,7 +11,14 @@ import { SaveLoad }       from '../systems/SaveLoad.js';
 import { socialManager }  from '../systems/SocialManager.js';
 import { NarrativeLog }   from '../systems/NarrativeLog.js';
 import { DramaEngine }    from '../systems/DramaEngine.js';
+import { ContextMenu }    from '../ui/ContextMenu.js';
+import { WalkToAction, UseObjectAction, IdleAction } from '../ai/Action.js';
+import { SocialAction }   from '../ai/SocialAction.js';
 import { Logger }         from '../utils/Logger.js';
+
+// Expose action classes globally for ContextMenu lazy access
+window._actionClasses       = { WalkToAction, UseObjectAction, IdleAction };
+window._socialActionClasses = { SocialAction };
 
 export class Game {
   constructor(container) {
@@ -34,27 +41,26 @@ export class Game {
     this._scene.background = new THREE.Color(0x0e0d0b);
     this._scene.fog         = new THREE.FogExp2(0x0e0d0b, 0.018);
 
-    this._camera   = new IsometricCamera(window.innerWidth / window.innerHeight);
-    this._world    = new World(this._scene);
-    this._dayNight = new DayNightCycle(this._scene);
+    this._camera    = new IsometricCamera(window.innerWidth / window.innerHeight);
+    this._world     = new World(this._scene);
+    this._dayNight  = new DayNightCycle(this._scene);
     this._buildMode = new BuildMode(this._world, this._scene, this._renderer, this._camera);
 
-    // Sims with explicit personality seeds for drama diversity
     this._addSim('Alex', 2, 2, 0x4fc3f7, { outgoing: 0.8, nice:  0.6, playful: 0.5,  neurotic: -0.2, ambitious:  0.3 });
     this._addSim('Sam',  5, 2, 0xf48fb1, { outgoing: 0.2, nice: -0.6, playful: -0.3, neurotic:  0.7, ambitious:  0.5 });
     this._addSim('Jo',   2, 5, 0xa5d6a7, { outgoing: 0.5, nice:  0.4, playful: 0.8,  neurotic: -0.4, ambitious: -0.3 });
     this._selectSim(0);
 
-    // Narrative systems
     this._narrativeLog = new NarrativeLog();
     this._dramaEngine  = new DramaEngine(this);
+    this._contextMenu  = new ContextMenu(this, this._renderer);
 
     this._saveLoad = new SaveLoad(this);
     this._ui       = new UIManager(this._sims, this._selectedSim, bus);
 
     this._raycaster = new THREE.Raycaster();
     this._mouse     = new THREE.Vector2();
-    this._renderer.domElement.addEventListener('click', this._onCanvasClick.bind(this));
+    this._renderer.domElement.addEventListener('click',  this._onCanvasClick.bind(this));
     window.addEventListener('resize', this._onResize.bind(this));
 
     this._loop = new GameLoop({
@@ -62,7 +68,7 @@ export class Game {
       onRender: ()  => this._render(),
     });
     window._game = this;
-    Logger.info('Game ready — personality + drama engine active');
+    Logger.info('Game ready — context menu, social furniture, player override');
   }
 
   _addSim(name, gx, gz, color, traits = {}) {
@@ -83,11 +89,11 @@ export class Game {
   togglePause()       { return this._loop.togglePause(); }
   setSpeed(s)         { this._loop.setSpeed(s); }
 
-  get buildMode()    { return this._buildMode; }
-  get sims()         { return this._sims; }
-  get world()        { return this._world; }
-  get selectedSim()  { return this._selectedSim; }
-  get dayNight()     { return this._dayNight; }
+  get buildMode()   { return this._buildMode; }
+  get sims()        { return this._sims; }
+  get world()       { return this._world; }
+  get selectedSim() { return this._selectedSim; }
+  get dayNight()    { return this._dayNight; }
 
   get _camera()  { return this.__camera; }
   set _camera(v) { this.__camera = v; }
@@ -107,10 +113,11 @@ export class Game {
   _onCanvasClick(e) {
     if (this._buildMode.active) { this._buildMode.handleClick(e); return; }
     const rect = this._renderer.domElement.getBoundingClientRect();
-    this._mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    this._mouse.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
     this._mouse.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
     this._raycaster.setFromCamera(this._mouse, this.__camera.camera);
 
+    // Left-click: select Sim or walk
     const simHits = this._raycaster.intersectObjects(this._sims.map(s => s.mesh), true);
     if (simHits.length > 0) {
       const hit = simHits[0].object;
@@ -118,7 +125,6 @@ export class Game {
         s.mesh === hit || s.mesh === hit.parent || s.mesh === hit.parent?.parent);
       if (idx >= 0) { this._selectSim(idx); return; }
     }
-
     const hits = this._raycaster.intersectObjects(this._world.groundMeshes);
     if (hits.length > 0) {
       const p = hits[0].point;
