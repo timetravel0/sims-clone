@@ -1,31 +1,46 @@
 /**
- * Griglia 2D con conversione world/grid per tilemap isometrica.
+ * TileMap — 2D grid of tiles.
+ * Tile types: 0 = empty/floor, 1 = wall/blocked, 2 = furniture
  */
+export const TILE = { FLOOR: 0, WALL: 1, FURNITURE: 2 };
+
 export class TileMap {
-  constructor(width, height) {
+  constructor(width = 16, height = 16) {
     this.width = width;
     this.height = height;
-    this.tileSize = 1.1;
-    this.tiles = Array.from({ length: height }, () =>
-      Array.from({ length: width }, () => ({ walkable: true, type: 'grass', furniture: null }))
-    );
-    for (let i = 0; i < width; i++) {
-      this.tiles[0][i].walkable = false; this.tiles[0][i].type = 'wall';
-      this.tiles[height - 1][i].walkable = false; this.tiles[height - 1][i].type = 'wall';
+    this._grid = Array.from({ length: height }, () => new Array(width).fill(TILE.FLOOR));
+    // Border walls
+    for (let x = 0; x < width; x++) {
+      this._grid[0][x] = TILE.WALL;
+      this._grid[height - 1][x] = TILE.WALL;
     }
-    for (let j = 0; j < height; j++) {
-      this.tiles[j][0].walkable = false; this.tiles[j][0].type = 'wall';
-      this.tiles[j][width - 1].walkable = false; this.tiles[j][width - 1].type = 'wall';
+    for (let z = 0; z < height; z++) {
+      this._grid[z][0] = TILE.WALL;
+      this._grid[z][width - 1] = TILE.WALL;
     }
   }
-  gridToWorld(i, j) {
-    return { x: i * this.tileSize, z: j * this.tileSize };
+
+  get(x, z) {
+    if (x < 0 || z < 0 || x >= this.width || z >= this.height) return TILE.WALL;
+    return this._grid[z][x];
   }
-  worldToGrid(x, z) {
-    return { i: Math.round(x / this.tileSize), j: Math.round(z / this.tileSize) };
+
+  set(x, z, type) {
+    if (x < 0 || z < 0 || x >= this.width || z >= this.height) return;
+    this._grid[z][x] = type;
   }
-  isWalkable(i, j) {
-    if (i < 0 || j < 0 || i >= this.width || j >= this.height) return false;
-    return this.tiles[j][i].walkable && !this.tiles[j][i].furniture;
+
+  isWalkable(x, z) {
+    return this.get(x, z) === TILE.FLOOR;
+  }
+
+  /** World 3D position → grid coords */
+  worldToGrid(wx, wz) {
+    return { x: Math.round(wx), z: Math.round(wz) };
+  }
+
+  /** Grid coords → world 3D position (y=0) */
+  gridToWorld(gx, gz) {
+    return { x: gx, y: 0, z: gz };
   }
 }

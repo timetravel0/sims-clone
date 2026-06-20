@@ -1,31 +1,58 @@
 /**
- * Game loop con fixed timestep (60 UPS) e interpolazione del renderer.
+ * Fixed-timestep game loop.
+ * UPDATE_RATE: 20 ticks/sec (50ms per tick) — independent of render FPS.
  */
+const UPDATE_RATE = 20; // ticks per second
+const TICK_MS = 1000 / UPDATE_RATE;
+
 export class GameLoop {
-  constructor(update, render) {
-    this.update = update;
-    this.render = render;
-    this.lastTime = 0;
-    this.accumulator = 0;
-    this.step = 1 / 60;
-    this.running = false;
-    this.timeScale = 1;
+  constructor({ onUpdate, onRender }) {
+    this._onUpdate = onUpdate;
+    this._onRender = onRender;
+    this._running = false;
+    this._paused = false;
+    this._speed = 1;
+    this._accumulator = 0;
+    this._lastTime = 0;
+    this._rafId = null;
   }
+
   start() {
-    this.running = true;
-    this.lastTime = performance.now();
-    requestAnimationFrame(t => this.loop(t));
+    this._running = true;
+    this._lastTime = performance.now();
+    this._rafId = requestAnimationFrame(this._tick.bind(this));
   }
-  loop(time) {
-    if (!this.running) return;
-    const dt = Math.min((time - this.lastTime) / 1000, 0.25);
-    this.lastTime = time;
-    this.accumulator += dt * this.timeScale;
-    while (this.accumulator >= this.step) {
-      this.update(this.step);
-      this.accumulator -= this.step;
+
+  stop() {
+    this._running = false;
+    if (this._rafId) cancelAnimationFrame(this._rafId);
+  }
+
+  togglePause() {
+    this._paused = !this._paused;
+    if (!this._paused) this._lastTime = performance.now();
+    return this._paused;
+  }
+
+  get paused() { return this._paused; }
+
+  setSpeed(s) { this._speed = Math.max(0.1, s); }
+
+  _tick(now) {
+    if (!this._running) return;
+    this._rafId = requestAnimationFrame(this._tick.bind(this));
+
+    const wall = now - this._lastTime;
+    this._lastTime = now;
+
+    if (!this._paused) {
+      this._accumulator += wall * this._speed;
+      while (this._accumulator >= TICK_MS) {
+        this._onUpdate(TICK_MS / 1000); // dt in seconds
+        this._accumulator -= TICK_MS;
+      }
     }
-    this.render();
-    requestAnimationFrame(t => this.loop(t));
+
+    this._onRender();
   }
 }

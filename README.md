@@ -1,72 +1,54 @@
-# Sims Clone — Prototype
+# Sims Clone
 
-Prototipo completo browser-based ispirato a The Sims, costruito con JavaScript ES modules + Three.js.
+A browser-based isometric life simulation game built with **Three.js** and vanilla ES6 modules. Inspired by The Sims 1.
 
-## Cosa include
-
-- Rendering 3D isometrico con camera ortografica e pan
-- Popolazione iniziale di 3 Sim selezionabili
-- Tilemap 20x20 con mobili interagibili
-- Sim AI autonoma need-driven
-- Pathfinding A*
-- Oggetti con effetti reali sui bisogni
-- HUD completo: orologio, roster Sim, media needs, pannello bisogni, event log
-- Save/Load JSON
-- Time progression giornaliera
-- Spawning dinamico di nuovi Sim
-
-## Avvio
+## Quick Start
 
 ```bash
 npx serve .
-# oppure
+# or
 python3 -m http.server 8080
 ```
-Aprire `index.html` nel browser.
+
+Open `http://localhost:3000` (or 8080).
+
+No build step needed — pure ES modules via importmap.
+
+## Architecture
+
+```
+src/
+├── core/         Game loop, event bus, orchestrator
+├── world/        TileMap 16×16, 3D world builder, isometric camera
+├── entities/     Sim (mesh + brain + needs), Furniture
+├── ai/           A* pathfinder, Action system, Need-driven planner
+├── ui/           Needs panel, UI manager
+└── utils/        Logger
+```
 
 ## Gameplay
 
-- Clic su un Sim per selezionarlo
-- Clic su una tile per comandare il movimento
-- I Sim autonomi soddisfano i bisogni (frigo, letto, toilette, doccia, divano, scrivania)
-- Pausa, velocità (1x/2x/5x), save JSON, load JSON
+- **Click on a tile** to move the Sim there.
+- **8 needs** (hunger, energy, bladder, hygiene, social, fun, comfort, room) decay over time.
+- When a need drops below **35%**, the AI planner autonomously sends the Sim to the correct furniture.
+- **Speed controls** (1× / 2× / 5×) and **pause** in the bottom toolbar.
 
-## Struttura
+## Furniture
 
-```
-sims-clone/
-├── index.html
-├── src/
-│   ├── main.js
-│   ├── core/
-│   │   ├── Game.js          # Orchestratore
-│   │   ├── GameLoop.js      # Fixed timestep 60 UPS
-│   │   └── EventBus.js      # Pub/Sub
-│   ├── world/
-│   │   ├── World.js         # Scena + tempo + furniture registry
-│   │   ├── TileMap.js       # Griglia 2D
-│   │   └── IsometricCamera.js
-│   ├── entities/
-│   │   ├── Sim.js           # Entità personaggio
-│   │   ├── SimNeeds.js      # 8 bisogni con decay
-│   │   ├── SimBrain.js      # Controller AI
-│   │   └── Furniture.js     # Oggetti interagibili
-│   ├── ai/
-│   │   ├── Pathfinder.js    # A* su griglia
-│   │   ├── Action.js        # WalkTo, UseObject, Idle
-│   │   ├── ActionQueue.js   # Lifecycle azioni
-│   │   └── NeedDrivenPlanner.js
-│   ├── ui/
-│   │   ├── UIManager.js
-│   │   └── NeedsPanel.js
-│   └── utils/
-│       └── Logger.js
-```
+| Object  | Satisfies |
+|---------|----------|
+| Fridge  | Hunger   |
+| Bed     | Energy   |
+| Toilet  | Bladder  |
+| Shower  | Hygiene  |
+| Couch   | Comfort  |
+| TV      | Fun      |
 
-## Roadmap
+## Next Steps
 
-- [ ] Build mode: piazzamento mobili in-game
-- [ ] Social layer: interazioni Sim-to-Sim
-- [ ] House system: pareti e porte
-- [ ] TypeScript + ECS refactor
-- [ ] Test automatici Playwright
+- [ ] Multi-Sim support
+- [ ] Door / room system
+- [ ] Build mode (place furniture)
+- [ ] Save / load (IndexedDB)
+- [ ] Sim moods & speech bubbles
+- [ ] Day/night cycle

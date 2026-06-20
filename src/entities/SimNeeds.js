@@ -1,29 +1,50 @@
+import { bus } from '../core/EventBus.js';
+
+export const NEED_KEYS = ['hunger', 'energy', 'bladder', 'hygiene', 'social', 'fun', 'comfort', 'room'];
+
+const DECAY_RATE = { // points per second at 1x speed
+  hunger:  1.5,
+  energy:  1.2,
+  bladder: 2.0,
+  hygiene: 0.8,
+  social:  0.6,
+  fun:     1.0,
+  comfort: 0.9,
+  room:    0.3,
+};
+
 export class SimNeeds {
-  constructor() {
-    this.values = {
-      hunger: 80, energy: 80, bladder: 80, hygiene: 80,
-      social: 80, fun: 80, comfort: 80, room: 80,
-    };
-    this.decay = {
-      hunger: -0.9, energy: -0.35, bladder: -0.7, hygiene: -0.45,
-      social: -0.3, fun: -0.55, comfort: -0.2, room: -0.05,
-    };
-    this.criticalThreshold = 35;
+  constructor(simId) {
+    this._simId = simId;
+    this._values = {};
+    for (const k of NEED_KEYS) this._values[k] = 80; // start reasonably happy
   }
-  tick(dt) {
-    for (const key of Object.keys(this.values))
-      this.values[key] = Math.max(0, Math.min(100, this.values[key] + this.decay[key] * dt));
+
+  get(key) { return this._values[key]; }
+
+  set(key, val) {
+    this._values[key] = Math.min(100, Math.max(0, val));
   }
-  getCritical() {
-    return Object.entries(this.values).sort((a, b) => a[1] - b[1])[0][0];
+
+  restore(key, amount) {
+    this.set(key, this._values[key] + amount);
   }
-  getAll() { return { ...this.values }; }
-  modify(need, amount) {
-    if (this.values[need] !== undefined)
-      this.values[need] = Math.max(0, Math.min(100, this.values[need] + amount));
+
+  /** Returns the need key with the lowest value (most critical) */
+  mostCritical(threshold = 40) {
+    let worst = null, worstVal = threshold;
+    for (const k of NEED_KEYS) {
+      if (this._values[k] < worstVal) { worst = k; worstVal = this._values[k]; }
+    }
+    return worst;
   }
-  average() {
-    const v = Object.values(this.values);
-    return v.reduce((a, b) => a + b, 0) / v.length;
+
+  update(dt) {
+    for (const k of NEED_KEYS) {
+      this._values[k] = Math.max(0, this._values[k] - DECAY_RATE[k] * dt);
+    }
+    bus.emit('simNeeds:update', { simId: this._simId, values: { ...this._values } });
   }
+
+  snapshot() { return { ...this._values }; }
 }
