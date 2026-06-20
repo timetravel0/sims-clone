@@ -16,7 +16,6 @@ import { WalkToAction, UseObjectAction, IdleAction } from '../ai/Action.js';
 import { SocialAction }   from '../ai/SocialAction.js';
 import { Logger }         from '../utils/Logger.js';
 
-// Expose action classes globally for ContextMenu lazy access
 window._actionClasses       = { WalkToAction, UseObjectAction, IdleAction };
 window._socialActionClasses = { SocialAction };
 
@@ -28,6 +27,7 @@ export class Game {
   }
 
   _init() {
+    // Renderer
     this._renderer = new THREE.WebGLRenderer({ antialias: true });
     this._renderer.shadowMap.enabled = true;
     this._renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
@@ -37,40 +37,66 @@ export class Game {
     this._renderer.toneMappingExposure = 1.1;
     this._container.appendChild(this._renderer.domElement);
 
+    // Scene
     this._scene = new THREE.Scene();
     this._scene.background = new THREE.Color(0x0e0d0b);
     this._scene.fog         = new THREE.FogExp2(0x0e0d0b, 0.018);
 
-    this._camera    = new IsometricCamera(window.innerWidth / window.innerHeight);
+    // Camera — stored as _isoCamera (no getter/setter clash)
+    this._isoCamera = new IsometricCamera(window.innerWidth / window.innerHeight);
+
+    // World & systems
     this._world     = new World(this._scene);
     this._dayNight  = new DayNightCycle(this._scene);
-    this._buildMode = new BuildMode(this._world, this._scene, this._renderer, this._camera);
+    this._buildMode = new BuildMode(this._world, this._scene, this._renderer, this._isoCamera);
 
+    // Sims
     this._addSim('Alex', 2, 2, 0x4fc3f7, { outgoing: 0.8, nice:  0.6, playful: 0.5,  neurotic: -0.2, ambitious:  0.3 });
     this._addSim('Sam',  5, 2, 0xf48fb1, { outgoing: 0.2, nice: -0.6, playful: -0.3, neurotic:  0.7, ambitious:  0.5 });
     this._addSim('Jo',   2, 5, 0xa5d6a7, { outgoing: 0.5, nice:  0.4, playful: 0.8,  neurotic: -0.4, ambitious: -0.3 });
     this._selectSim(0);
 
+    // Narrative & drama
     this._narrativeLog = new NarrativeLog();
     this._dramaEngine  = new DramaEngine(this);
     this._contextMenu  = new ContextMenu(this, this._renderer);
 
+    // UI & persistence
     this._saveLoad = new SaveLoad(this);
     this._ui       = new UIManager(this._sims, this._selectedSim, bus);
 
+    // Input
     this._raycaster = new THREE.Raycaster();
     this._mouse     = new THREE.Vector2();
-    this._renderer.domElement.addEventListener('click',  this._onCanvasClick.bind(this));
+    this._renderer.domElement.addEventListener('click', this._onCanvasClick.bind(this));
     window.addEventListener('resize', this._onResize.bind(this));
 
+    // Game loop
     this._loop = new GameLoop({
       onUpdate: dt => this._update(dt),
       onRender: ()  => this._render(),
     });
+
     window._game = this;
-    Logger.info('Game ready — context menu, social furniture, player override');
+    Logger.info('Game ready');
   }
 
+  // ── Public accessors ──────────────────────────────────────────────────────
+  get camera()    { return this._isoCamera; }   // IsometricCamera wrapper
+  get buildMode() { return this._buildMode; }
+  get sims()      { return this._sims; }
+  get world()     { return this._world; }
+  get selectedSim() { return this._selectedSim; }
+  get dayNight()  { return this._dayNight; }
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+  start()       { this._loop.start(); }
+  togglePause() { return this._loop.togglePause(); }
+  setSpeed(s)   { this._loop.setSpeed(s); }
+
+  selectSimByIndex(i) { this._selectSim(i); }
+
+  // ── Private ───────────────────────────────────────────────────────────────
   _addSim(name, gx, gz, color, traits = {}) {
     const sim = new Sim(this._scene, this._world, bus, name, color, traits);
     sim.setPosition(gx, gz);
@@ -84,40 +110,28 @@ export class Game {
     bus.emit('sim:selected', { sim: this._selectedSim });
   }
 
-  selectSimByIndex(i) { this._selectSim(i); }
-  start()             { this._loop.start(); }
-  togglePause()       { return this._loop.togglePause(); }
-  setSpeed(s)         { this._loop.setSpeed(s); }
-
-  get buildMode()   { return this._buildMode; }
-  get sims()        { return this._sims; }
-  get world()       { return this._world; }
-  get selectedSim() { return this._selectedSim; }
-  get dayNight()    { return this._dayNight; }
-
-  get _camera()  { return this.__camera; }
-  set _camera(v) { this.__camera = v; }
-
   _update(dt) {
     this._sims.forEach(s => s.update(dt));
     this._world.update(dt);
-    this.__camera.follow(
+    this._isoCamera.follow(
       new THREE.Vector3(this._selectedSim.worldX, 0, this._selectedSim.worldZ)
     );
     this._dayNight.update(dt);
     this._dramaEngine.update(dt);
   }
 
-  _render() { this._renderer.render(this._scene, this.__camera.camera); }
+  _render() {
+    this._renderer.render(this._scene, this._isoCamera.camera);
+  }
 
   _onCanvasClick(e) {
     if (this._buildMode.active) { this._buildMode.handleClick(e); return; }
     const rect = this._renderer.domElement.getBoundingClientRect();
     this._mouse.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
     this._mouse.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
-    this._raycaster.setFromCamera(this._mouse, this.__camera.camera);
+    this._raycaster.setFromCamera(this._mouse, this._isoCamera.camera);
 
-    // Left-click: select Sim or walk
+    // Left-click on a Sim → select it
     const simHits = this._raycaster.intersectObjects(this._sims.map(s => s.mesh), true);
     if (simHits.length > 0) {
       const hit = simHits[0].object;
@@ -125,6 +139,8 @@ export class Game {
         s.mesh === hit || s.mesh === hit.parent || s.mesh === hit.parent?.parent);
       if (idx >= 0) { this._selectSim(idx); return; }
     }
+
+    // Left-click on ground → walk
     const hits = this._raycaster.intersectObjects(this._world.groundMeshes);
     if (hits.length > 0) {
       const p = hits[0].point;
@@ -135,7 +151,7 @@ export class Game {
   _onResize() {
     const w = window.innerWidth, h = window.innerHeight;
     this._renderer.setSize(w, h);
-    this.__camera.setAspect(w / h);
+    this._isoCamera.setAspect(w / h);
   }
 
   serialise() {
