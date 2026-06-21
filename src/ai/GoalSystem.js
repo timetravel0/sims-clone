@@ -5,6 +5,7 @@ import { bus } from '../core/EventBus.js';
  *
  * Goals are generated automatically from:
  *  - Personality traits (ambitious → career goals, outgoing → friendship goals)
+ *  - Baseline wellbeing ambition (self happiness + family welfare)
  *  - Recent memory patterns (bad memories → avoidance goals)
  *  - Life events (fired → financial recovery goal)
  *
@@ -24,6 +25,10 @@ import { bus } from '../core/EventBus.js';
 const GOAL_BONUS  = 8;    // score points per unit of goal weight
 const MAX_GOALS   = 3;
 const REGEN_COOL  = 120;  // sim-seconds before generating a new goal
+
+const SELF_CARE_VERBS = new Set(['sleep', 'eat', 'use_toilet', 'shower', 'relax', 'watch_tv', 'read', 'study', 'play_chess', 'play_piano', 'soak', 'dine']);
+const FAMILY_CARE_VERBS = new Set(['comfort', 'offer_help', 'hug', 'chat', 'compliment', 'apologize', 'forgive']);
+const HARMFUL_FAMILY_VERBS = new Set(['argue', 'insult', 'confront', 'avoid']);
 
 export class GoalSystem {
   constructor(sim) {
@@ -117,6 +122,32 @@ export class GoalSystem {
     const p   = this._sim.personality;
     const out = [];
     const day = currentDay ?? 0;
+    const wellbeing = this._sim.brain?.wellbeing?.evaluate?.();
+
+    // Universal ambition: every Sim wants to be satisfied and happy.
+    out.push({
+      id:       this._uid(),
+      type:     'be_happy',
+      label:    'Feel satisfied and happy',
+      deadline: day + 2,
+      progress: 0,
+      weight:   Math.min(1, 0.45 + (wellbeing?.ownDrive ?? 0.35) * 0.55 + Math.max(0, p.neurotic ?? 0) * 0.15),
+      status:   'active',
+    });
+
+    // If not alone, family-minded Sims generate household wellbeing goals.
+    const familyMembers = this._householdOthers();
+    if (familyMembers.length > 0) {
+      out.push({
+        id:       this._uid(),
+        type:     'support_family',
+        label:    'Help the household feel better',
+        deadline: day + 3,
+        progress: 0,
+        weight:   Math.min(1, 0.35 + (wellbeing?.familyDrive ?? 0.25) * 0.65 + Math.max(0, p.nice ?? 0) * 0.2),
+        status:   'active',
+      });
+    }
 
     // Career advancement (ambitious Sims generate more often)
     if (p.ambitious > 0) {
@@ -203,6 +234,16 @@ export class GoalSystem {
 
   _matchScore(goal, affordance) {
     switch (goal.type) {
+      case 'be_happy':
+        if (affordance.targetType === 'furniture') return SELF_CARE_VERBS.has(affordance.verb) ? 0.9 : 0.25;
+        if (affordance.targetType === 'sim') return FAMILY_CARE_VERBS.has(affordance.verb) ? 0.35 : 0;
+        return 0;
+      case 'support_family':
+        if (affordance.targetType !== 'sim') return 0.15;
+        if (!this._isHouseholdMember(affordance.target?.id)) return 0;
+        if (FAMILY_CARE_VERBS.has(affordance.verb)) return 1.0;
+        if (HARMFUL_FAMILY_VERBS.has(affordance.verb)) return -1.3;
+        return 0.2;
       case 'career_advance':
         // Boost skill-building objects and work-related actions
         return affordance.skillGain ? 0.8 : 0;
@@ -213,7 +254,7 @@ export class GoalSystem {
       case 'skill_up':
         return affordance.skillGain ? 0.6 : 0;
       case 'rest':
-        return (affordance.verb === 'sleep' || affordance.verb === 'sit') ? 0.7 : 0;
+        return (affordance.verb === 'sleep' || affordance.verb === 'sit' || affordance.verb === 'relax') ? 0.7 : 0;
       case 'avoid_sim':
         // Negative score: penalises interactions with the avoided Sim
         if (affordance.targetType === 'sim' && affordance.target?.id === goal.targetId) return -1.2;
@@ -231,9 +272,10 @@ export class GoalSystem {
       this.complete('career_advance');
     });
 
-    bus.on('social:interaction', ({ idA, idB, score }) => {
+    bus.on('social:interaction', ({ idA, idB, score, accepted, type }) => {
       if (idA !== this._sim.id) return;
       if (score > 50) this.complete('make_friend', idB);
+      if (accepted && FAMILY_CARE_VERBS.has(type) && this._isHouseholdMember(idB)) this.complete('support_family');
     });
 
     bus.on('skill:levelUp', ({ simId }) => {
@@ -243,8 +285,22 @@ export class GoalSystem {
 
     bus.on('sim:moodChanged', ({ simId, to }) => {
       if (simId !== this._sim.id) return;
-      if (to === 'happy' || to === 'ecstatic') this.complete('rest');
+      if (to === 'happy' || to === 'ecstatic') {
+        this.complete('rest');
+        this.complete('be_happy');
+      }
     });
+  }
+
+  _householdOthers() {
+    const game = window._game;
+    return (game?.sims ?? []).filter(s => s.id !== this._sim.id && !s._isVisitor && (game?.population?.isHouseholdMember?.(s.id) ?? true));
+  }
+
+  _isHouseholdMember(id) {
+    if (!id) return false;
+    const game = window._game;
+    return !!game?.population?.isHouseholdMember?.(id);
   }
 
   _uid()          { return `g_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`; }
