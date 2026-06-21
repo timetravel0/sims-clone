@@ -1,4 +1,5 @@
 import { NeedDrivenPlanner } from '../ai/NeedDrivenPlanner.js';
+import { UtilityAIPlanner }   from '../ai/UtilityAIPlanner.js';
 import { ActionQueue }       from '../ai/ActionQueue.js';
 import { IdleAction }        from '../ai/Action.js';
 import { SocialAction }      from '../ai/SocialAction.js';
@@ -7,6 +8,7 @@ export class SimBrain {
   constructor(sim) {
     this._sim            = sim;
     this._planner        = new NeedDrivenPlanner(sim);
+    this._utilityPlanner = new UtilityAIPlanner(sim);
     this._queue          = new ActionQueue();
     this._socialCooldown = 0;
     this._lastMoodTier   = null;
@@ -58,7 +60,15 @@ export class SimBrain {
 
     // ── AI planning ──────────────────────────────────────────────────────────
 
-    // 1. Physical / primary needs (hunger, energy, bladder, hygiene, comfort…)
+    // 1. Utility AI over nearby Smart Objects / Affordances
+    const utilityActions = this._utilityPlanner.plan();
+    if (utilityActions.length > 0) {
+      this._sim.showBubble(this._utilityPlanner.lastDecision?.label || 'Act');
+      this._queue.push(...utilityActions);
+      return;
+    }
+
+    // 2. Legacy physical / primary needs fallback
     const needActions = this._planner.plan();
     if (needActions.length > 0) {
       this._sim.showBubble(this._planner.lastNeedLabel);
@@ -66,7 +76,7 @@ export class SimBrain {
       return;
     }
 
-    // 2. Social need (only when physical needs are satisfied)
+    // 3. Legacy social need fallback
     const socialVal   = this._sim.needs.get('social');
     const threshold   = 40 + p.outgoing * 20;
     if (socialVal < threshold && this._socialCooldown <= 0) {
@@ -78,7 +88,7 @@ export class SimBrain {
       }
     }
 
-    // 3. Idle — short for playful sims, longer for introverts
+    // 4. Idle — short for playful sims, longer for introverts
     const idleDur = p.playful > 0.3 ? 1.5 : 3.5;
     this._queue.push(new IdleAction(this._sim, idleDur));
   }

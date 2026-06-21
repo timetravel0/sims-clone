@@ -69,7 +69,7 @@ export class Game {
 
     // ── Camera ────────────────────────────────────────────────────────────
     this._camera = new IsometricCamera(window.innerWidth / window.innerHeight);
-    this.camera  = this._camera;
+    this.camera = this._camera;
     this._camera.focusOn(8, 8);
     this.dayNight = new DayNightCycle(this._scene);
 
@@ -117,6 +117,25 @@ export class Game {
     this._lifecyclePanel    = new LifeCyclePanel(this);
     this._lifecycleNotifier = new LifecycleNotifier('lifecycle-toast');
 
+    // Systems — Sprint 1
+    this._narrative = new NarrativePlanner(this.sims);
+    this.experimentLogger = new ExperimentLogger(this);
+    this.relationshipGraph = new RelationshipGraph(this.sims);
+    this.romanceSystem = new RomanceSystem(this.sims, this.relationshipGraph);
+    this._saveLoad = new SaveLoad(this);
+    this.godMode = new GodMode(this);
+    this.buildMode = new BuildMode(this.world, this._scene, this._renderer, this._camera);
+    this._contextMenu = new ContextMenu(this, this._renderer);
+
+    // Expose globally for UI panels
+    window._game = this;
+
+    // UI
+    this._ui = new UIManager(this.sims, this.selectedSim, bus);
+    this._godPanel = new GodPanel(this);
+    this._graphPanel = new GraphPanel(this);
+    bus.emit('sim:selected', { sim: this.selectedSim });
+
     // Sprint 4 — skill panel + emote renderer
     this._skillPanel    = new SkillPanel(this);
     this._emoteRenderer = new EmoteRenderer(this._scene, this.sims);
@@ -127,6 +146,7 @@ export class Game {
     this._setupInput();
 
     // ── Game loop ─────────────────────────────────────────────────────────
+    // Game loop
     this._loop = new GameLoop({
       onUpdate: dt => this._update(dt),
       onRender: () => this._render(),
@@ -150,10 +170,10 @@ export class Game {
     // Sims
     for (const sim of this.sims) sim.update(scaled);
 
-    // Sprint 1-3 systems
-    memorySystem.update(scaled);
+    // Systems
+    memorySystem.update(scaled);         // decay memories
     this.experimentLogger.update(scaled);
-    this._narrative.update(scaled);
+    this._narrative.update(scaled);      // story beats
     this.world.update(scaled);
     this._lifecyclePanel?.update(scaled);
 
@@ -187,6 +207,7 @@ export class Game {
     canvas.addEventListener('click', (e) => {
       if (e.button !== 0) return;
       if (this.buildMode?.active) { this.buildMode.handleClick(e); return; }
+
       mouse.set(
         (e.clientX / window.innerWidth)  * 2 - 1,
         -(e.clientY / window.innerHeight) * 2 + 1,
@@ -229,9 +250,23 @@ export class Game {
     return this.clock.paused;
   }
 
-  setSpeed(speed) { this.clock.speed = speed; }
+  selectSimByIndex(index) {
+    const sim = this.sims[index];
+    if (sim) this._selectSim(sim);
+  }
 
-  start() { if (!this._loop?._running) this._loop?.start(); }
+  togglePause() {
+    this.clock.paused = !this.clock.paused;
+    return this.clock.paused;
+  }
+
+  setSpeed(speed) {
+    this.clock.speed = speed;
+  }
+
+  start() {
+    if (!this._loop?._running) this._loop?.start();
+  }
 
   _bindToolbar() {
     const q = id => document.getElementById(id);
@@ -287,6 +322,14 @@ export class Game {
       // Sprint 4
       weather:  this._weather.serialise(),
       skills:   skillSystem.serialise(),
+      clock:   this.clock,
+      dayNight: { time: this.dayNight?.time ?? this.clock.hour / 24 },
+      sims:    this.sims.map(s => s.serialise()),
+      memories: memorySystem.serialise(),
+      social:  socialManager.serialise(),
+      relationshipGraph: this.relationshipGraph.serialise(),
+      romance: this.romanceSystem.serialise(),
+      experimentLog: this.experimentLogger.serialise(),
     };
   }
 
@@ -312,6 +355,20 @@ export class Game {
     if (state.weather)            this._weather.restore(state.weather);
     if (state.skills)             skillSystem.restore(state.skills);
     bus.emit('sim:selected', { sim: this.selectedSim });
+    if (state.memories) memorySystem.restore(state.memories);
+    if (state.social) socialManager.restore(state.social);
+    if (state.relationshipGraph) this.relationshipGraph.restore(state.relationshipGraph);
+    if (state.romance) this.romanceSystem.restore(state.romance);
+    if (state.experimentLog) this.experimentLogger.restore(state.experimentLog);
+    bus.emit('sim:selected', { sim: this.selectedSim });
+  }
+
+  _save() {
+    this._saveLoad?.save();
+  }
+
+  _load() {
+    this._saveLoad?.load();
   }
 
   _save() { this._saveLoad?.save(); }

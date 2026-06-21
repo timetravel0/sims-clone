@@ -101,8 +101,9 @@ export class ContextMenu {
       const gx  = Math.round(p.x), gz = Math.round(p.z);
       const fur = this._game.world.furniture?.find(f => f.gx === gx && f.gz === gz);
       if (fur) {
-        items.push({ label: `🛋 Use ${fur.id}`, action: () => this._triggerUse(selectedSim, fur) });
-        if (fur.social) {
+        const busy = fur.inUse || (fur.reservedBy && fur.reservedBy !== selectedSim.id);
+        if (!busy) items.push({ label: `🛋 Use ${fur.id}`, action: () => this._triggerUse(selectedSim, fur) });
+        if (fur.social && !busy) {
           for (const other of otherSims) {
             items.push({
               label:  `👥 Invite ${other.name} to ${fur.id}`,
@@ -135,6 +136,7 @@ export class ContextMenu {
   _triggerUse(sim, furniture) {
     const { WalkToAction, UseObjectAction } = this._ac();
     if (!WalkToAction) return;
+    if (!this._game.world.reserveFurniture(furniture, sim)) return;
     sim.brain.override([
       new WalkToAction(sim, this._game.world, furniture.gx, furniture.gz + 1),
       new UseObjectAction(sim, furniture, 6),
@@ -153,6 +155,7 @@ export class ContextMenu {
     const { WalkToAction, UseObjectAction } = this._ac();
     const { SocialAction }                  = this._sac();
     if (!WalkToAction || !SocialAction) return;
+    if (!this._game.world.reserveFurniture(furniture, simA)) return;
     simA.brain.override([
       new WalkToAction(simA, this._game.world, furniture.gx, furniture.gz + 1),
       new UseObjectAction(simA, furniture, 4),
@@ -160,7 +163,7 @@ export class ContextMenu {
     ]);
     simB.brain.override([
       new WalkToAction(simB, this._game.world, furniture.gx, furniture.gz - 1),
-      new UseObjectAction(simB, furniture, 4),
+      new SocialAction(simB, simA, this._game.world),
     ]);
   }
 }

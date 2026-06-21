@@ -28,6 +28,7 @@ export class RelationshipPanel {
     if (!this._el || !this._simId) return;
     const rels  = socialManager.relationsOf(this._simId);
     const sims  = window._game?.sims || [];
+    const graph = window._game?.relationshipGraph;
     const nameOf = id => sims.find(s => s.id === id)?.name || id;
 
     let html = `<h3>${this._simName} — Relations</h3>`;
@@ -43,6 +44,7 @@ export class RelationshipPanel {
         const barW   = Math.min(100, Math.abs(score));
         const barC   = score >= 0 ? '#4caf50' : '#ef5350';
         const lColor = score > 30 ? '#a5d6a7' : score < -10 ? '#ef9a9a' : '#aaa';
+        const typed = this._typedLabel(graph, this._simId, other);
         html += `
           <div class="rel-row">
             <span class="rel-name" title="${nameOf(other)}">${nameOf(other)}</span>
@@ -50,10 +52,25 @@ export class RelationshipPanel {
               <div class="rel-bar" style="width:${barW}%;background:${barC}"></div>
             </div>
             <span class="rel-score">${score > 0 ? '+' : ''}${Math.round(score)}</span>
-            <span class="rel-label" style="color:${lColor}">${label}</span>
+            <span class="rel-label" style="color:${typed.color || lColor}">${typed.label || label}</span>
           </div>`;
       }
     }
     this._el.innerHTML = html;
+  }
+
+  _typedLabel(graph, a, b) {
+    if (!graph) return {};
+    const types = [
+      ['romance', 'Love', '#ec6aa6'],
+      ['rivalry', 'Rival', '#ef5350'],
+      ['friendship', 'Friend', '#a5d6a7'],
+      ['kinship', 'Family', '#90caf9'],
+    ];
+    for (const [type, label, color] of types) {
+      const score = Math.max(graph.score(a, b, type), graph.score(b, a, type));
+      if (score >= (type === 'romance' ? 30 : 25)) return { label, color };
+    }
+    return {};
   }
 }

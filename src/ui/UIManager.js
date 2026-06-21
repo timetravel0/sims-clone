@@ -16,7 +16,10 @@ export class UIManager {
     this._rel       = new RelationshipPanel();
     this._statusLog = new SimStatusLog();   // ← nuovo
 
-    bus.on('sim:selected',    ({ sim })             => this._panel.setSimName(sim.name));
+    bus.on('sim:selected',    ({ sim })             => {
+      this._panel.setSimName(sim.name);
+      this._panel.setTraits(sim.personality?.describe?.() || '');
+    });
     bus.on('simNeeds:update', ({ simId, values })   => {
       if (window._game?.selectedSim?.id === simId) this._panel.update(values);
     });

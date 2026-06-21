@@ -1,3 +1,5 @@
+import { bus } from '../core/EventBus.js';
+
 /**
  * ActionQueue — FIFO sequence of Actions with enter/update/exit lifecycle.
  * override() clears the queue and replaces it with new actions.
@@ -13,6 +15,7 @@ export class ActionQueue {
 
   clear() {
     if (this._current) { this._current.exit?.(); this._current = null; }
+    for (const action of this._queue) action.exit?.();
     this._queue = [];
   }
 
@@ -20,12 +23,17 @@ export class ActionQueue {
     if (!this._current && this._queue.length > 0) {
       this._current = this._queue.shift();
       this._current.enter?.();
+      if (this._current._sim) {
+        bus.emit('sim:action', { simId: this._current._sim.id, label: this._current.label });
+      }
     }
     if (!this._current) return;
     this._current.update(dt);
     if (this._current.done) {
+      const simId = this._current._sim?.id;
       this._current.exit?.();
       this._current = null;
+      if (simId && this._queue.length === 0) bus.emit('sim:action', { simId, label: '' });
     }
   }
 

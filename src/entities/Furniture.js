@@ -5,7 +5,7 @@ import { ObjectRegistry } from '../systems/ObjectRegistry.js';
 const SOCIAL_COLOR = 0xffd54f;
 
 export class Furniture {
-  constructor({ id, gx, gz, color, needTarget, restoreRate, social }) {
+  constructor({ id, gx, gz, color, needTarget, restoreRate, social, affordances }) {
     this.id          = id;
     this.gx          = gx;
     this.gz          = gz;
@@ -17,6 +17,7 @@ export class Furniture {
 
     const def = ObjectRegistry.get(id);
     this._onUse = def?.onUse || null;
+    this._affordances = affordances || def?.affordances || null;
 
     // Main body
     const geo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
@@ -45,5 +46,29 @@ export class Furniture {
 
   onUseTick(sim, dt) {
     if (this._onUse) this._onUse(sim, this, dt);
+  }
+
+  getAffordancesFor(_sim) {
+    if (this.inUse || this.reservedBy) return [];
+    if (this._affordances?.length) {
+      return this._affordances.map(a => ({
+        targetType: 'furniture',
+        target: this,
+        verb: a.verb || `use_${this.id}`,
+        label: a.label || this.id,
+        utility: { ...(a.utility || {}) },
+        duration: a.duration ?? 5,
+        requirements: a.requirements || {},
+      }));
+    }
+    return [{
+      targetType: 'furniture',
+      target: this,
+      verb: `use_${this.id}`,
+      label: this.id,
+      utility: { [this.needTarget]: this.restoreRate },
+      duration: 6,
+      requirements: {},
+    }];
   }
 }

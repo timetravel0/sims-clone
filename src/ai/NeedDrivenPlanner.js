@@ -44,8 +44,6 @@ export class NeedDrivenPlanner {
 
     // Emit need:crisis when critically low
     if (worstVal < 15) {
-      const { bus } = await import('../core/EventBus.js').catch(() => ({ bus: null }));
-      // Use synchronous path instead
       this._emitCrisis(worstKey, worstVal);
     }
 
@@ -54,6 +52,10 @@ export class NeedDrivenPlanner {
     // (e.g., broke down there), try alternate furniture for the same need.
     const furniture = this._chooseFurniture(worstKey);
     if (!furniture) { Logger.warn(`[Planner] No furniture for: ${worstKey}`); return []; }
+    if (!this._sim._world.reserveFurniture(furniture, this._sim)) {
+      Logger.warn(`[Planner] Furniture busy for: ${worstKey}`);
+      return [];
+    }
 
     this.lastNeedLabel = NEED_EMOJI[worstKey] || worstKey;
     Logger.info(`[Planner] "${worstKey}" (${Math.round(worstVal)}) → ${furniture.id}`);
@@ -66,12 +68,6 @@ export class NeedDrivenPlanner {
   }
 
   _emitCrisis(need, value) {
-    // Dynamically import-safe crisis emit using a stored bus reference
-    if (!this._bus) {
-      // Lazy-load synchronously from already-loaded module cache
-      try { this._bus = require('../core/EventBus.js')?.bus; } catch(e) {}
-    }
-    // Fallback: fire via custom event so MemorySystem picks it up
     window.dispatchEvent(new CustomEvent('sim:need:crisis', {
       detail: { simId: this._sim.id, need, value }
     }));
@@ -83,7 +79,11 @@ export class NeedDrivenPlanner {
    * penalise it and prefer an alternative if one exists.
    */
   _chooseFurniture(needKey) {
-    const candidates = this._sim._world.furniture.filter(f => f.needTarget === needKey);
+    const candidates = this._sim._world.furniture.filter(f =>
+      f.needTarget === needKey &&
+      !f.inUse &&
+      (!f.reservedBy || f.reservedBy === this._sim.id)
+    );
     if (candidates.length === 0) return null;
     if (candidates.length === 1) return candidates[0];
 

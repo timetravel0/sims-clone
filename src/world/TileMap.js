@@ -25,4 +25,14 @@ export class TileMap {
   isWalkable(x, z) { return this.get(x, z) === TILE.FLOOR; }
   worldToGrid(wx, wz) { return { x: Math.round(wx), z: Math.round(wz) }; }
   gridToWorld(gx, gz) { return { x: gx, y: 0, z: gz }; }
+  randomWalkable() {
+    const walkable = [];
+    for (let z = 0; z < this.height; z++) {
+      for (let x = 0; x < this.width; x++) {
+        if (this.isWalkable(x, z)) walkable.push({ x, z });
+      }
+    }
+    if (walkable.length === 0) return null;
+    return walkable[Math.floor(Math.random() * walkable.length)];
+  }
 }

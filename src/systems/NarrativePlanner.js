@@ -76,6 +76,20 @@ export class NarrativePlanner {
         });
       }
     });
+
+    bus.on('life:event', ({ simName, type, valence }) => {
+      const labels = {
+        promoted: 'promotion',
+        fired: 'firing',
+        heartbreak: 'heartbreak',
+        windfall: 'windfall',
+      };
+      if (!labels[type]) return;
+      bus.emit('story:entry', {
+        text: `${simName}'s ${labels[type]} ripples through the household`,
+        cat: valence >= 0 ? 'positive' : 'gossip',
+      });
+    });
   }
 
   _announceIfNew(pairKey, text, cat) {

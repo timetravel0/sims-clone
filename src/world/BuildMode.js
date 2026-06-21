@@ -47,7 +47,7 @@ export class BuildMode {
       const gx = Math.round(p.x), gz = Math.round(p.z);
       this._ghost.position.set(gx, 0.3, gz);
       this._ghost.material.color.set(
-        this._world.tilemap.isWalkable(gx, gz) ? this._selected.color : 0xff4444
+        this._world.isCellAvailable(gx, gz) ? this._selected.color : 0xff4444
       );
     }
   }

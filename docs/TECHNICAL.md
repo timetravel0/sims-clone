@@ -1,14 +1,13 @@
-# Sims Clone — Technical Reference
+# Sims Clone - Technical Reference
 
-Last updated: Sprint 3 — Life Cycle, Career, Schedule and LifeCyclePanel.
+Last updated: implementation through Sprint 4 plus Utility AI, Smart Objects and experiment logging.
 
 ## Runtime Architecture
 
 The project is a browser-only Three.js application using vanilla ES modules. There is no bundler or build step: `index.html` loads `src/main.js` through an import map.
 
-`src/core/Game.js` is the composition root. It owns renderer, scene, world, camera, Sims, UI, save/load and all simulation systems:
+`src/core/Game.js` is the composition root. It owns renderer, scene, world, camera, Sims, UI, save/load and the simulation systems:
 
-**Existing systems (pre-Sprint 3)**
 - `MemorySystem`
 - `NarrativePlanner`
 - `SocialManager`
@@ -18,13 +17,7 @@ The project is a browser-only Three.js application using vanilla ES modules. The
 - `ExperimentLogger`
 - `BuildMode`
 
-**Added in Sprint 3**
-- `AgeSystem` — tracks simulated age, fires life-stage transitions
-- `CareerSystem` — shifts, salary, skill gain, promotions/firing
-- `ScheduleSystem` — personality-driven weekly routine
-- `LifeCyclePanel` — HTML overlay panel, owned by Game and updated each tick
-
-Three.js is the view layer. The core simulation state lives in entities and systems.
+Three.js is the view layer. The core simulation state lives in entities and systems: Sims, needs, mood, emotions, relationships, object reservations and event logs.
 
 ## Main Folders
 
@@ -34,12 +27,12 @@ Three.js is the view layer. The core simulation state lives in entities and syst
 | `src/world` | Grid, pathing context, doors, camera, build placement and reservations |
 | `src/entities` | Sims, needs, mood, personality, emotions and furniture |
 | `src/ai` | Utility planner, legacy need planner, action FSM, movement, object use and social actions |
-| `src/systems` | Memory, narrative, social state, God Mode, object catalog, relationship graph, romance, experiment logging, **AgeSystem, CareerSystem, ScheduleSystem** |
-| `src/ui` | Panels, context menu, needs, relations, graph, God Mode, build mode, story log, **LifeCyclePanel** |
+| `src/systems` | Memory, narrative, social state, God Mode, object catalog, relationship graph, romance and experiment logging |
+| `src/ui` | Panels, context menu, needs, relations, graph, God Mode, build mode and story log |
 
 ## Simulation Loop
 
-`GameLoop` provides fixed simulation updates and render callbacks.
+`GameLoop` provides fixed simulation updates and render callbacks:
 
 ```text
 Game._update(dt)
@@ -50,10 +43,7 @@ Game._update(dt)
   experimentLogger.update(scaled)
   narrativePlanner.update(scaled)
   world.update(scaled)
-  _lifecyclePanel.update(scaled)      ← Sprint 3
 ```
-
-`_lifecyclePanel.update(scaled)` internally ticks `AgeSystem`, `CareerSystem` and `ScheduleSystem`, then calls `render()` if the panel is open.
 
 `clock.speed` supports `1x`, `2x` and `5x`. `clock.paused` stops simulation updates while rendering remains active.
 
@@ -79,8 +69,8 @@ Game._update(dt)
 | `relationship:rivalry` | systems | Adds rivalry weight |
 | `daynight:update` | `DayNightCycle` | Clock UI update |
 | `story:entry` | systems | Human-readable story log entry |
-| `lifecycle:stageChanged` | `AgeSystem` | Life stage transition ← Sprint 3 |
-| `career:skillGain` | `CareerSystem` | Skill value increased ← Sprint 3 |
+
+`ExperimentLogger` subscribes to the research-relevant events and stores normalized rows for JSON/CSV export.
 
 ## Sim Model
 
@@ -92,15 +82,13 @@ Each `Sim` contains:
 - `SimEmotions`
 - `Mood`
 - `SimBrain`
-- `_needMult` — life-stage decay multiplier, written by `AgeSystem` ← Sprint 3
-- `_atWork` — boolean flag set by `CareerSystem` during shifts ← Sprint 3
 - Three.js mesh
 
 `Sim.update(dt)` advances movement, needs, emotions, mood, brain, speech bubbles and selection-ring color.
 
 ## Needs
 
-Need values are clamped to `[0, 100]`. From Sprint 3, `SimNeeds` reads `sim._needMult` and multiplies every decay rate by that factor.
+Need values are clamped to `[0, 100]`.
 
 | Need | Meaning |
 |---|---|
@@ -115,130 +103,19 @@ Need values are clamped to `[0, 100]`. From Sprint 3, `SimNeeds` reads `sim._nee
 | `autonomy` | Agency/self-directed activity drive |
 | `status` | Approval/prestige drive |
 
+Personality modifies decay. Outgoing Sims lose `social` faster, playful Sims protect `fun`, nice Sims protect `status`, neurotic Sims are more fragile under social/autonomy pressure, and ambitious Sims decay many needs more slowly while suffering stronger low-need mood penalties.
+
 ## Personality
 
-`Personality` stores five normalized axes in `[-1, +1]`: `outgoing`, `neurotic`, `playful`, `nice`, `ambitious`.
+`Personality` stores five normalized axes in `[-1, +1]`:
 
-Traits affect need decay, Utility AI scoring, social action type selection, social acceptance, mood penalties, God Mode whisper acceptance, romance compatibility and — from Sprint 3 — schedule slot generation and career scoring.
+- `outgoing`
+- `neurotic`
+- `playful`
+- `nice`
+- `ambitious`
 
-## Life Cycle Systems (Sprint 3)
-
-### AgeSystem — `src/systems/AgeSystem.js`
-
-```text
-AgeSystem.update(dt)
-  accumulate simulated seconds
-  every 24 simulated hours: age++
-  if age crosses stage threshold:
-    update sim._needMult
-    emit lifecycle:stageChanged
-    append story:entry
-```
-
-Stage thresholds (default, in simulated days):
-
-```js
-{ baby: 0, child: 4, teen: 13, youngAdult: 18, adult: 30, elder: 60 }
-```
-
-`needMult` per stage: `baby 1.4 / child 1.3 / teen 1.2 / youngAdult 1.0 / adult 0.9 / elder 1.1`.
-
-### CareerSystem — `src/systems/CareerSystem.js`
-
-Career definitions are plain objects:
-```js
-{
-  id: 'programmer',
-  label: 'Programmer',
-  skillReq: { logic: 2 },
-  shifts: [{ day: 1, start: 9, end: 17 }, ...],  // day 0 = Mon
-  salaryBase: 200,
-  salaryPerLevel: 80
-}
-```
-
-On each `update(dt)` call:
-1. check if the current in-game weekday/hour falls in an active shift;
-2. set `sim._atWork = true` and block `SimBrain.update()`;
-3. on shift end: pay `salaryBase + level * salaryPerLevel`, raise `status` need, increment `daysWorked`;
-4. every 5 `daysWorked`: promote (up to Lv.10);
-5. listen for `life:event` `{ type: 'promoted' | 'fired' }` from God Mode.
-
-Skill gain via object use:
-```js
-const SKILL_MAP = { bookshelf: 'logic', piano: 'creativity', treadmill: 'fitness', ... };
-```
-When a `UseObjectAction` completes, `CareerSystem` checks the map and increments the matching skill.
-
-### ScheduleSystem — `src/systems/ScheduleSystem.js`
-
-Generates a weekly schedule for each Sim on construction and regenerates when personality changes.
-
-Slot structure:
-```js
-{ type: 'sleep' | 'eat' | 'fun' | 'social' | 'study' | 'work',
-  days: [0,1,2,3,4],   // Mon–Fri = 0–4, Sat = 5, Sun = 6
-  startHour: 23,
-  endHour: 7 }
-```
-
-On `update(dt)`, the active slot is resolved and forwarded to `SimBrain`:
-- object slots → `brain.suggestFurniture(targetType, priority)`;
-- social slots → `brain.suggestSocial(priority)`.
-
-The brain accepts suggestions only when idle or when the incoming priority exceeds the current action priority.
-
-## LifeCyclePanel — `src/ui/LifeCyclePanel.js`
-
-`LifeCyclePanel` mounts into `#lifecycle-panel` (created by `index.html`).
-
-Public API used by `Game`:
-
-```js
-panel.update(dt)          // tick internal systems + conditional render
-panel.render()            // force a full DOM re-render
-panel.isOpen()            // true when #lifecycle-panel is visible
-panel.serialise()         // returns plain object for save/load
-panel.restore(state)      // restores AgeSystem + CareerSystem state
-```
-
-`render()` writes the following HTML into `#lifecycle-panel`:
-- stage badge (`.lc-stage-badge` + `.lc-stage-dot` with inline colour);
-- career row (`.lc-career-row`);
-- work status (`.lc-at-work`);
-- skills section (`.lc-skill-row` × 5);
-- career dropdown (`#lc-career-select`) with inline requirement check;
-- daily timeline (`.lc-timeline` with 24 `.lc-tick` divs, class reflecting slot type and current hour);
-- timeline labels (`0h`, `6h`, `12h`, `18h`, `23h`).
-
-CSS classes are defined in `index.html` under the `/* Life Cycle panel */` block.
-
-## SimBrain additions (Sprint 3)
-
-| Method | Signature | Purpose |
-|---|---|---|
-| `canInterrupt(priority)` | `(number) → boolean` | Returns true if the incoming priority beats the active action's priority |
-| `suggestFurniture(type, priority)` | `(string, number) → void` | Schedule-driven object suggestion |
-| `suggestSocial(priority)` | `(number) → void` | Schedule-driven social suggestion |
-
-The `_atWork` guard is checked at the top of `SimBrain.update()`: if `true`, all autonomous planning is skipped.
-
-## Toolbar Binding (Game._bindToolbar)
-
-The `📋 Life` button added in Sprint 3:
-
-```js
-q('btn-lifecycle')?.addEventListener('click', () => {
-  const opening = el.style.display === 'none' || el.style.display === '';
-  el.style.display = opening ? 'block' : 'none';
-  q('btn-lifecycle')?.classList.toggle('active', opening);
-  if (opening) this._lifecyclePanel?.render();
-});
-```
-
-When opening, `render()` is called immediately so the panel is never blank on first click.
-
-`_selectSim()` also calls `this._lifecyclePanel?.render()` when the panel is open, keeping career/stage data in sync with the selected Sim.
+Traits affect need decay, Utility AI scoring, social action type selection, social acceptance, mood penalties, God Mode whisper acceptance and romance compatibility.
 
 ## Utility AI and Smart Objects
 
@@ -252,9 +129,20 @@ When a Sim is idle, `SimBrain` asks the planner to:
 4. choose randomly among the top candidates;
 5. enqueue concrete actions.
 
-Furniture implements `getAffordancesFor(sim)` in `src/entities/Furniture.js`. Built-in affordances are declared in `src/systems/ObjectRegistry.js`.
+Furniture implements `getAffordancesFor(sim)` in `src/entities/Furniture.js`. Built-in affordances are declared in `src/systems/ObjectRegistry.js`, for example:
 
-Social affordances: `greet`, `chat`, `compliment`, `insult`.
+```js
+{ verb: 'read', utility: { autonomy: 25, fun: 12, status: 4 }, duration: 6 }
+```
+
+Other Sims also broadcast social affordances:
+
+- `greet`
+- `chat`
+- `compliment`
+- `insult`
+
+Social affordances use relationship `score` and `familiarity` as requirements and scoring context.
 
 `NeedDrivenPlanner` remains as a fallback for legacy critical-need routing.
 
@@ -264,35 +152,90 @@ Social affordances: `greet`, `chat`, `compliment`, `insult`.
 |---|---|
 | `WalkToAction` | Path to a valid, reserved destination cell |
 | `UseObjectAction` | Exclusive use of a furniture object; applies affordance utility over time |
-| `SocialAction` | Approach another Sim, request interaction, resolve acceptance/rejection |
+| `SocialAction` | Approach another Sim, request interaction, resolve acceptance/rejection and emit social events |
 | `IdleAction` | Short wait |
+
+`ActionQueue` is a FIFO FSM. It emits `sim:action` when actions begin and releases resources on `clear()`/`exit()`.
 
 ## Social Engine
 
-`SocialManager` stores `{ score, familiarity, log }` per pair.
-`RelationshipGraph` stores directed typed edges: friendship, rivalry, romance, kinship.
-`RomanceSystem` adds romantic attraction and can trigger jealousy.
+There are two relationship layers:
+
+- `SocialManager`: pair-level scalar relationship state.
+- `RelationshipGraph`: directed typed social edges.
+
+`SocialManager` stores:
+
+```js
+{ score: -100..100, familiarity: 0..100, log: [] }
+```
+
+Positive and negative interactions change score. Every interaction also increases familiarity. Rejections use `applyOutcome()`.
+
+`SocialAction` now resolves interaction consent:
+
+1. initiator walks near target;
+2. target evaluates acceptance from energy, affinity, familiarity and personality;
+3. success applies advertised utility/payoff and emits `social:interaction` with `accepted: true`;
+4. rejection lowers initiator status/social, restores target autonomy, updates relationship state and emits `accepted: false`.
+
+The directed graph converts observed interactions into typed edges:
+
+- friendship;
+- rivalry;
+- romance;
+- kinship/family.
+
+`RomanceSystem` adds romantic attraction from compatible personalities and repeated positive interactions. It can trigger jealousy when a romantic attachment observes a positive interaction with a third Sim.
 
 ## Reservation and Collision Rules
 
-`World` owns runtime exclusivity: one destination cell per Sim (`_cellReservations`), one intended user per object (`furniture.reservedBy`), one active user per object (`furniture.inUse`).
+`World` owns runtime exclusivity:
+
+- `_cellReservations`: one destination cell per Sim.
+- `furniture.reservedBy`: one intended user per object.
+- `furniture.inUse`: object currently in use.
+
+Rules enforced by planners/actions/build mode:
+
+- Sims cannot reserve the same destination tile.
+- Sims wait before entering an occupied or reserved path tile.
+- Sims cannot stand on top of each other.
+- Furniture cannot be used by two Sims at once.
+- Build Mode rejects occupied or reserved cells.
 
 ## Memory, Mood and Narrative
 
-`MemorySystem` records episodic memories. Memories have type, valence, intensity, simulated time and event-specific data. They decay over time.
+`MemorySystem` records episodic memories from social events, need crises, mood peaks, life events and God Mode actions. Memories have type, valence, intensity, simulated time and event-specific data. They decay over time and bias future planning.
 
 `SimEmotions` tracks secondary emotions with decay. Mood combines average needs, personality penalties and active emotion bonus.
 
-`NarrativePlanner` converts significant state changes into `story:entry` items.
+`NarrativePlanner` converts significant state changes into `story:entry` items for the Story Log.
 
 ## God Mode
 
-`GodMode` supports whisper, impose, bless, curse and life events.
-`promoted` and `fired` life events are now intercepted by `CareerSystem` in addition to generating story entries.
+`GodMode` supports:
+
+- `whisper`: suggest an action; the Sim may refuse;
+- `impose`: force an action with autonomy/mood cost;
+- `bless`;
+- `curse`;
+- `life event`: promoted, fired, heartbreak, windfall.
+
+God actions emit events, create memories/emotions and participate in save/load.
 
 ## Experiment Logger
 
-`src/systems/ExperimentLogger.js` records normalized rows with tick, simulated hour, event type and payload fields.
+`src/systems/ExperimentLogger.js` provides a research data stream.
+
+It records normalized rows with:
+
+- `tick`
+- simulated hour
+- event type
+- event payload fields
+
+Available methods:
 
 ```js
 game.experimentLogger.events
@@ -302,6 +245,8 @@ game.experimentLogger.downloadJSON()
 game.experimentLogger.downloadCSV()
 game.experimentLogger.clear()
 ```
+
+The logger state is persisted in save/load as `experimentLog`.
 
 ## Save/Load
 
@@ -313,7 +258,6 @@ game.experimentLogger.clear()
 - scalar social state;
 - relationship graph;
 - romance state;
-- experiment log;
-- `lifecycle` — age, career level, skills, simoleons per Sim ← Sprint 3.
+- experiment log.
 
-`Game.restore(state)` restores all the above and calls `_lifecyclePanel.restore(state.lifecycle)` to rebuild age/career state.
+`Game.restore(state)` restores these systems and re-emits selection state for UI synchronization.
