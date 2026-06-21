@@ -1,0 +1,185 @@
+/**
+ * BuildModeWalls — Sprint 5
+ * Extends the existing BuildMode with wall/door placement tools.
+ *
+ * Sub-tools (set via setTool()):
+ *   'furniture'  — original object placement (delegates to BuildMode)
+ *   'wall'       — click two adjacent tiles to place a wall segment
+ *   'door'       — click two adjacent tiles to place a door
+ *   'eraser'     — click a wall/door edge to remove it
+ *
+ * Wall/door placement is two-click:
+ *   1st click → sets anchor tile
+ *   2nd click → if adjacent to anchor, places wall/door between them
+ *
+ * Ghost preview: a translucent wall mesh follows the mouse between anchor and hovered tile.
+ *
+ * Emits: buildMode:toolChanged { tool }
+ */
+import * as THREE  from 'three';
+import { bus }     from '../core/EventBus.js';
+import { budgetSystem } from '../systems/BudgetSystem.js';
+
+const WALL_COST = 250;   // § per wall segment
+const DOOR_COST = 500;   // § per door
+
+const GHOST_WALL_COLOR = 0x88aaff;
+const GHOST_DOOR_COLOR = 0xffcc44;
+const GHOST_BAD_COLOR  = 0xff4444;
+
+export class BuildModeWalls {
+  /**
+   * @param {BuildMode}   buildMode   original BuildMode instance
+   * @param {WallManager} wallManager
+   * @param {THREE.Scene} scene
+   * @param {THREE.WebGLRenderer} renderer
+   * @param {IsometricCamera} camera
+   * @param {World} world
+   */
+  constructor(buildMode, wallManager, scene, renderer, camera, world) {
+    this._bm      = buildMode;
+    this._wm      = wallManager;
+    this._scene   = scene;
+    this._renderer= renderer;
+    this._camera  = camera;
+    this._world   = world;
+
+    this._tool    = 'furniture';  // current sub-tool
+    this._anchor  = null;         // { gx, gz } — first click for wall/door
+    this._ghost   = null;         // THREE.Mesh ghost preview
+    this._hovered = null;         // { gx, gz } — tile under mouse
+
+    this._raycaster = new THREE.Raycaster();
+    this._mouse     = new THREE.Vector2();
+
+    renderer.domElement.addEventListener('mousemove', this._onMove.bind(this));
+  }
+
+  // ── Tool selection ────────────────────────────────────────────────────────
+
+  setTool(tool) {
+    this._tool   = tool;
+    this._anchor = null;
+    this._removeGhost();
+    bus.emit('buildMode:toolChanged', { tool });
+  }
+
+  get tool() { return this._tool; }
+
+  // ── Mouse move ────────────────────────────────────────────────────────────
+
+  _onMove(e) {
+    if (!this._bm.active) return;
+    const rect = this._renderer.domElement.getBoundingClientRect();
+    this._mouse.x = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+    this._mouse.y =-((e.clientY - rect.top)  / rect.height) * 2 + 1;
+    this._raycaster.setFromCamera(this._mouse, this._camera.camera);
+    const hits = this._raycaster.intersectObjects(this._world.groundMeshes);
+    if (!hits.length) return;
+    const p  = hits[0].point;
+    const gx = Math.round(p.x);
+    const gz = Math.round(p.z);
+    this._hovered = { gx, gz };
+
+    if (this._tool === 'wall' || this._tool === 'door') {
+      this._updateWallGhost(gx, gz);
+    }
+  }
+
+  _updateWallGhost(gx, gz) {
+    this._removeGhost();
+    if (!this._anchor) return;
+    const { gx: ax, gz: az } = this._anchor;
+    if (!this._isAdjacent(ax, az, gx, gz)) return;
+
+    const color = this._canAfford() ? (this._tool === 'wall' ? GHOST_WALL_COLOR : GHOST_DOOR_COLOR) : GHOST_BAD_COLOR;
+    const geo   = new THREE.BoxGeometry(1.0, 1.8, 0.1);
+    const mat   = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.5 });
+    this._ghost = new THREE.Mesh(geo, mat);
+
+    const mx   = (ax + gx) / 2;
+    const mz   = (az + gz) / 2;
+    const rotY = (az === gz) ? 0 : Math.PI / 2;
+    this._ghost.position.set(mx, 0.9, mz);
+    this._ghost.rotation.y = rotY;
+    this._scene.add(this._ghost);
+  }
+
+  _removeGhost() {
+    if (!this._ghost) return;
+    this._scene.remove(this._ghost);
+    this._ghost.geometry.dispose();
+    this._ghost.material.dispose();
+    this._ghost = null;
+  }
+
+  // ── Click handler (called from Game._setupInput when buildMode.active) ───
+
+  handleClick(e) {
+    if (this._tool === 'furniture') {
+      this._bm.handleClick(e);
+      return;
+    }
+
+    const rect = this._renderer.domElement.getBoundingClientRect();
+    this._mouse.x = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+    this._mouse.y =-((e.clientY - rect.top)  / rect.height) * 2 + 1;
+    this._raycaster.setFromCamera(this._mouse, this._camera.camera);
+    const hits = this._raycaster.intersectObjects(this._world.groundMeshes);
+    if (!hits.length) return;
+
+    const p  = hits[0].point;
+    const gx = Math.round(p.x);
+    const gz = Math.round(p.z);
+
+    if (this._tool === 'eraser') {
+      // Try to erase wall/door on any adjacent edge near click
+      this._eraseNear(gx, gz);
+      return;
+    }
+
+    // wall / door — two-click flow
+    if (!this._anchor) {
+      this._anchor = { gx, gz };
+      return;
+    }
+    const { gx: ax, gz: az } = this._anchor;
+    this._anchor = null;
+    this._removeGhost();
+
+    if (!this._isAdjacent(ax, az, gx, gz)) return;
+
+    const cost = this._tool === 'wall' ? WALL_COST : DOOR_COST;
+    if (!budgetSystem.debit(cost, this._tool, { id: this._tool })) return;
+
+    if (this._tool === 'wall') this._wm.placeWall(ax, az, gx, gz);
+    else                       this._wm.placeDoor(ax, az, gx, gz);
+  }
+
+  _eraseNear(gx, gz) {
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (const [dx, dz] of dirs) {
+      const nx = gx + dx, nz = gz + dz;
+      if (this._wm.hasWall(gx, gz, nx, nz) || this._wm.hasDoor(gx, gz, nx, nz)) {
+        const entry = this._wm._edges?.get?.(
+          this._wm.removeEdge ? null : null
+        );
+        // Refund 50%
+        const wasWall = this._wm.hasWall(gx, gz, nx, nz);
+        const removed = this._wm.removeEdge(gx, gz, nx, nz);
+        if (removed) budgetSystem.sellRefund(wasWall ? WALL_COST : DOOR_COST);
+        return;
+      }
+    }
+  }
+
+  _isAdjacent(x1, z1, x2, z2) {
+    return (Math.abs(x1 - x2) === 1 && z1 === z2) ||
+           (Math.abs(z1 - z2) === 1 && x1 === x2);
+  }
+
+  _canAfford() {
+    const cost = this._tool === 'wall' ? WALL_COST : DOOR_COST;
+    return budgetSystem.funds >= cost;
+  }
+}
