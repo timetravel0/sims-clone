@@ -7,6 +7,7 @@ import { ExperientialBias }   from '../ai/ExperientialBias.js';
 import { PersonalityDrift }   from '../ai/PersonalityDrift.js';
 import { ContextualNoise }    from '../ai/ContextualNoise.js';
 import { GoalSystem }         from '../ai/GoalSystem.js';
+import { WellbeingAmbition }  from '../ai/WellbeingAmbition.js';
 import { SocialLearning }     from '../ai/SocialLearning.js';
 import { MemorySystem }       from '../ai/MemorySystem.js';
 import { EmotionEngine }      from './EmotionEngine.js';
@@ -31,6 +32,7 @@ export class SimBrain {
       () => this.emotions?.tier        // live tier from EmotionEngine
     );
     this.goalSystem   = new GoalSystem(sim);
+    this.wellbeing    = new WellbeingAmbition(sim);
     this.socialLearn  = new SocialLearning(sim, this.expBias);
 
     // ── Memory & Emotion ─────────────────────────────────────────────────────
@@ -75,6 +77,7 @@ export class SimBrain {
     if (this._socialCooldown > 0) this._socialCooldown -= dt;
     this.expBias.update(dt);
     this.emotions.update(dt);
+    this.wellbeing.update(dt);
 
     const currentDay = window._game?.clock?.day ?? 0;
     this.goalSystem.update(dt, currentDay);
@@ -96,7 +99,7 @@ export class SimBrain {
 
     // ── AI planning ──────────────────────────────────────────────────────────
 
-    // 1. Utility AI (history + goals + context + emotion-aware)
+    // 1. Utility AI (history + goals + wellbeing + context + emotion-aware)
     const utilityActions = this._utilityPlanner.plan();
     if (utilityActions.length > 0) {
       this._sim.showBubble(this._utilityPlanner.lastDecision?.label || 'Act');
@@ -145,6 +148,7 @@ export class SimBrain {
       expBias    : this.expBias.serialise(),
       drift      : this.drift.serialise(),
       goalSystem : this.goalSystem.serialise(),
+      wellbeing  : this.wellbeing.serialise(),
       memory     : this.memory.serialise(),
       emotions   : this.emotions.serialise(),
     };
@@ -155,12 +159,14 @@ export class SimBrain {
     if (data.expBias)    this.expBias.restore(data.expBias);
     if (data.drift)      this.drift.restore(data.drift);
     if (data.goalSystem) this.goalSystem.restore(data.goalSystem);
+    if (data.wellbeing)  this.wellbeing.restore(data.wellbeing);
     if (data.memory)     this.memory.restore(data.memory);
     if (data.emotions)   this.emotions.restore(data.emotions);
   }
 
   destroy() {
     this.drift.destroy();
+    this.wellbeing.destroy();
     this.socialLearn.destroy();
     this.emotions.destroy();
   }
