@@ -10,9 +10,15 @@ import { bus }          from '../core/EventBus.js';
 let _idCounter = 0;
 const SPEED = 3.5;
 
+function syncCounterFromId(id) {
+  const m = /^sim_(\d+)$/.exec(String(id ?? ''));
+  if (m) _idCounter = Math.max(_idCounter, Number(m[1]));
+}
+
 export class Sim {
-  constructor(scene, world, _bus, name = 'Sim', color = 0x4fc3f7, traits = {}) {
-    this.id        = `sim_${++_idCounter}`;
+  constructor(scene, world, _bus, name = 'Sim', color = 0x4fc3f7, traits = {}, id = null) {
+    this._id       = null;
+    this.id        = id ?? `sim_${++_idCounter}`;
     this.name      = name;
     this.color     = color;
     this._scene    = scene;
@@ -37,6 +43,27 @@ export class Sim {
     this._bubbleTimer = 0;
 
     scene.add(this.mesh);
+  }
+
+  get id() { return this._id; }
+
+  /**
+   * Persistent identity is used by memory, learning, goals and relationship maps.
+   * If an id is adopted after construction (load/visitor activation), rebuild the
+   * brain so all per-Sim subsystems bind to the stable id instead of the temporary
+   * auto-generated one.
+   */
+  set id(next) {
+    const prev = this._id;
+    this._id = next;
+    syncCounterFromId(next);
+    if (prev && next !== prev && this.brain) {
+      this.brain.destroy?.();
+      this.brain = new SimBrain(this);
+    }
+    if (this.needs) {
+      this.needs._emit = (vals) => bus.emit('simNeeds:update', { simId: this.id, values: vals });
+    }
   }
 
   _buildMesh(color) {
@@ -160,6 +187,7 @@ export class Sim {
   }
 
   restore(data) {
+    if (data.id && data.id !== this.id) this.id = data.id;
     this.gx = data.gx; this.gz = data.gz;
     this.worldX = data.gx; this.worldZ = data.gz;
     this._path = [];
