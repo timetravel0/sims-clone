@@ -28,6 +28,7 @@ import { SocialDynamicsSystem } from '../systems/SocialDynamicsSystem.js';
 import { PopulationSystem }     from '../systems/PopulationSystem.js';
 import { VisitorSystem }        from '../systems/VisitorSystem.js';
 import { OffLotSimulationSystem } from '../systems/OffLotSimulationSystem.js';
+import { AutonomousShoppingSystem } from '../systems/AutonomousShoppingSystem.js';
 import { RomanceSystem }       from '../systems/RomanceSystem.js';
 import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
 import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
@@ -180,7 +181,7 @@ export class Game {
 
     // ── Sims ──────────────────────────────────────────────────────────────
     for (const def of simDefs) {
-      const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {});
+      const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {}, def.id ?? null);
       const pos = this.world.randomAvailableCell(sim);
       if (pos) sim.setPosition(pos.x, pos.z);
       this.sims.push(sim);
@@ -222,6 +223,7 @@ export class Game {
     this.population      = new PopulationSystem(this, this.sims);   // household + external people
     this.visitorSystem   = new VisitorSystem(this);
     this.offLotSimulation = new OffLotSimulationSystem(this);
+    this.autonomousShopping = new AutonomousShoppingSystem(this);
 
     for (const sim of this.sims) skillSystem.register(sim);
     this._weather       = weatherSystem;
@@ -302,6 +304,7 @@ export class Game {
     this.socialDynamics.update(scaled);
     this.offLotSimulation.update(scaled);
     this.visitorSystem.update(scaled);
+    this.autonomousShopping.update(scaled);
 
     // Sprint 4 systems
     this._weather.update(scaled);
@@ -372,8 +375,7 @@ export class Game {
 
   /** Spawn a Sim on the lot (used for visitors via PopulationSystem). */
   _spawnSim(def, gx, gz) {
-    const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {});
-    if (def.id) sim.id = def.id;
+    const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {}, def.id ?? null);
     sim._isVisitor = !!def.visitor;
     const pos = (gx != null && gz != null) ? { x: gx, z: gz } : this.world.randomAvailableCell(sim);
     if (pos) sim.setPosition(pos.x, pos.z);
@@ -526,6 +528,7 @@ export class Game {
       population: this.population.serialise(),
       visitors: this.visitorSystem.serialise(),
       offLotSimulation: this.offLotSimulation.serialise(),
+      autonomousShopping: this.autonomousShopping.serialise(),
       romance:  this.romanceSystem.serialise(),
       experimentLog: this.experimentLogger.serialise(),
       age: this.ageSystem.serialise(),
@@ -564,6 +567,7 @@ export class Game {
     if (state.population)         this.population.restore(state.population);
     if (state.visitors)           this.visitorSystem.restore(state.visitors);
     if (state.offLotSimulation)   this.offLotSimulation.restore(state.offLotSimulation);
+    if (state.autonomousShopping) this.autonomousShopping.restore(state.autonomousShopping);
     if (state.romance)            this.romanceSystem.restore(state.romance);
     if (state.experimentLog)      this.experimentLogger.restore(state.experimentLog);
     if (state.age)                this.ageSystem.restore(state.age);
@@ -584,5 +588,4 @@ export class Game {
   _load() {
     this._saveLoad?.load();
   }
-
 }
