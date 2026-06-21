@@ -20,6 +20,7 @@ const EVENTS = [
   'offlot:relationshipDrift',
   'household:purchase',
   'household:purchaseFailed',
+  'wellbeing:evaluated',
   'mood:change',
   'emotion:triggered',
   'life:event',
@@ -121,6 +122,18 @@ export class ExperimentLogger {
         score: payload.score ?? '',
         fundsAfter: payload.fundsAfter ?? '',
       };
+    } else if (type === 'wellbeing:evaluated') {
+      row = {
+        ...base,
+        eventId: payload.eventId ?? `w_${this._tick}_${this._events.length}`,
+        simId: payload.simId ?? '',
+        selfScore: payload.self?.score ?? '',
+        familyScore: payload.family?.score ?? '',
+        ownDrive: payload.ownDrive ?? '',
+        familyDrive: payload.familyDrive ?? '',
+        dominant: payload.dominant ?? '',
+        mood: payload.self?.mood ?? '',
+      };
     } else {
       row = { ...base, ...this._sanitize(payload) };
     }
@@ -141,6 +154,7 @@ export class ExperimentLogger {
   _socialRows() { return this._events.filter(e => e.type === 'social:interaction'); }
   _visitorRows() { return this._events.filter(e => e.type?.startsWith?.('visitor:')); }
   _offLotRows() { return this._events.filter(e => e.type?.startsWith?.('offlot:')); }
+  _wellbeingRows() { return this._events.filter(e => e.type === 'wellbeing:evaluated'); }
 
   /** Per-Sim aggregate: interactions initiated, acceptance rate, motive mix. */
   summaryBySim() {
@@ -218,6 +232,10 @@ export class ExperimentLogger {
 
   visitTimeline(visitorId) {
     return this._visitorRows().filter(e => !visitorId || e.visitorId === visitorId);
+  }
+
+  wellbeingTimeline(simId = null) {
+    return this._wellbeingRows().filter(e => !simId || e.simId === simId);
   }
 
   externalSocialityMetrics() {
