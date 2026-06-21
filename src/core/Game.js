@@ -21,6 +21,12 @@ import { RomanceSystem }       from '../systems/RomanceSystem.js';
 import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
 import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
 import { LifecycleNotifier }   from '../ui/LifecycleNotifier.js';
+// Sprint 4
+import { skillSystem }         from '../systems/SkillSystem.js';
+import { weatherSystem }       from '../systems/WeatherSystem.js';
+import { moodEngine }          from '../systems/MoodEngine.js';
+import { EmoteRenderer }       from '../systems/EmoteRenderer.js';
+import { SkillPanel }          from '../ui/SkillPanel.js';
 
 const SIM_DEFS = [
   { name: 'Alice', color: 0x4fc3f7, traits: { outgoing: 0.7, playful: 0.5, nice: 0.6 } },
@@ -38,14 +44,14 @@ export class Game {
   }
 
   _init() {
-    // Renderer
+    // ── Renderer ──────────────────────────────────────────────────────────
     this._renderer = new THREE.WebGLRenderer({ antialias: true });
     this._renderer.setPixelRatio(window.devicePixelRatio);
     this._renderer.setSize(window.innerWidth, window.innerHeight);
     this._renderer.shadowMap.enabled = true;
     this._container.appendChild(this._renderer.domElement);
 
-    // Scene & lights
+    // ── Scene & lights ────────────────────────────────────────────────────
     this._scene = new THREE.Scene();
     this._scene.background = new THREE.Color(0x1a1814);
     this._scene.fog = new THREE.Fog(0x1a1814, 60, 120);
@@ -55,17 +61,19 @@ export class Game {
     dir.castShadow = true;
     dir.shadow.mapSize.set(2048, 2048);
     this._scene.add(ambient, dir);
+    // Keep ref to directional light for weather modulation
+    this._dirLight = dir;
 
-    // World
+    // ── World ─────────────────────────────────────────────────────────────
     this.world = new World(this._scene);
 
-    // Camera
+    // ── Camera ────────────────────────────────────────────────────────────
     this._camera = new IsometricCamera(window.innerWidth / window.innerHeight);
-    this.camera = this._camera;
+    this.camera  = this._camera;
     this._camera.focusOn(8, 8);
     this.dayNight = new DayNightCycle(this._scene);
 
-    // Sims
+    // ── Sims ──────────────────────────────────────────────────────────────
     for (const def of SIM_DEFS) {
       const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {});
       const pos = this.world.randomAvailableCell(sim);
@@ -75,41 +83,57 @@ export class Game {
     this.selectedSim = this.sims[0];
     this.selectedSim.setSelected(true);
 
-    // Systems — Sprint 1
-    this._narrative = new NarrativePlanner(this.sims);
+    // ── Systems — Sprint 1-3 ──────────────────────────────────────────────
+    this._narrative      = new NarrativePlanner(this.sims);
     this.experimentLogger = new ExperimentLogger(this);
     this.relationshipGraph = new RelationshipGraph(this.sims);
-    this.romanceSystem = new RomanceSystem(this.sims, this.relationshipGraph);
-    this._saveLoad = new SaveLoad(this);
-    this.godMode = new GodMode(this);
-    this.buildMode = new BuildMode(this.world, this._scene, this._renderer, this._camera);
-    this._contextMenu = new ContextMenu(this, this._renderer);
+    this.romanceSystem   = new RomanceSystem(this.sims, this.relationshipGraph);
+    this._saveLoad       = new SaveLoad(this);
+    this.godMode         = new GodMode(this);
+    this.buildMode       = new BuildMode(this.world, this._scene, this._renderer, this._camera);
+    this._contextMenu    = new ContextMenu(this, this._renderer);
 
-    // Expose globally for UI panels
+    // ── Systems — Sprint 4 ────────────────────────────────────────────────
+    for (const sim of this.sims) skillSystem.register(sim);
+    this._weather       = weatherSystem;
+    this._moodEngine    = moodEngine;
+
+    // React to weather light updates
+    bus.on('weather:lightUpdate', ({ light, intensity }) => {
+      if (!light) return;
+      this._dirLight.color.setHex(light.skyColor);
+      this._dirLight.intensity = light.mult * intensity * 1.2 + 0.2;
+    });
+
+    // ── Expose globally for UI panels ─────────────────────────────────────
     window._game = this;
 
-    // UI
-    this._ui = new UIManager(this.sims, this.selectedSim, bus);
+    // ── UI ────────────────────────────────────────────────────────────────
+    this._ui         = new UIManager(this.sims, this.selectedSim, bus);
     this._godPanel   = new GodPanel(this);
     this._graphPanel = new GraphPanel(this);
 
-    // Sprint 3 — Life Cycle panel + Lifecycle event notifier
+    // Sprint 3 — lifecycle
     this._lifecyclePanel    = new LifeCyclePanel(this);
     this._lifecycleNotifier = new LifecycleNotifier('lifecycle-toast');
 
+    // Sprint 4 — skill panel + emote renderer
+    this._skillPanel    = new SkillPanel(this);
+    this._emoteRenderer = new EmoteRenderer(this._scene, this.sims);
+
     bus.emit('sim:selected', { sim: this.selectedSim });
 
-    // Input
+    // ── Input ─────────────────────────────────────────────────────────────
     this._setupInput();
 
-    // Game loop
+    // ── Game loop ─────────────────────────────────────────────────────────
     this._loop = new GameLoop({
       onUpdate: dt => this._update(dt),
       onRender: () => this._render(),
     });
     this._loop.start();
 
-    // Resize
+    // ── Resize ────────────────────────────────────────────────────────────
     window.addEventListener('resize', () => {
       this._renderer.setSize(window.innerWidth, window.innerHeight);
       this._camera.onResize(window.innerWidth / window.innerHeight);
@@ -123,17 +147,32 @@ export class Game {
     this.dayNight.update(scaled);
     this.clock.hour = this.dayNight.time * 24;
 
-    // Update all sims
+    // Sims
     for (const sim of this.sims) sim.update(scaled);
 
-    // Systems
+    // Sprint 1-3 systems
     memorySystem.update(scaled);
     this.experimentLogger.update(scaled);
     this._narrative.update(scaled);
     this.world.update(scaled);
-
-    // Sprint 3 — ticks AgeSystem, CareerSystem, ScheduleSystem + panel render
     this._lifecyclePanel?.update(scaled);
+
+    // Sprint 4 systems
+    this._weather.update(scaled);
+    // Apply weather mood deltas to each sim
+    const deltas = this._weather.getMoodDeltas();
+    for (const sim of this.sims) {
+      for (const [need, delta] of Object.entries(deltas)) {
+        sim.needs?.delta?.(need, delta * scaled);
+      }
+      // Recompute mood score; stored on sim for external access
+      sim._mood      = this._moodEngine.compute(sim);
+      sim._moodLabel = this._moodEngine.getMoodLabel(sim);
+    }
+    // Skill decay (convert seconds → days: 1 day = 86400s sim-time)
+    skillSystem.update(scaled / 86400);
+    // Emote sprites
+    this._emoteRenderer.update(scaled);
   }
 
   _render() {
@@ -141,22 +180,19 @@ export class Game {
   }
 
   _setupInput() {
-    const canvas = this._renderer.domElement;
+    const canvas    = this._renderer.domElement;
     const raycaster = new THREE.Raycaster();
     const mouse     = new THREE.Vector2();
 
     canvas.addEventListener('click', (e) => {
       if (e.button !== 0) return;
-      if (this.buildMode?.active) {
-        this.buildMode.handleClick(e);
-        return;
-      }
+      if (this.buildMode?.active) { this.buildMode.handleClick(e); return; }
       mouse.set(
         (e.clientX / window.innerWidth)  * 2 - 1,
-        -(e.clientY / window.innerHeight) * 2 + 1
+        -(e.clientY / window.innerHeight) * 2 + 1,
       );
       raycaster.setFromCamera(mouse, this._camera.camera);
-      // Try Sim selection first
+      // Sim selection
       const simMeshes = this.sims.map(s => s.mesh);
       const simHits   = raycaster.intersectObjects(simMeshes, true);
       if (simHits.length > 0) {
@@ -172,7 +208,6 @@ export class Game {
       }
     });
 
-    // Toolbar buttons
     this._bindToolbar();
   }
 
@@ -181,7 +216,6 @@ export class Game {
     sim.setSelected(true);
     this.selectedSim = sim;
     bus.emit('sim:selected', { sim });
-    // Keep lifecycle panel in sync when open
     if (this._lifecyclePanel?.isOpen()) this._lifecyclePanel.render();
   }
 
@@ -195,13 +229,9 @@ export class Game {
     return this.clock.paused;
   }
 
-  setSpeed(speed) {
-    this.clock.speed = speed;
-  }
+  setSpeed(speed) { this.clock.speed = speed; }
 
-  start() {
-    if (!this._loop?._running) this._loop?.start();
-  }
+  start() { if (!this._loop?._running) this._loop?.start(); }
 
   _bindToolbar() {
     const q = id => document.getElementById(id);
@@ -225,7 +255,7 @@ export class Game {
     q('btn-save')?.addEventListener('click', () => this._saveLoad?.save());
     q('btn-load')?.addEventListener('click', () => this._saveLoad?.load());
 
-    // Sprint 3 — Life Cycle panel toggle
+    // Sprint 3 — lifecycle panel
     const lcEl = q('lifecycle-panel');
     q('btn-lifecycle')?.addEventListener('click', () => {
       const opening = !lcEl || lcEl.style.display === 'none' || lcEl.style.display === '';
@@ -233,19 +263,30 @@ export class Game {
       q('btn-lifecycle')?.classList.toggle('active', opening);
       if (opening) this._lifecyclePanel?.render();
     });
+
+    // Sprint 4 — skill panel
+    const skEl = q('skill-panel');
+    q('btn-skills')?.addEventListener('click', () => {
+      const opening = !skEl || skEl.style.display === 'none' || skEl.style.display === '';
+      if (skEl) skEl.style.display = opening ? 'block' : 'none';
+      q('btn-skills')?.classList.toggle('active', opening);
+    });
   }
 
   serialise() {
     return {
-      clock:   this.clock,
+      clock:    this.clock,
       dayNight: { time: this.dayNight?.time ?? this.clock.hour / 24 },
-      sims:    this.sims.map(s => s.serialise()),
+      sims:     this.sims.map(s => s.serialise()),
       memories: memorySystem.serialise(),
-      social:  socialManager.serialise(),
+      social:   socialManager.serialise(),
       relationshipGraph: this.relationshipGraph.serialise(),
-      romance: this.romanceSystem.serialise(),
+      romance:  this.romanceSystem.serialise(),
       experimentLog: this.experimentLogger.serialise(),
       lifecycle: this._lifecyclePanel?.serialise(),
+      // Sprint 4
+      weather:  this._weather.serialise(),
+      skills:   skillSystem.serialise(),
     };
   }
 
@@ -267,6 +308,9 @@ export class Game {
     if (state.romance)            this.romanceSystem.restore(state.romance);
     if (state.experimentLog)      this.experimentLogger.restore(state.experimentLog);
     if (state.lifecycle)          this._lifecyclePanel?.restore(state.lifecycle);
+    // Sprint 4
+    if (state.weather)            this._weather.restore(state.weather);
+    if (state.skills)             skillSystem.restore(state.skills);
     bus.emit('sim:selected', { sim: this.selectedSim });
   }
 
