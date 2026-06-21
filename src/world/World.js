@@ -76,7 +76,7 @@ export class World {
   }
 
   _placeDoors() {
-    // Two doors on the bottom wall
+    // Two doors on the bottom/top walls
     this.doorManager.addDoor({ gx: 5,  gz: 0,  axis: 'z' });
     this.doorManager.addDoor({ gx: 10, gz: 15, axis: 'z' });
   }
@@ -84,28 +84,42 @@ export class World {
   _buildEntryPoints() {
     const doors = this.doorManager?.doors ?? [];
     const points = doors.map((door, i) => {
-      const outsideZ = door.gz === 0 ? 0 : this.tilemap.height - 1;
-      const insideZ = door.gz === 0 ? 1 : this.tilemap.height - 2;
+      const isNorth = door.gz === 0;
+      const insideZ = isNorth ? 1 : this.tilemap.height - 2;
+      // The current map has no walkable outside strip. Keep the public entry
+      // semantically tied to the door but spawn visitors on the nearest walkable
+      // porch/inside tile to avoid pathing into a closed WALL door tile.
       return {
         id: i === 0 ? 'front_door' : `entry_${i + 1}`,
         gx: door.gx,
-        gz: outsideZ,
+        gz: insideZ,
+        spawnGx: door.gx,
+        spawnGz: insideZ,
+        porchGx: door.gx,
+        porchGz: insideZ,
         doorGx: door.gx,
         doorGz: door.gz,
         insideGx: door.gx,
         insideGz: insideZ,
+        outsideVirtual: true,
         type: i === 0 ? 'front_door' : 'back_door',
       };
     });
     if (points.length > 0) return points;
+    const x = Math.floor(this.tilemap.width / 2);
     return [{
       id: 'fallback_edge',
-      gx: Math.floor(this.tilemap.width / 2),
-      gz: 0,
-      doorGx: Math.floor(this.tilemap.width / 2),
-      doorGz: 1,
-      insideGx: Math.floor(this.tilemap.width / 2),
-      insideGz: 2,
+      gx: x,
+      gz: 1,
+      spawnGx: x,
+      spawnGz: 1,
+      porchGx: x,
+      porchGz: 1,
+      doorGx: x,
+      doorGz: 0,
+      insideGx: x,
+      insideGz: 1,
+      outsideVirtual: true,
       type: 'front_door',
     }];
   }
