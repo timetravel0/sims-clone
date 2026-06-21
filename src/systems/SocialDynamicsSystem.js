@@ -296,14 +296,20 @@ export class SocialDynamicsSystem {
     });
   }
 
-  _name(id) { return this._sims.find(s => s.id === id)?.name ?? id; }
+  _name(id) {
+    return this._sims.find(s => s.id === id)?.name
+      ?? globalThis.window?._game?.population?.getPerson?.(id)?.name
+      ?? id;
+  }
 
   // ── Serialisation ─────────────────────────────────────────────────────────────
 
   serialise() {
     const rel = {};
     for (const [k, v] of this._rel) rel[k] = { ...v };
-    return { rel };
+    const cooldowns = {};
+    for (const [k, v] of this._cooldowns) cooldowns[k] = v;
+    return { rel, cooldowns };
   }
 
   restore(data = {}) {
@@ -313,6 +319,10 @@ export class SocialDynamicsSystem {
       const d = {};
       for (const dim of DIMENSIONS) d[dim] = clamp(v[dim] ?? 0);
       this._rel.set(k, d);
+    }
+    for (const [k, v] of Object.entries(data.cooldowns ?? {})) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) this._cooldowns.set(k, n);
     }
   }
 }
