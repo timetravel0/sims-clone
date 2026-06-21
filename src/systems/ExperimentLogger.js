@@ -32,6 +32,7 @@ export class ExperimentLogger {
     this._game = game;
     this._tick = 0;
     this._events = [];
+    this._runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     this._unsubscribers = EVENTS.map(type =>
       bus.on(type, payload => this.record(type, payload))
     );
@@ -108,6 +109,14 @@ export class ExperimentLogger {
     }
     this._events.push(row);
     if (this._events.length > 20000) this._events.shift();
+    this._appendPersistent(row);
+  }
+
+  _appendPersistent(row) {
+    try {
+      const adapter = this._game?._saveLoad?._adapter;
+      adapter?.appendEvent?.(this._runId, row);
+    } catch { /* event persistence is best-effort */ }
   }
 
   // ── Analysis helpers (Social Core 2.0) ──────────────────────────────────────
@@ -234,12 +243,14 @@ export class ExperimentLogger {
   serialise() {
     return {
       tick: this._tick,
+      runId: this._runId,
       events: this._events,
     };
   }
 
   restore(data = {}) {
     this._tick = data.tick ?? 0;
+    this._runId = data.runId ?? this._runId;
     this._events = Array.isArray(data.events) ? data.events.slice(-20000) : [];
   }
 
