@@ -139,6 +139,30 @@
     .ci-swatch { display:inline-block; width:9px; height:9px; border-radius:2px; flex-shrink:0; }
     .ci-social { font-size:9px; color:#ffd54f; margin-left:2px; }
 
+    /* ── God panel ───────────────────────────────────────────── */
+    #god-panel {
+      display:none; position:fixed; bottom:48px; left:16px; z-index:60;
+      width:210px; background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
+      border:1px solid rgba(255,255,255,0.1); border-radius:10px;
+      padding:12px 14px;
+    }
+    #god-panel h3 { color:#eee; font-size:11px; margin-bottom:8px;
+      text-transform:uppercase; letter-spacing:.08em; }
+    #god-panel label { display:block; color:#777; font-size:10px; margin:8px 0 4px; }
+    #god-panel select {
+      width:100%; background:rgba(255,255,255,0.07); color:#ddd;
+      border:1px solid rgba(255,255,255,0.12); border-radius:6px;
+      padding:5px 7px; font-size:11px;
+    }
+    #god-panel button {
+      background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12);
+      color:#ddd; border-radius:6px; padding:5px 8px; cursor:pointer;
+      font-size:11px;
+    }
+    #god-panel button:hover { background:rgba(255,255,255,0.15); }
+    .god-row { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; }
+    .god-target { color:#ffd580; font-size:12px; font-weight:700; }
+
     /* ── Speech bubbles ──────────────────────────────────────── */
     #bubbles { position:fixed; inset:0; pointer-events:none; z-index:30; }
     .bubble {
@@ -200,6 +224,7 @@
   </div>
 
   <div id="rel-panel"></div>
+  <div id="god-panel"></div>
 
   <div id="build-panel">
     <p>Select an object then click a tile to place it. ✦ = social</p>
@@ -217,6 +242,7 @@
     <div class="tb-sep"></div>
     <button id="btn-story">📖 Story</button>
     <button id="btn-rel">♥ Relations</button>
+    <button id="btn-god">⚡ God</button>
     <button id="btn-build">🔨 Build</button>
     <button id="btn-save">💾 Save</button>
     <button id="btn-load">📂 Load</button>

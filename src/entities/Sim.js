@@ -71,12 +71,19 @@ export class Sim {
     this.gx = gx; this.gz = gz;
     this.worldX = gx; this.worldZ = gz;
     this.mesh.position.set(gx, 0, gz);
+    this._world.reserveCell(gx, gz, this);
   }
 
   walkTo(gx, gz) {
-    const pf   = new Pathfinder(this._world.tilemap);
-    const path = pf.find(this.gx, this.gz, gx, gz);
+    const target = this._world.findNearestAvailableCell(gx, gz, this);
+    if (!target) return;
+    const pf = new Pathfinder(this._world.tilemap, (x, z) =>
+      this._world.isCellOccupied(x, z, this.id) ||
+      this._world.isCellReserved(x, z, this.id)
+    );
+    const path = pf.find(this.gx, this.gz, target.x, target.z);
     if (path && path.length > 0) {
+      if (!this._world.reserveCell(target.x, target.z, this)) return;
       this._world.doorManager?.resolvePath(path);
       this.startPath(path);
     }
@@ -107,6 +114,13 @@ export class Sim {
   _moveAlongPath(dt) {
     if (this._path.length === 0) { this.isMoving = false; return; }
     const target = this._path[0];
+    if (
+      this._world.isCellOccupied(target.x, target.z, this.id) ||
+      this._world.isCellReserved(target.x, target.z, this.id)
+    ) {
+      this.isMoving = true;
+      return;
+    }
     const dx = target.x - this.worldX, dz = target.z - this.worldZ;
     const dist = Math.sqrt(dx*dx + dz*dz);
     const step = SPEED * dt;
@@ -145,7 +159,12 @@ export class Sim {
 
   restore(data) {
     this.gx = data.gx; this.gz = data.gz;
+    this.worldX = data.gx; this.worldZ = data.gz;
+    this._path = [];
+    this.isMoving = false;
     this.mesh.position.set(data.gx, 0, data.gz);
+    this._world.reserveCell(data.gx, data.gz, this);
+    if (data.personality) Object.assign(this.personality, data.personality);
     this.needs.restore_state(data.needs);
     this.mood.restore(data.mood);
     this.emotions.restore(data.emotions || {});

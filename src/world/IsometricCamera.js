@@ -30,6 +30,13 @@ export class IsometricCamera {
     this.camera.updateProjectionMatrix();
   }
 
+  onResize(aspect) { this.setAspect(aspect); }
+
+  focusOn(x, z) {
+    this._target.set(x, 0, z);
+    this._reposition();
+  }
+
   follow(worldPos) {
     this._target.lerp(worldPos, 0.05);
     this._reposition();

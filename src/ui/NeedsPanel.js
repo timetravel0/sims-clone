@@ -22,6 +22,10 @@ export class NeedsPanel {
     }
   }
   setSimName(name) { document.getElementById('sim-name').textContent = name; }
+  setTraits(text) {
+    const el = document.getElementById('sim-traits');
+    if (el) el.textContent = text || '';
+  }
   update(values) {
     for (const key of NEED_KEYS) {
       const bar = this._bars[key]; if (!bar) continue;

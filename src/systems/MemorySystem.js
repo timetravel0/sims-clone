@@ -94,6 +94,21 @@ export class MemorySystem {
       const intensity = Math.min(1, 1 - value / 15);
       this.record(simId, 'need_crisis', { need, value }, intensity, -0.6, 0.001);
     });
+
+    bus.on('life:event', ({ simId, simName, type, valence }) => {
+      if (!simId) return;
+      const game = window._game;
+      const sims = game?.sims || [];
+      for (const sim of sims) {
+        if (sim.id === simId) continue;
+        const relBias = Math.max(0.35, Math.abs(valence ?? 0.5) * 0.55);
+        this.record(sim.id, 'life_event', {
+          type,
+          otherId: simId,
+          otherName: simName,
+        }, relBias, (valence ?? 0) * 0.55, 0.001);
+      }
+    });
   }
 
   serialise() {

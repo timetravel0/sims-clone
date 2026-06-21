@@ -1,8 +1,11 @@
 export class Pathfinder {
-  constructor(tilemap) { this._map = tilemap; }
+  constructor(tilemap, isBlocked = null) {
+    this._map = tilemap;
+    this._isBlocked = isBlocked;
+  }
 
   find(sx, sz, gx, gz) {
-    if (!this._map.isWalkable(gx, gz)) {
+    if (!this._isWalkable(gx, gz, sx, sz, gx, gz)) {
       const adj = this._adjacent(gx, gz);
       if (adj.length === 0) return null;
       ({ x: gx, z: gz } = adj[0]);
@@ -18,7 +21,7 @@ export class Pathfinder {
       open.delete(curKey); closed.add(curKey);
       const [cx, cz] = curKey.split(',').map(Number);
       if (cx === gx && cz === gz) return this._reconstruct(parent, curKey, start);
-      for (const nb of this._neighbors(cx, cz)) {
+      for (const nb of this._neighbors(cx, cz, sx, sz, gx, gz)) {
         const nk = key(nb.x, nb.z);
         if (closed.has(nk)) continue;
         const tG = g.get(curKey) + 1;
@@ -30,11 +33,19 @@ export class Pathfinder {
     return null;
   }
 
-  _neighbors(x, z) {
-    return [{x:x+1,z},{x:x-1,z},{x,z:z+1},{x,z:z-1}].filter(n => this._map.isWalkable(n.x,n.z));
+  _isWalkable(x, z, sx, sz, gx, gz) {
+    if (!this._map.isWalkable(x, z)) return false;
+    if (x === sx && z === sz) return true;
+    if (x === gx && z === gz) return true;
+    return !this._isBlocked?.(x, z);
+  }
+  _neighbors(x, z, sx, sz, gx, gz) {
+    return [{x:x+1,z},{x:x-1,z},{x,z:z+1},{x,z:z-1}]
+      .filter(n => this._isWalkable(n.x, n.z, sx, sz, gx, gz));
   }
   _adjacent(x, z) {
-    return [{x:x+1,z},{x:x-1,z},{x,z:z+1},{x,z:z-1}].filter(n => this._map.isWalkable(n.x,n.z));
+    return [{x:x+1,z},{x:x-1,z},{x,z:z+1},{x,z:z-1}]
+      .filter(n => this._map.isWalkable(n.x,n.z) && !this._isBlocked?.(n.x, n.z));
   }
   _reconstruct(parent, endKey, startKey) {
     const path = []; let cur = endKey;

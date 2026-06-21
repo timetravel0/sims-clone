@@ -17,6 +17,7 @@ const TYPES_NEGATIVE = ['argue', 'insult'];
 export class SocialAction extends Action {
   constructor(simA, simB, world, type) {
     super(`Social(${simA.name}→${simB.name})`);
+    this._sim   = simA;
     this._simA  = simA;
     this._simB  = simB;
     this._world = world;
@@ -70,7 +71,9 @@ export class SocialAction extends Action {
   }
 
   _doInteract() {
+    const before = socialManager.score(this._simA.id, this._simB.id);
     const score = socialManager.interact(this._simA.id, this._simB.id, this._type);
+    const delta = score - before;
     const gain  = this._type === 'hug' ? 30 : this._type === 'argue' ? -5 : 20;
     this._simA.needs.restore('social', Math.abs(gain));
     this._simB.needs.restore('social', Math.abs(gain) / 2);
@@ -79,8 +82,10 @@ export class SocialAction extends Action {
     this._simB.showBubble(score >= 0 ? '😊' : '😤', 2);
     Logger.info(`[Social] ${this._simA.name} → ${this._simB.name}: ${this._type} (score ${score})`);
     bus.emit('social:interaction', {
+      idA: this._simA.id,
+      idB: this._simB.id,
       nameA: this._simA.name, nameB: this._simB.name,
-      type: this._type, score,
+      type: this._type, score, delta,
     });
   }
 }
@@ -89,3 +94,7 @@ const EMOJI = {
   chat: '💬', joke: '😄', compliment: '🌟',
   hug: '🤗', argue: '😠', insult: '😡',
 };
+
+if (typeof window !== 'undefined') {
+  window._socialActionClasses = { SocialAction };
+}
