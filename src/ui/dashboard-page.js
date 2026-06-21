@@ -61,6 +61,7 @@ function metrics(g) {
     }
     if (maxAff < 15) isolated++;
   }
+  const external = (() => { try { return g.experimentLogger?.externalSocialityMetrics?.() ?? {}; } catch { return {}; } })();
   return {
     total, negative, acceptedPos,
     conflictRate: total ? negative / total : 0,
@@ -68,6 +69,7 @@ function metrics(g) {
     isolationIndex: sims.length ? isolated / sims.length : 0,
     strongestBond: strongest.v > -Infinity ? `${strongest.t} (${strongest.v})` : '—',
     highestResentment: resent.v > 0 ? `${resent.t} (${resent.v})` : '—',
+    external,
   };
 }
 
@@ -76,20 +78,56 @@ function renderOverview(g) {
   const m = metrics(g);
   const pct = v => `${Math.round(v * 100)}%`;
   const card = (big, lbl) => `<div class="card"><span class="big">${big}</span><span class="lbl">${lbl}</span></div>`;
+  const pop = g.population;
   return `
     <h2>Key metrics</h2>
     <div class="grid cards">
       ${card(g.clock?.day ?? 0, 'sim day')}
-      ${card(g.sims?.length ?? 0, 'population')}
+      ${card(pop?.allPeople?.().length ?? g.sims?.length ?? 0, 'total population')}
+      ${card(pop?.householdMembers?.().length ?? g.sims?.length ?? 0, 'household')}
+      ${card(pop?.activeVisitors?.().length ?? 0, 'active visitors')}
+      ${card(pop?.offLotPeople?.().length ?? 0, 'off-lot people')}
       ${card(m.total, 'social events')}
       ${card(pct(m.conflictRate), 'conflict rate')}
       ${card(pct(m.positiveRate), 'positive rate')}
       ${card(pct(m.isolationIndex), 'isolation index')}
+      ${card(pct(m.external.visitAcceptanceRate ?? 0), 'visit acceptance')}
+      ${card(m.external.averageVisitDuration ?? 0, 'avg visit duration')}
+      ${card(pct(m.external.externalInteractionRate ?? 0), 'external interaction rate')}
+      ${card(m.external.outsideNetworkSize ?? 0, 'outside network')}
       ${card(m.strongestBond, 'strongest bond')}
       ${card(m.highestResentment, 'highest resentment')}
     </div>
     <h2>Per-Sim activity</h2>
     ${renderSummaryBySim(g)}`;
+}
+
+function renderVisitors(g) {
+  const pop = g.population;
+  const vs = g.visitorSystem;
+  const m = (() => { try { return g.experimentLogger?.externalSocialityMetrics?.() ?? {}; } catch { return {}; } })();
+  const person = id => pop?.getPerson?.(id)?.name ?? id;
+  const active = vs?.activeVisits?.() ?? [];
+  const history = vs?.history?.().slice(-60).reverse() ?? [];
+  const offlot = pop?.offLotPeople?.() ?? [];
+  const cards = `<div class="grid cards">
+    <div class="card"><span class="big">${active.length}</span><span class="lbl">active visits</span></div>
+    <div class="card"><span class="big">${Math.round((m.visitAcceptanceRate ?? 0) * 100)}%</span><span class="lbl">acceptance</span></div>
+    <div class="card"><span class="big">${m.rejectedVisits ?? 0}</span><span class="lbl">rejected</span></div>
+    <div class="card"><span class="big">${m.noAnswerVisits ?? 0}</span><span class="lbl">no answer</span></div>
+    <div class="card"><span class="big">${m.mostFrequentVisitor || '—'}</span><span class="lbl">frequent visitor</span></div>
+    <div class="card"><span class="big">${m.mostVisitedHost || '—'}</span><span class="lbl">visited host</span></div>
+  </div>`;
+  const activeTable = active.length ? `<table><thead><tr><th>Visitor</th><th>Host</th><th>State</th><th>Reason</th><th>Entry</th><th>Outcome</th></tr></thead><tbody>${
+    active.map(v => `<tr><td><b>${esc(person(v.personId))}</b></td><td>${esc(person(v.hostId))}</td><td>${esc(v.state)}</td><td>${esc(v.reason)}</td><td>${esc(v.entryPointId)}</td><td>${esc(v.outcome ?? '')}</td></tr>`).join('')
+  }</tbody></table>` : '<div class="muted">No active visitors.</div>';
+  const histTable = history.length ? `<table><thead><tr><th>Visitor</th><th>Host</th><th>Reason</th><th>Outcome</th><th>Entered</th><th>Left</th><th>Social</th></tr></thead><tbody>${
+    history.map(v => `<tr><td>${esc(person(v.personId))}</td><td>${esc(person(v.hostId))}</td><td>${esc(v.reason)}</td><td>${esc(v.outcome)}</td><td>${v.enteredTick ?? '—'}</td><td>${v.actualLeftTick ?? '—'}</td><td>${v.socialSummary?.interactions ?? 0}</td></tr>`).join('')
+  }</tbody></table>` : '<div class="muted">No completed visits yet.</div>';
+  const offTable = offlot.length ? `<table><thead><tr><th>Person</th><th>Role</th><th>State</th><th>Availability</th><th>Last seen</th></tr></thead><tbody>${
+    offlot.map(p => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.role)}</td><td>${esc(p.offLotState)}</td><td>${p.availability?.from ?? 0}-${p.availability?.to ?? 24}</td><td>${p.lastSeenAt ?? '—'}</td></tr>`).join('')
+  }</tbody></table>` : '<div class="muted">No off-lot people.</div>';
+  return `${cards}<h2>Active visitors</h2>${activeTable}<h2>Recent visits</h2>${histTable}<h2>Off-lot population</h2>${offTable}`;
 }
 
 function renderSummaryBySim(g) {
@@ -140,7 +178,7 @@ function renderSims(g) {
 }
 
 function renderRel(g) {
-  const dyn = g.socialDynamics, sims = g.sims ?? [];
+  const dyn = g.socialDynamics, sims = peopleForRelationships(g);
   if (!dyn || sims.length === 0) return '<div class="empty">No relationship data.</div>';
   if (!selPair && sims.length >= 2) selPair = [sims[0].id, sims[1].id];
 
@@ -187,9 +225,9 @@ function renderPair(g) {
   const timeline = (() => { try { return g.experimentLogger?.relationshipTimeline?.([a, b]) ?? []; } catch { return []; } })();
   const tl = timeline.slice(-18).reverse().map(e => `<tr>
       <td class="muted">D${e.simDay}</td>
-      <td>${esc(g.sims.find(s => s.id === e.actorId)?.name ?? e.actorId)}</td>
+      <td>${esc(personName(g, e.actorId))}</td>
       <td><b class="${NEG.has(e.interactionType) ? 'neg' : 'pos'}">${esc(e.interactionType)}</b></td>
-      <td>${esc(g.sims.find(s => s.id === e.targetId)?.name ?? e.targetId)}</td>
+      <td>${esc(personName(g, e.targetId))}</td>
       <td>${e.accepted ? '✓' : '✗'}</td>
       <td class="muted">${esc(e.dominantMotive ?? '')}</td>
       <td>${e.relationshipAfter ?? ''}</td></tr>`).join('');
@@ -207,26 +245,45 @@ function renderPair(g) {
 
 function renderEvents(g) {
   let rows = [];
-  try { rows = g.experimentLogger?._socialRows?.() ?? []; } catch {}
-  if (rows.length === 0) return '<div class="empty">No social events logged yet.</div>';
+  try { rows = (g.experimentLogger?.events ?? []).filter(e => e.type === 'social:interaction' || e.type?.startsWith?.('visitor:') || e.type?.startsWith?.('offlot:')); } catch {}
+  if (rows.length === 0) return '<div class="empty">No events logged yet.</div>';
   const recent = rows.slice(-120).reverse();
-  return `<h2>Recent social events (${rows.length} total)</h2>
+  return `<h2>Recent experiment events (${rows.length} total)</h2>
     <table><thead><tr>
-      <th>Day</th><th>Hr</th><th>Actor</th><th>Action</th><th>Target</th><th>OK</th><th>Motive</th><th>Goal</th><th>Location</th><th>Public</th><th>Rel→</th><th>Δ</th>
+      <th>Day</th><th>Hr</th><th>Type</th><th>Actor/Visitor</th><th>Action/State</th><th>Target/Host</th><th>OK</th><th>Reason</th><th>Location</th><th>Rel→</th><th>Δ</th>
     </tr></thead><tbody>${
-      recent.map(e => `<tr>
+      recent.map(e => e.type === 'social:interaction' ? `<tr>
         <td class="muted">${e.simDay}</td><td class="muted">${e.simHour}</td>
+        <td>${esc(e.type)}</td>
         <td>${esc(e.actorName)}</td>
         <td><b class="${NEG.has(e.interactionType) ? 'neg' : (e.accepted ? 'pos' : 'neu')}">${esc(e.interactionType)}</b></td>
         <td>${esc(e.targetName)}</td>
         <td>${e.accepted ? '✓' : '✗'}</td>
         <td class="muted">${esc(e.dominantMotive)}</td>
-        <td class="muted">${esc(e.activeGoal ?? '')}</td>
         <td class="muted">${esc(e.location)}</td>
-        <td>${e.isPublic ? '👁' : ''}</td>
         <td>${e.relationshipAfter}</td>
-        <td>${e.delta}</td></tr>`).join('')
+        <td>${e.delta}</td></tr>` : `<tr>
+        <td class="muted">${e.simDay}</td><td class="muted">${e.simHour}</td>
+        <td>${esc(e.type)}</td>
+        <td>${esc(e.visitorName ?? e.personName ?? e.visitorId ?? e.personId ?? '')}</td>
+        <td><b class="neu">${esc(e.state ?? e.outcome ?? '')}</b></td>
+        <td>${esc(e.hostName ?? e.hostId ?? '')}</td>
+        <td>${e.accepted ? '✓' : ''}</td>
+        <td class="muted">${esc(e.reason ?? '')}</td>
+        <td class="muted">${esc(e.entryPointId ?? '')}</td>
+        <td>${e.relationshipAfter ?? ''}</td>
+        <td>${e.delta ?? ''}</td></tr>`).join('')
     }</tbody></table>`;
+}
+
+function peopleForRelationships(g) {
+  const people = g.population?.allPeople?.();
+  if (!people) return g.sims ?? [];
+  return people.map(p => g.sims?.find?.(s => s.id === p.id) ?? p);
+}
+
+function personName(g, id) {
+  return g.sims?.find?.(s => s.id === id)?.name ?? g.population?.getPerson?.(id)?.name ?? id;
 }
 
 // ── main render loop ──────────────────────────────────────────────────────────
@@ -242,6 +299,7 @@ function render() {
   try {
     if (activeTab === 'overview') content.innerHTML = renderOverview(g);
     else if (activeTab === 'sims') content.innerHTML = renderSims(g);
+    else if (activeTab === 'visitors') content.innerHTML = renderVisitors(g);
     else if (activeTab === 'rel')  content.innerHTML = renderRel(g);
     else if (activeTab === 'events') content.innerHTML = renderEvents(g);
   } catch (err) {

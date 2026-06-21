@@ -5,6 +5,19 @@ const NEGATIVE_TYPES = new Set(['argue', 'insult', 'confront', 'avoid', 'reject_
 const EVENTS = [
   'social:interaction',
   'social:update',
+  'visitor:scheduled',
+  'visitor:arriving',
+  'visitor:doorbell',
+  'visitor:invited',
+  'visitor:rejected',
+  'visitor:noAnswer',
+  'visitor:entered',
+  'visitor:leaving',
+  'visitor:left',
+  'visitor:visitEnded',
+  'offlot:stateChanged',
+  'offlot:visitIntent',
+  'offlot:relationshipDrift',
   'mood:change',
   'emotion:triggered',
   'life:event',
@@ -59,6 +72,37 @@ export class ExperimentLogger {
         activeGoal:         payload.activeGoal ?? '',
         delta:              payload.delta ?? 0,
       };
+    } else if (type.startsWith('visitor:')) {
+      row = {
+        ...base,
+        eventId: payload.eventId ?? `v_${this._tick}_${this._events.length}`,
+        visitorId: payload.visitorId ?? payload.personId ?? '',
+        visitorName: payload.visitorName ?? '',
+        hostId: payload.hostId ?? '',
+        hostName: payload.hostName ?? '',
+        reason: payload.reason ?? '',
+        state: payload.state ?? '',
+        outcome: payload.outcome ?? '',
+        accepted: payload.invited === true || payload.accepted === true,
+        entryPointId: payload.entryPointId ?? '',
+        duration: payload.duration ?? 0,
+        relationshipBefore: payload.relationshipBefore ?? '',
+        relationshipAfter: payload.relationshipAfter ?? '',
+        payload: this._simple(payload.socialSummary ?? payload.payload ?? ''),
+      };
+    } else if (type.startsWith('offlot:')) {
+      row = {
+        ...base,
+        eventId: payload.eventId ?? `o_${this._tick}_${this._events.length}`,
+        personId: payload.personId ?? '',
+        personName: payload.personName ?? '',
+        hostId: payload.hostId ?? '',
+        hostName: payload.hostName ?? '',
+        state: payload.state ?? '',
+        previous: payload.previous ?? '',
+        reason: payload.reason ?? '',
+        delta: payload.delta ?? '',
+      };
     } else {
       row = { ...base, ...this._sanitize(payload) };
     }
@@ -69,6 +113,8 @@ export class ExperimentLogger {
   // ── Analysis helpers (Social Core 2.0) ──────────────────────────────────────
 
   _socialRows() { return this._events.filter(e => e.type === 'social:interaction'); }
+  _visitorRows() { return this._events.filter(e => e.type?.startsWith?.('visitor:')); }
+  _offLotRows() { return this._events.filter(e => e.type?.startsWith?.('offlot:')); }
 
   /** Per-Sim aggregate: interactions initiated, acceptance rate, motive mix. */
   summaryBySim() {
@@ -108,6 +154,72 @@ export class ExperimentLogger {
         interactionType: e.interactionType, accepted: e.accepted,
         relationshipAfter: e.relationshipAfter, dominantMotive: e.dominantMotive,
       }));
+  }
+
+  summaryByVisitor() {
+    const out = {};
+    for (const e of this._visitorRows()) {
+      const id = e.visitorId || 'unknown';
+      const s = out[id] ??= { visitorId: id, name: e.visitorName || id, total: 0, accepted: 0, rejected: 0, noAnswer: 0, duration: 0 };
+      if (e.type === 'visitor:visitEnded') {
+        s.total++;
+        if (e.outcome === 'accepted' || e.accepted) s.accepted++;
+        if (e.outcome === 'rejected') s.rejected++;
+        if (e.outcome === 'no_answer') s.noAnswer++;
+        s.duration += Number(e.duration || 0);
+      }
+    }
+    for (const s of Object.values(out)) {
+      s.acceptanceRate = s.total ? +(s.accepted / s.total).toFixed(2) : 0;
+      s.averageDuration = s.total ? +(s.duration / s.total).toFixed(1) : 0;
+    }
+    return out;
+  }
+
+  summaryByVisitReason() {
+    const out = {};
+    for (const e of this._visitorRows().filter(r => r.type === 'visitor:visitEnded')) {
+      const key = e.reason || 'unknown';
+      const s = out[key] ??= { reason: key, total: 0, accepted: 0, rejected: 0, noAnswer: 0, duration: 0 };
+      s.total++;
+      if (e.outcome === 'accepted' || e.accepted) s.accepted++;
+      if (e.outcome === 'rejected') s.rejected++;
+      if (e.outcome === 'no_answer') s.noAnswer++;
+      s.duration += Number(e.duration || 0);
+    }
+    return out;
+  }
+
+  visitTimeline(visitorId) {
+    return this._visitorRows().filter(e => !visitorId || e.visitorId === visitorId);
+  }
+
+  externalSocialityMetrics() {
+    const visits = this._visitorRows().filter(e => e.type === 'visitor:visitEnded');
+    const accepted = visits.filter(e => e.outcome === 'accepted' || e.accepted).length;
+    const rejected = visits.filter(e => e.outcome === 'rejected').length;
+    const noAnswer = visits.filter(e => e.outcome === 'no_answer').length;
+    const durations = visits.map(e => Number(e.duration || 0)).filter(n => n > 0);
+    const socialRows = this._socialRows();
+    const population = this._game?.population;
+    const externalIds = new Set(population?.allPeople?.().filter(p => p.role !== 'household').map(p => p.id) ?? []);
+    const externalInteractions = socialRows.filter(e => externalIds.has(e.actorId) || externalIds.has(e.targetId)).length;
+    const byVisitor = this.summaryByVisitor();
+    const byHost = {};
+    for (const e of visits) if (e.hostId) byHost[e.hostId] = (byHost[e.hostId] ?? 0) + 1;
+    const maxKey = obj => Object.entries(obj).sort((a, b) => (b[1].total ?? b[1]) - (a[1].total ?? a[1]))[0]?.[0] ?? '';
+    return {
+      totalVisits: visits.length,
+      visitAcceptanceRate: visits.length ? +(accepted / visits.length).toFixed(2) : 0,
+      rejectedVisits: rejected,
+      noAnswerVisits: noAnswer,
+      averageVisitDuration: durations.length ? +(durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(1) : 0,
+      externalInteractionRate: socialRows.length ? +(externalInteractions / socialRows.length).toFixed(2) : 0,
+      outsideNetworkSize: externalIds.size,
+      mostFrequentVisitor: byVisitor[maxKey(byVisitor)]?.name ?? '',
+      mostRejectedVisitor: Object.values(byVisitor).sort((a, b) => b.rejected - a.rejected)[0]?.name ?? '',
+      mostVisitedHost: byHost[maxKey(byHost)] ? (this._game?.sims?.find(s => s.id === maxKey(byHost))?.name ?? maxKey(byHost)) : '',
+    };
   }
 
   clear() {

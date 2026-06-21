@@ -26,6 +26,8 @@ import { GodMode }             from '../systems/GodMode.js';
 import { RelationshipGraph }   from '../systems/RelationshipGraph.js';
 import { SocialDynamicsSystem } from '../systems/SocialDynamicsSystem.js';
 import { PopulationSystem }     from '../systems/PopulationSystem.js';
+import { VisitorSystem }        from '../systems/VisitorSystem.js';
+import { OffLotSimulationSystem } from '../systems/OffLotSimulationSystem.js';
 import { RomanceSystem }       from '../systems/RomanceSystem.js';
 import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
 import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
@@ -218,6 +220,8 @@ export class Game {
     this.sims.forEach((s, i) => this.careerSystem.assign(s.id, STARTER_CAREERS[i % STARTER_CAREERS.length]));
     this.partySystem     = new PartySystem(this);
     this.population      = new PopulationSystem(this, this.sims);   // household + external people
+    this.visitorSystem   = new VisitorSystem(this);
+    this.offLotSimulation = new OffLotSimulationSystem(this);
 
     for (const sim of this.sims) skillSystem.register(sim);
     this._weather       = weatherSystem;
@@ -296,6 +300,8 @@ export class Game {
     this.scheduleSystem.update(scaled);
     this.partySystem.update(scaled);
     this.socialDynamics.update(scaled);
+    this.offLotSimulation.update(scaled);
+    this.visitorSystem.update(scaled);
 
     // Sprint 4 systems
     this._weather.update(scaled);
@@ -509,13 +515,17 @@ export class Game {
         time:      this.dayNight?.time ?? this.clock.hour / 24,
         totalDays: this.dayNight?.totalDays ?? 0,
       },
-      sims:     this.sims.map(s => s.serialise()),
+      sims:     this.sims
+        .filter(s => !s._isVisitor && (this.population?.isHouseholdMember?.(s.id) ?? true))
+        .map(s => s.serialise()),
       furniture: this.world.serialiseFurniture(),
       memories: memorySystem.serialise(),
       social:   socialManager.serialise(),
       relationshipGraph: this.relationshipGraph.serialise(),
       socialDynamics: this.socialDynamics.serialise(),
       population: this.population.serialise(),
+      visitors: this.visitorSystem.serialise(),
+      offLotSimulation: this.offLotSimulation.serialise(),
       romance:  this.romanceSystem.serialise(),
       experimentLog: this.experimentLogger.serialise(),
       age: this.ageSystem.serialise(),
@@ -552,6 +562,8 @@ export class Game {
     if (state.relationshipGraph)  this.relationshipGraph.restore(state.relationshipGraph);
     if (state.socialDynamics)     this.socialDynamics.restore(state.socialDynamics);
     if (state.population)         this.population.restore(state.population);
+    if (state.visitors)           this.visitorSystem.restore(state.visitors);
+    if (state.offLotSimulation)   this.offLotSimulation.restore(state.offLotSimulation);
     if (state.romance)            this.romanceSystem.restore(state.romance);
     if (state.experimentLog)      this.experimentLogger.restore(state.experimentLog);
     if (state.age)                this.ageSystem.restore(state.age);

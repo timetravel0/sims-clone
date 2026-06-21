@@ -23,6 +23,7 @@ export class World {
 
     this.doorManager = new DoorManager(this);
     this._placeDoors();
+    this.entryPoints = this._buildEntryPoints();
   }
 
   _buildFloor() {
@@ -78,6 +79,43 @@ export class World {
     // Two doors on the bottom wall
     this.doorManager.addDoor({ gx: 5,  gz: 0,  axis: 'z' });
     this.doorManager.addDoor({ gx: 10, gz: 15, axis: 'z' });
+  }
+
+  _buildEntryPoints() {
+    const doors = this.doorManager?.doors ?? [];
+    const points = doors.map((door, i) => {
+      const outsideZ = door.gz === 0 ? 0 : this.tilemap.height - 1;
+      const insideZ = door.gz === 0 ? 1 : this.tilemap.height - 2;
+      return {
+        id: i === 0 ? 'front_door' : `entry_${i + 1}`,
+        gx: door.gx,
+        gz: outsideZ,
+        doorGx: door.gx,
+        doorGz: door.gz,
+        insideGx: door.gx,
+        insideGz: insideZ,
+        type: i === 0 ? 'front_door' : 'back_door',
+      };
+    });
+    if (points.length > 0) return points;
+    return [{
+      id: 'fallback_edge',
+      gx: Math.floor(this.tilemap.width / 2),
+      gz: 0,
+      doorGx: Math.floor(this.tilemap.width / 2),
+      doorGz: 1,
+      insideGx: Math.floor(this.tilemap.width / 2),
+      insideGz: 2,
+      type: 'front_door',
+    }];
+  }
+
+  getEntryPoint(id) {
+    return this.entryPoints?.find(p => p.id === id) ?? null;
+  }
+
+  getEntryPointByType(type = 'front_door') {
+    return this.entryPoints?.find(p => p.type === type) ?? this.entryPoints?.[0] ?? null;
   }
 
   _addFurniture(item) {

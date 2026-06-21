@@ -170,6 +170,7 @@ Acceptance criteria:
 * Gli NPC non spariscono come identità quando lasciano il lotto.
 
 TASK 4 — Introdurre VisitorSystem
+✅ IMPLEMENTATO — `src/systems/VisitorSystem.js` gestisce lifecycle visitatore completo (scheduled/arriving/doorbell/waiting/invited/rejected/noAnswer/visiting/leaving/returned_home), decideDoorResponse basata su relazione, bisogni, ora, personalità e motivo visita, attiva/deattiva NPC via PopulationSystem, forza arrivo/ingresso/uscita con azioni dedicate e serialise/restore. Gli eventi `visitor:*` passano da EventBus e ExperimentLogger.
 
 Crea `src/systems/VisitorSystem.js`.
 
@@ -294,6 +295,7 @@ Acceptance criteria:
 * Il dashboard mostra active visitors e storico visite.
 
 TASK 5 — Usare porte ed entry point
+✅ IMPLEMENTATO — `World` espone `entryPoints`, `getEntryPoint()` e `getEntryPointByType()`, derivati dalle porte esistenti con fallback su bordo mappa. VisitorSystem usa `front_door` di default.
 
 Modifica `src/world/World.js` e se necessario `DoorManager`.
 
@@ -329,6 +331,7 @@ Acceptance criteria:
 * Se una porta si apre/chiude, il visitor non resta bloccato.
 
 TASK 6 — Visitor AI
+✅ IMPLEMENTATO — `src/ai/VisitorActions.js` introduce WalkToDoor/RingDoorbell/WaitForInvite/EnterHouse/VisitSocialize/LeaveHouse/ReturnHome. VisitorSystem applica un'agenda temporanea tramite `brain.override`, poi lascia socialità limitata e orientata all'host/motivo visita durante lo stato `visiting`, con uscita affidabile.
 
 Crea azioni dedicate se necessario in `src/ai/VisitorActions.js`.
 
@@ -368,6 +371,7 @@ Acceptance criteria:
 * Il visitor lascia il lotto in modo affidabile.
 
 TASK 7 — OffLotSimulationSystem
+✅ IMPLEMENTATO — `src/systems/OffLotSimulationSystem.js` aggiorna periodicamente gli NPC off-lot, cambia `offLotState`, genera drift relazionale leggero e intenti visita (`offlot:visitIntent`) senza renderizzare nulla. Sistema serializzabile e integrato nel loop.
 
 Crea `src/systems/OffLotSimulationSystem.js`.
 
@@ -414,6 +418,7 @@ Acceptance criteria:
 * La dashboard può mostrare lo stato off-lot.
 
 TASK 8 — ExperimentLogger esteso
+✅ IMPLEMENTATO — `ExperimentLogger` registra `visitor:*` e `offlot:*` con schema strutturato, esportabili in JSON/CSV, e aggiunge `summaryByVisitor()`, `summaryByVisitReason()`, `visitTimeline()` ed `externalSocialityMetrics()`.
 
 Modifica `src/systems/ExperimentLogger.js`.
 
@@ -485,6 +490,7 @@ Acceptance criteria:
 * Non rompere i metodi esistenti summaryBySim, summaryByPair, relationshipTimeline.
 
 TASK 9 — Dashboard estesa
+✅ IMPLEMENTATO — dashboard inline e dashboard standalone mostrano overview popolazione, active visitors, off-lot people, metriche external sociality, tab Visitors, storico visite ed eventi visitor/offlot nella timeline. La matrice relazionale include anche persone esterne note alla PopulationSystem.
 
 Modifica dashboard inline e dashboard.html/dashboard-page.js.
 

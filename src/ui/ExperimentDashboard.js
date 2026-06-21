@@ -29,6 +29,8 @@ export class ExperimentDashboard {
     this._pair = null;   // [fromId, toId]
     this._open = false;
     bus.on('social:interaction', () => { if (this._open) this._render(); });
+    bus.on('visitor:visitEnded', () => { if (this._open) this._render(); });
+    bus.on('visitor:doorbell', () => { if (this._open) this._render(); });
   }
 
   toggle() { this._open ? this.close() : this.open(); }
@@ -52,6 +54,8 @@ export class ExperimentDashboard {
         </div>
       </div>
       <div class="exp-metrics">${this._metricsHTML()}</div>
+      <div class="exp-section-title">Population & visitors</div>
+      <div class="exp-population">${this._populationHTML()}</div>
       <div class="exp-section-title">Relationship matrix (row → col affinity)</div>
       <div class="exp-matrix">${this._matrixHTML()}</div>
       <div class="exp-section-title">Explain relation</div>
@@ -103,6 +107,7 @@ export class ExperimentDashboard {
       strongestBond: strongest.val > -Infinity ? `${strongest.names} (${strongest.val})` : '—',
       highestResentment: resent.val > 0 ? `${resent.names} (${resent.val})` : '—',
       total,
+      external: logger?.externalSocialityMetrics?.() ?? {},
     };
   }
 
@@ -115,14 +120,36 @@ export class ExperimentDashboard {
       <div class="exp-metric"><b>${pct(m.isolationIndex)}</b><span>isolation</span></div>
       <div class="exp-metric"><b>${m.strongestBond}</b><span>strongest bond</span></div>
       <div class="exp-metric"><b>${m.highestResentment}</b><span>highest resentment</span></div>
-      <div class="exp-metric"><b>${m.total}</b><span>events logged</span></div>`;
+      <div class="exp-metric"><b>${m.total}</b><span>events logged</span></div>
+      <div class="exp-metric"><b>${pct(m.external.visitAcceptanceRate ?? 0)}</b><span>visit accepted</span></div>
+      <div class="exp-metric"><b>${m.external.averageVisitDuration ?? 0}</b><span>avg visit ticks</span></div>`;
+  }
+
+  _populationHTML() {
+    const pop = this._game.population;
+    const visitors = this._game.visitorSystem;
+    if (!pop) return '<div class="exp-empty">No population system.</div>';
+    const active = visitors?.activeVisits?.() ?? [];
+    const history = visitors?.history?.().slice(-5).reverse() ?? [];
+    const last = visitors?.lastDoorbell?.();
+    const person = id => pop.getPerson?.(id)?.name ?? id;
+    return `
+      <div class="exp-metrics">
+        <div class="exp-metric"><b>${pop.householdMembers().length}</b><span>household</span></div>
+        <div class="exp-metric"><b>${pop.activeVisitors().length}</b><span>active visitors</span></div>
+        <div class="exp-metric"><b>${pop.offLotPeople().length}</b><span>off-lot</span></div>
+        <div class="exp-metric"><b>${pop.allPeople().length}</b><span>total population</span></div>
+      </div>
+      <div class="exp-summary">Last doorbell: ${last ? `${person(last.personId)} for ${person(last.hostId)} · ${last.reason}` : '—'}</div>
+      <div class="exp-summary">Active: ${active.length ? active.map(v => `${person(v.personId)} (${v.state})`).join(', ') : '—'}</div>
+      <div class="exp-summary">Recent visits: ${history.length ? history.map(v => `${person(v.personId)} → ${v.outcome}`).join(', ') : '—'}</div>`;
   }
 
   // ── Matrix ──────────────────────────────────────────────────────────────────
 
   _matrixHTML() {
     const dyn = this._game.socialDynamics;
-    const sims = this._sims();
+    const sims = this._peopleForMatrix();
     if (sims.length === 0 || !dyn) return '<div class="exp-empty">No Sims.</div>';
     let html = '<table class="exp-mtx"><tr><th></th>';
     for (const c of sims) html += `<th>${c.name[0]}</th>`;
@@ -159,9 +186,23 @@ export class ExperimentDashboard {
   // ── Timeline ──────────────────────────────────────────────────────────────────
 
   _timelineHTML() {
-    const rows = (this._game.experimentLogger?._socialRows?.() ?? []).slice(-14).reverse();
-    if (rows.length === 0) return '<div class="exp-empty">No social events yet.</div>';
+    const rows = (this._game.experimentLogger?.events ?? [])
+      .filter(e => e.type === 'social:interaction' || e.type?.startsWith?.('visitor:') || e.type?.startsWith?.('offlot:'))
+      .slice(-18).reverse();
+    if (rows.length === 0) return '<div class="exp-empty">No events yet.</div>';
     return rows.map(e => {
+      if (e.type?.startsWith?.('visitor:')) {
+        return `<div class="exp-evt exp-neu">
+          <span class="exp-day">D${e.simDay}</span>
+          <span><b>${e.type}</b> ${e.visitorName || e.visitorId} → ${e.hostName || e.hostId}</span>
+          <span class="exp-motive">${e.outcome || e.state || e.reason || ''}</span></div>`;
+      }
+      if (e.type?.startsWith?.('offlot:')) {
+        return `<div class="exp-evt exp-neu">
+          <span class="exp-day">D${e.simDay}</span>
+          <span><b>${e.type}</b> ${e.personName || e.personId}</span>
+          <span class="exp-motive">${e.state || e.reason || ''}</span></div>`;
+      }
       const cls = NEG.has(e.interactionType) ? 'neg' : (e.accepted ? 'pos' : 'rej');
       const ok = e.accepted ? '✓' : '✗';
       return `<div class="exp-evt exp-${cls}">
@@ -169,5 +210,12 @@ export class ExperimentDashboard {
         <span>${e.actorName} <b>${e.interactionType}</b> ${e.targetName} ${ok}</span>
         <span class="exp-motive">${e.dominantMotive || ''}</span></div>`;
     }).join('');
+  }
+
+  _peopleForMatrix() {
+    const pop = this._game.population;
+    if (!pop) return this._sims();
+    const people = pop.allPeople();
+    return people.map(p => this._game.sims.find(s => s.id === p.id) ?? p);
   }
 }
