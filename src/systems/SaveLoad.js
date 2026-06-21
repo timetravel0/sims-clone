@@ -27,9 +27,11 @@ export class SaveLoad {
     this._adapter = adapter;
   }
 
+  get adapter() { return this._adapter; }
+
   // ── Save ────────────────────────────────────────────────────────────────
 
-  save(slot = 0) {
+  async save(slot = 0) {
     try {
       const g = this._game;
       const timestamp = Date.now();
@@ -40,7 +42,7 @@ export class SaveLoad {
         householdName: g.householdName ?? 'The Household',
         state:         g.serialise(),
       };
-      this._adapter.saveSlot(slot, data);
+      await this._adapter.saveSlot(slot, data);
       bus.emit('save:completed', { slot, timestamp });
       return true;
     } catch (err) {
@@ -53,8 +55,8 @@ export class SaveLoad {
   // ── Load ────────────────────────────────────────────────────────────────
 
   /** Parse a slot's save data (with version check). Returns the data or null. */
-  readSlot(slot) {
-    const data = this._adapter.readSlot(slot);
+  async readSlot(slot) {
+    const data = await this._adapter.readSlot(slot);
     if (!data) return null;
     if (!data._version || data._version < SAVE_VERSION) return null;
     return data;
@@ -65,8 +67,8 @@ export class SaveLoad {
    * roster on boot (Game._boot reads the pending-load flag). sessionStorage is
    * used only for the reload handshake (not a data store).
    */
-  load(slot = 0) {
-    if (!this.hasSlot(slot)) {
+  async load(slot = 0) {
+    if (!await this.hasSlot(slot)) {
       bus.emit('load:failed', { slot, error: 'empty slot' });
       return false;
     }
@@ -78,8 +80,9 @@ export class SaveLoad {
   // ── Slot metadata ─────────────────────────────────────────────────────────
 
   /** Returns array of { slot, empty, householdName, timestamp, simCount, day }. */
-  slotList() {
-    return this._adapter.listSlots().map(({ slot, data }) => {
+  async slotList() {
+    const slots = await this._adapter.listSlots();
+    return slots.map(({ slot, data }) => {
       if (!data) return { slot, empty: true };
       const sims = data.state?.sims;
       return {
@@ -93,12 +96,13 @@ export class SaveLoad {
     });
   }
 
-  deleteSlot(slot) {
-    this._adapter.deleteSlot(slot);
+  async deleteSlot(slot) {
+    await this._adapter.deleteSlot(slot);
     bus.emit('save:deleted', { slot });
+    return true;
   }
 
-  hasSlot(slot) { return !!this._adapter.hasSlot(slot); }
+  async hasSlot(slot) { return !!await this._adapter.hasSlot(slot); }
 
   // ── Auto-save ───────────────────────────────────────────────────────────
 
@@ -106,8 +110,9 @@ export class SaveLoad {
   startAutoSave(intervalMinutes = 5) {
     this.stopAutoSave();
     this._autoSaveTimer = setInterval(() => {
-      this.save(0);
-      console.debug('[SaveLoad] auto-save slot 0');
+      void this.save(0).then(ok => {
+        if (ok) console.debug('[SaveLoad] auto-save slot 0');
+      });
     }, intervalMinutes * 60 * 1000);
   }
 
