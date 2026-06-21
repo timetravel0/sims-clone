@@ -13,9 +13,9 @@ There are two concrete adapters:
 | Adapter | File | Status | Use case |
 |---|---|---|---|
 | `LocalStorageAdapter` | `src/persistence/LocalStorageAdapter.js` | Default runtime backend | Browser/static web app. |
-| `SQLiteAdapter` | `src/persistence/SQLiteAdapter.js` | Implemented, injectable | Tauri/desktop or SQLite WASM backend. |
+| `SQLiteAdapter` | `src/persistence/SQLiteAdapter.js` | Implemented and auto-enabled in Tauri | Tauri/desktop or SQLite WASM backend. |
 
-`SQLiteAdapter` expects an injected SQL backend exposing:
+`SQLiteAdapter` expects a SQL backend exposing:
 
 ```js
 execute(sql, params?)
@@ -30,9 +30,82 @@ The runtime is now async-safe for boot/save UI:
 - `Game._boot()` awaits slot reads and slot scans;
 - the start menu awaits slot loads;
 - `SaveSlotPanel` renders async slot lists and handles save/load/delete with `await`;
-- `main.js` accepts an injected persistence adapter through `window.__SIMS_PERSISTENCE_ADAPTER__`.
+- `main.js` detects Tauri and creates a connected `SQLiteAdapter` automatically.
 
-The static browser build still uses `LocalStorageAdapter` by default. A Tauri/SQLite build should inject a connected `SQLiteAdapter` before `src/main.js` creates the `Game`.
+The static browser build still uses `LocalStorageAdapter` by default. The Tauri desktop build uses SQLite when `@tauri-apps/plugin-sql` is available and the SQL permission is granted.
+
+---
+
+## Tauri bootstrap
+
+The repository now includes a minimal Tauri shell:
+
+```text
+package.json
+src-tauri/Cargo.toml
+src-tauri/build.rs
+src-tauri/tauri.conf.json
+src-tauri/src/main.rs
+src-tauri/src/lib.rs
+src-tauri/capabilities/default.json
+```
+
+Frontend boot is handled in `src/main.js`:
+
+```js
+const persistenceAdapter = await resolvePersistenceAdapter();
+new Game(container, { persistenceAdapter });
+```
+
+In a normal browser, `resolvePersistenceAdapter()` returns `null` and the game uses `LocalStorageAdapter`.
+
+In Tauri, it dynamically imports `@tauri-apps/plugin-sql`, opens:
+
+```text
+sqlite:sims-clone.db
+```
+
+then creates:
+
+```js
+new SQLiteAdapter({ db, runId }).connect()
+```
+
+You can override the database URL before startup with:
+
+```js
+window.__SIMS_SQLITE_URL__ = 'sqlite:custom-name.db';
+```
+
+---
+
+## Run commands
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run browser dev server:
+
+```bash
+npm run dev
+```
+
+Run Tauri desktop app:
+
+```bash
+npm run tauri:dev
+```
+
+Build Tauri bundle:
+
+```bash
+npm run tauri:build
+```
+
+The first Tauri run should create/migrate the SQLite schema through `SQLiteAdapter.migrate()`.
 
 ---
 
@@ -59,29 +132,6 @@ The project is about observing simulated social dynamics. SQLite gives durable, 
 ## Why the live loop must stay in memory
 
 SQLite is for durable, between-frame data, not for every simulation tick. Needs, pathfinding, AI scoring, SocialDynamics drift and visitor lifecycle state should remain in JavaScript objects. Persistence is used for saves, snapshots, event append, configuration and later scenario loading.
-
----
-
-## Recommended strategy
-
-### Preferred: Tauri + SQLite
-
-Wrap the app in Tauri and use `tauri-plugin-sql`. This gives a real local `.db` file. The JS side creates a backend connection, wraps it in `SQLiteAdapter`, connects/migrates it, then exposes it before importing `main.js`:
-
-```js
-import Database from '@tauri-apps/plugin-sql';
-import { SQLiteAdapter } from './src/persistence/SQLiteAdapter.js';
-
-const db = await Database.load('sqlite:sims-clone.db');
-window.__SIMS_PERSISTENCE_ADAPTER__ = await new SQLiteAdapter({ db }).connect();
-await import('./src/main.js');
-```
-
-The normal web entry point can continue to import `src/main.js` directly. Only the Tauri entry point needs this bootstrap.
-
-### Alternative: SQLite WASM
-
-Use `@sqlite.org/sqlite-wasm` or `sql.js` with OPFS/IndexedDB persistence. This can remain browser-only, but the database still lives inside browser-managed storage rather than a normal user-facing file.
 
 ---
 
@@ -295,6 +345,4 @@ ORDER BY tick;
 
 ## Next migration step
 
-The next useful step is adding a Tauri-specific bootstrap module that connects `tauri-plugin-sql`, creates the `SQLiteAdapter`, assigns `window.__SIMS_PERSISTENCE_ADAPTER__`, and then imports `src/main.js`.
-
-Do not make SQLite the default for the static browser build.
+Run the Tauri app and fix any platform-specific build errors from the installed Tauri/plugin versions. After that, start moving configuration data (`ObjectRegistry`, interactions, starter careers, scenario definitions) into SQLite-backed definition tables.
