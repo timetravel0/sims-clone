@@ -1,6 +1,6 @@
 # Persistence — from localStorage to SQLite
 
-This document explains the persistence strategy for the simulation: why the current `localStorage` backend is a stop-gap, why SQLite is the right target for social-experiment data, why the live loop must stay in memory, and the initial relational schema.
+This document explains the persistence strategy for the simulation: why the current `localStorage` backend is a stop-gap, why SQLite is the right target for social-experiment data, why the live loop must stay in memory, and how the implemented adapters fit together.
 
 It complements the `PersistenceAdapter` abstraction in `src/persistence/`. `SaveLoad` no longer talks to storage directly, so the backend can be swapped without touching the simulation model.
 
@@ -8,14 +8,14 @@ It complements the `PersistenceAdapter` abstraction in `src/persistence/`. `Save
 
 ## Current status
 
-There are now two concrete adapters:
+There are two concrete adapters:
 
 | Adapter | File | Status | Use case |
 |---|---|---|---|
 | `LocalStorageAdapter` | `src/persistence/LocalStorageAdapter.js` | Default runtime backend | Browser/static web app. |
-| `SQLiteAdapter` | `src/persistence/SQLiteAdapter.js` | Implemented, not wired by default | Tauri/desktop or SQLite WASM backend. |
+| `SQLiteAdapter` | `src/persistence/SQLiteAdapter.js` | Implemented, injectable | Tauri/desktop or SQLite WASM backend. |
 
-`SQLiteAdapter` is no longer a throwing stub. It expects an injected SQL backend exposing:
+`SQLiteAdapter` expects an injected SQL backend exposing:
 
 ```js
 execute(sql, params?)
@@ -24,7 +24,15 @@ select(sql, params?)
 
 This matches `tauri-plugin-sql` and can also be wrapped around a SQLite WASM implementation.
 
-The browser build should continue to use `LocalStorageAdapter` until the boot and save-slot UI flows are made fully async. SQLite is naturally async; `localStorage` is sync.
+The runtime is now async-safe for boot/save UI:
+
+- `SaveLoad.save/readSlot/load/slotList/deleteSlot/hasSlot` are async;
+- `Game._boot()` awaits slot reads and slot scans;
+- the start menu awaits slot loads;
+- `SaveSlotPanel` renders async slot lists and handles save/load/delete with `await`;
+- `main.js` accepts an injected persistence adapter through `window.__SIMS_PERSISTENCE_ADAPTER__`.
+
+The static browser build still uses `LocalStorageAdapter` by default. A Tauri/SQLite build should inject a connected `SQLiteAdapter` before `src/main.js` creates the `Game`.
 
 ---
 
@@ -58,32 +66,22 @@ SQLite is for durable, between-frame data, not for every simulation tick. Needs,
 
 ### Preferred: Tauri + SQLite
 
-Wrap the app in Tauri and use `tauri-plugin-sql`. This gives a real local `.db` file. The JS side creates a backend connection and injects it into `SQLiteAdapter`:
+Wrap the app in Tauri and use `tauri-plugin-sql`. This gives a real local `.db` file. The JS side creates a backend connection, wraps it in `SQLiteAdapter`, connects/migrates it, then exposes it before importing `main.js`:
 
 ```js
 import Database from '@tauri-apps/plugin-sql';
 import { SQLiteAdapter } from './src/persistence/SQLiteAdapter.js';
 
 const db = await Database.load('sqlite:sims-clone.db');
-const adapter = await new SQLiteAdapter({ db }).connect();
+window.__SIMS_PERSISTENCE_ADAPTER__ = await new SQLiteAdapter({ db }).connect();
+await import('./src/main.js');
 ```
 
-Then pass `adapter` to `SaveLoad` when making the runtime async-aware.
+The normal web entry point can continue to import `src/main.js` directly. Only the Tauri entry point needs this bootstrap.
 
 ### Alternative: SQLite WASM
 
 Use `@sqlite.org/sqlite-wasm` or `sql.js` with OPFS/IndexedDB persistence. This can remain browser-only, but the database still lives inside browser-managed storage rather than a normal user-facing file.
-
-### Sync vs async note
-
-`LocalStorageAdapter` is synchronous and keeps the current startup path simple. `SQLiteAdapter` is async. Swapping it into the actual game boot flow requires updating:
-
-- `Game._boot()`;
-- start-menu save scanning;
-- `SaveSlotPanel` rendering;
-- `SaveLoad.save/load/readSlot/slotList` call sites.
-
-The adapter itself is ready; the UI/boot path still needs async wiring before SQLite becomes the default runtime backend.
 
 ---
 
@@ -297,4 +295,6 @@ ORDER BY tick;
 
 ## Next migration step
 
-The next useful step is not adding more tables. It is making the boot/save UI async-safe so the runtime can actually use `SQLiteAdapter` instead of `LocalStorageAdapter` in a Tauri build.
+The next useful step is adding a Tauri-specific bootstrap module that connects `tauri-plugin-sql`, creates the `SQLiteAdapter`, assigns `window.__SIMS_PERSISTENCE_ADAPTER__`, and then imports `src/main.js`.
+
+Do not make SQLite the default for the static browser build.
