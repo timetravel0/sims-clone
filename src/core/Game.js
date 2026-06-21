@@ -25,6 +25,7 @@ import { WalkToAction }        from '../ai/Action.js';
 import { GodMode }             from '../systems/GodMode.js';
 import { RelationshipGraph }   from '../systems/RelationshipGraph.js';
 import { SocialDynamicsSystem } from '../systems/SocialDynamicsSystem.js';
+import { PopulationSystem }     from '../systems/PopulationSystem.js';
 import { RomanceSystem }       from '../systems/RomanceSystem.js';
 import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
 import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
@@ -216,6 +217,7 @@ export class Game {
     const STARTER_CAREERS = ['scientist', 'chef', 'artist', 'programmer', 'athlete'];
     this.sims.forEach((s, i) => this.careerSystem.assign(s.id, STARTER_CAREERS[i % STARTER_CAREERS.length]));
     this.partySystem     = new PartySystem(this);
+    this.population      = new PopulationSystem(this, this.sims);   // household + external people
 
     for (const sim of this.sims) skillSystem.register(sim);
     this._weather       = weatherSystem;
@@ -362,6 +364,33 @@ export class Game {
     // LifeCyclePanel re-renders itself on sim:selected (see its constructor).
   }
 
+  /** Spawn a Sim on the lot (used for visitors via PopulationSystem). */
+  _spawnSim(def, gx, gz) {
+    const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {});
+    if (def.id) sim.id = def.id;
+    sim._isVisitor = !!def.visitor;
+    const pos = (gx != null && gz != null) ? { x: gx, z: gz } : this.world.randomAvailableCell(sim);
+    if (pos) sim.setPosition(pos.x, pos.z);
+    this.sims.push(sim);
+    skillSystem.register(sim);
+    bus.emit('sim:spawned', { sim, visitor: sim._isVisitor });
+    return sim;
+  }
+
+  /** Remove a Sim's mesh and take it out of the active roster (keeps identity). */
+  _despawnSim(sim) {
+    const i = this.sims.indexOf(sim);
+    if (i < 0) return;
+    this.sims.splice(i, 1);
+    this._scene.remove(sim.mesh);
+    this.world.releaseCellFor(sim.id);
+    if (this.selectedSim === sim) {
+      this.selectedSim = this.sims[0] ?? null;
+      if (this.selectedSim) bus.emit('sim:selected', { sim: this.selectedSim });
+    }
+    bus.emit('sim:despawned', { simId: sim.id });
+  }
+
   /** Hide a Sim and halt its AI while it's away at work. */
   _sendToWork(sim) {
     sim.mesh.visible = false;
@@ -486,6 +515,7 @@ export class Game {
       social:   socialManager.serialise(),
       relationshipGraph: this.relationshipGraph.serialise(),
       socialDynamics: this.socialDynamics.serialise(),
+      population: this.population.serialise(),
       romance:  this.romanceSystem.serialise(),
       experimentLog: this.experimentLogger.serialise(),
       age: this.ageSystem.serialise(),
@@ -521,6 +551,7 @@ export class Game {
     if (state.social)             socialManager.restore(state.social);
     if (state.relationshipGraph)  this.relationshipGraph.restore(state.relationshipGraph);
     if (state.socialDynamics)     this.socialDynamics.restore(state.socialDynamics);
+    if (state.population)         this.population.restore(state.population);
     if (state.romance)            this.romanceSystem.restore(state.romance);
     if (state.experimentLog)      this.experimentLogger.restore(state.experimentLog);
     if (state.age)                this.ageSystem.restore(state.age);

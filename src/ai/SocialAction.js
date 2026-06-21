@@ -155,7 +155,13 @@ export class SocialAction extends Action {
       Logger.info(`[Social] ${a.name} -> ${b.name}: ${this._type} (score ${score})`);
     }
 
-    if (dyn) dyn.markCooldown(a.id, b.id, this._type);
+    // Apply the relationship effect NOW (before measuring relAfter) so the log
+    // is temporally correct; the event carries socialDynamicsApplied so the
+    // SocialDynamicsSystem listener won't apply it a second time.
+    if (dyn) {
+      dyn.applyInteraction(a.id, b.id, this._type, accepted);
+      dyn.markCooldown(a.id, b.id, this._type);
+    }
     const relAfter = dyn ? Math.round(dyn.affinity(a.id, b.id)) : score;
     const dominantMotive = dyn?.dominantMotive(a.id, b.id, ctx) ?? 'curiosity';
     this._emitInteraction({ score, delta, accepted, ctx, relBefore, relAfter, dominantMotive });
@@ -286,6 +292,7 @@ export class SocialAction extends Action {
       activeGoal: ctx.activeGoal,
       relationshipBefore: relBefore,
       relationshipAfter: relAfter,
+      socialDynamicsApplied: true,
       context: ctx,
     });
   }

@@ -265,7 +265,8 @@ export class SocialDynamicsSystem {
   // ── Listeners ────────────────────────────────────────────────────────────────
 
   _register() {
-    bus.on('social:interaction', ({ idA, idB, type, accepted }) => {
+    bus.on('social:interaction', ({ idA, idB, type, accepted, socialDynamicsApplied }) => {
+      if (socialDynamicsApplied) return;   // SocialAction already applied the effect
       if (!idA || !idB || !type) return;
       this.applyInteraction(idA, idB, type, accepted !== false);
     });

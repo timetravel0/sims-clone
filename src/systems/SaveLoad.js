@@ -1,41 +1,30 @@
 /**
- * SaveLoad — Sprint 6 (full rewrite)
- * Serialises/deserialises the entire game state to/from JSON.
+ * SaveLoad — serialises/deserialises the whole game via Game.serialise().
  *
- * Save format version: 2
- * Storage: localStorage key "simsclone_save_v2_<slot>"
- * Slots: 0..2  (3 save slots)
+ * Storage is delegated to a PersistenceAdapter (default LocalStorageAdapter);
+ * SaveLoad itself no longer touches localStorage. Swap the adapter to change
+ * backend (e.g. SQLite) — see docs/PERSISTENCE.md.
  *
- * What is saved:
- *   - metadata  : slot, version, timestamp, household name, screenshot thumbnail
- *   - budget    : BudgetSystem funds
- *   - clock     : GameClock in-game day/hour/speed
- *   - sims      : array of Sim serialised state (needs, skills, career, traits, position)
- *   - world     : TileMap walkability overrides
- *   - walls     : WallManager edges
- *   - furniture : World placed-furniture list
- *   - careers   : CareerSystem per-sim state
- *   - relationships: RelationshipGraph edges
- *   - memories  : MemorySystem per-sim memories
- *   - rooms     : RoomDetector room list (cached, recomputed on load)
+ * Save format version: 2. Slots: 0..2 (slot 0 reserved for auto-save).
+ * Loading reloads the page (pending flag in sessionStorage) so the Sim roster
+ * is rebuilt cleanly from the save — see Game._boot / Game._startFromSave.
  *
- * Emits:
- *   save:completed  { slot, timestamp }
- *   save:failed     { slot, error }
- *   load:completed  { slot }
- *   load:failed     { slot, error }
- *   save:deleted    { slot }
+ * Emits: save:completed, save:failed, load:failed, save:deleted.
  */
 import { bus } from '../core/EventBus.js';
+import { LocalStorageAdapter } from '../persistence/LocalStorageAdapter.js';
 
 const SAVE_VERSION = 2;
-const SLOT_KEY = (slot) => `simsclone_save_v2_${slot}`;
 const SLOTS = 3;
 
 export class SaveLoad {
-  /** @param {object} game  Game instance (root reference) */
-  constructor(game) {
+  /**
+   * @param {object} game     Game instance (root reference)
+   * @param {PersistenceAdapter} [adapter]  storage backend (default localStorage)
+   */
+  constructor(game, adapter = new LocalStorageAdapter(SLOTS)) {
     this._game = game;
+    this._adapter = adapter;
   }
 
   // ── Save ────────────────────────────────────────────────────────────────
@@ -44,8 +33,6 @@ export class SaveLoad {
     try {
       const g = this._game;
       const timestamp = Date.now();
-      // Delegate the full game state to Game.serialise() (single source of truth);
-      // this wrapper only adds slot metadata. ponytail: don't duplicate the field list.
       const data = {
         _version:      SAVE_VERSION,
         slot,
@@ -53,8 +40,7 @@ export class SaveLoad {
         householdName: g.householdName ?? 'The Household',
         state:         g.serialise(),
       };
-      const json = JSON.stringify(data);
-      localStorage.setItem(SLOT_KEY(slot), json);
+      this._adapter.saveSlot(slot, data);
       bus.emit('save:completed', { slot, timestamp });
       return true;
     } catch (err) {
@@ -68,23 +54,16 @@ export class SaveLoad {
 
   /** Parse a slot's save data (with version check). Returns the data or null. */
   readSlot(slot) {
-    const raw = localStorage.getItem(SLOT_KEY(slot));
-    if (!raw) return null;
-    try {
-      const data = JSON.parse(raw);
-      if (!data._version || data._version < SAVE_VERSION) return null;
-      return data;
-    } catch {
-      return null;
-    }
+    const data = this._adapter.readSlot(slot);
+    if (!data) return null;
+    if (!data._version || data._version < SAVE_VERSION) return null;
+    return data;
   }
 
   /**
-   * Load a slot. Because the Sim roster (count, traits) is fixed at Game
-   * construction, we reload the page and rebuild the game from the saved
-   * roster on boot (Game._boot reads the pending-load flag). This guarantees
-   * the right number of Sims and a clean state — patching the live game in
-   * place could not add/remove Sims.
+   * Load a slot by reloading the page and rebuilding the game from the saved
+   * roster on boot (Game._boot reads the pending-load flag). sessionStorage is
+   * used only for the reload handshake (not a data store).
    */
   load(slot = 0) {
     if (!this.hasSlot(slot)) {
@@ -98,34 +77,28 @@ export class SaveLoad {
 
   // ── Slot metadata ─────────────────────────────────────────────────────────
 
-  /** Returns array of { slot, empty, householdName, timestamp, simCount } */
+  /** Returns array of { slot, empty, householdName, timestamp, simCount, day }. */
   slotList() {
-    return Array.from({ length: SLOTS }, (_, slot) => {
-      const raw = localStorage.getItem(SLOT_KEY(slot));
-      if (!raw) return { slot, empty: true };
-      try {
-        const d = JSON.parse(raw);
-        const sims = d.state?.sims;
-        return {
-          slot,
-          empty:         false,
-          householdName: d.householdName ?? '?',
-          timestamp:     d.timestamp ?? 0,
-          simCount:      Array.isArray(sims) ? sims.length : 0,
-          day:           (d.state?.clock?.weekday ?? 0) + 1,
-        };
-      } catch { return { slot, empty: true }; }
+    return this._adapter.listSlots().map(({ slot, data }) => {
+      if (!data) return { slot, empty: true };
+      const sims = data.state?.sims;
+      return {
+        slot,
+        empty:         false,
+        householdName: data.householdName ?? '?',
+        timestamp:     data.timestamp ?? 0,
+        simCount:      Array.isArray(sims) ? sims.length : 0,
+        day:           (data.state?.clock?.day ?? data.state?.clock?.weekday ?? 0) + 1,
+      };
     });
   }
 
   deleteSlot(slot) {
-    localStorage.removeItem(SLOT_KEY(slot));
+    this._adapter.deleteSlot(slot);
     bus.emit('save:deleted', { slot });
   }
 
-  hasSlot(slot) {
-    return !!localStorage.getItem(SLOT_KEY(slot));
-  }
+  hasSlot(slot) { return !!this._adapter.hasSlot(slot); }
 
   // ── Auto-save ───────────────────────────────────────────────────────────
 

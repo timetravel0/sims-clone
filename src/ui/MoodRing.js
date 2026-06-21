@@ -91,10 +91,9 @@ export class MoodRing {
   }
 
   addSim(sim) {
-    if (!this._els.has(sim.id)) {
-      this._sims.push(sim);
-      this._buildRing(sim);
-    }
+    // Note: this._sims is the shared game.sims array — the Sim is already in it.
+    // Only build the visual; do NOT push (that would duplicate the roster).
+    if (!this._els.has(sim.id)) this._buildRing(sim);
   }
 
   removeSim(simId) {

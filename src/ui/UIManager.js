@@ -46,7 +46,13 @@ export class UIManager {
     bus.on('sim:spawned', ({ sim }) => {
       this._emotionBadge.addSim(sim);
       this._moodRing.addSim(sim);
-      this._emotionTooltip.addSim(sim);
+      this._emotionTooltip.addSim?.(sim);
+    });
+    // When a Sim leaves the lot, drop its visuals
+    bus.on('sim:despawned', ({ simId }) => {
+      this._emotionBadge.removeSim?.(simId);
+      this._moodRing.removeSim?.(simId);
+      this._emotionTooltip.removeSim?.(simId);
     });
   }
 
