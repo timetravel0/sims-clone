@@ -25,27 +25,40 @@ export class SaveSlotPanel {
     this._clock = gameClock;
     this._el    = document.getElementById('save-slot-panel');
     this._mode  = 'save';   // 'save' | 'load'
+    this._renderSeq = 0;
 
-    bus.on('save:completed', () => this._render());
-    bus.on('save:deleted',   () => this._render());
+    bus.on('save:completed', () => void this._render());
+    bus.on('save:deleted',   () => void this._render());
+    bus.on('save:failed',    () => void this._render());
     bus.on('load:completed', () => this.close());
 
     document.addEventListener('keydown', e => { if (e.key === 'Escape') this.close(); });
-    this._render();
+    void this._render();
   }
 
   open(mode = 'save') {
     this._mode = mode;
     if (this._el) this._el.style.display = 'flex';
-    this._render();
+    void this._render();
   }
   close() { if (this._el) this._el.style.display = 'none'; }
   isOpen()  { return this._el?.style.display === 'flex'; }
 
-  _render() {
+  async _render() {
     if (!this._el) return;
-    const slots = this._sl.slotList();
+    const seq = ++this._renderSeq;
     const isSave = this._mode === 'save';
+    this._renderLoading(isSave);
+
+    let slots = [];
+    try {
+      slots = await this._sl.slotList();
+    } catch (err) {
+      if (seq !== this._renderSeq) return;
+      this._renderError(isSave, err);
+      return;
+    }
+    if (seq !== this._renderSeq) return;
 
     const slotCards = slots.map(s => {
       const isAuto = s.slot === 0;
@@ -84,21 +97,52 @@ export class SaveSlotPanel {
         <div class="ss-footer" style="color:#5a5957;font-size:11px;padding:8px 16px">Auto-Save runs every 5 minutes to Slot 0.</div>
       </div>`;
 
-    // Bind
+    this._bindActions();
+  }
+
+  _renderLoading(isSave) {
+    this._el.innerHTML = `
+      <div class="ss-modal">
+        <div class="ss-header">
+          <span>${isSave ? '💾 Save Game' : '📂 Load Game'}</span>
+          <button id="ss-close">✕</button>
+        </div>
+        <div class="ss-body" style="padding:16px;color:#7a7974">Loading slots…</div>
+      </div>`;
+    document.getElementById('ss-close')?.addEventListener('click', () => this.close());
+  }
+
+  _renderError(isSave, err) {
+    this._el.innerHTML = `
+      <div class="ss-modal">
+        <div class="ss-header">
+          <span>${isSave ? '💾 Save Game' : '📂 Load Game'}</span>
+          <button id="ss-close">✕</button>
+        </div>
+        <div class="ss-body" style="padding:16px;color:#c44">Could not read save slots: ${this._escape(err?.message ?? err)}</div>
+      </div>`;
+    document.getElementById('ss-close')?.addEventListener('click', () => this.close());
+  }
+
+  _bindActions() {
     document.getElementById('ss-close')?.addEventListener('click', () => this.close());
     this._el.querySelectorAll('.ss-tab').forEach(t =>
-      t.addEventListener('click', () => { this._mode = t.dataset.mode; this._render(); }));
+      t.addEventListener('click', () => { this._mode = t.dataset.mode; void this._render(); }));
     this._el.querySelectorAll('.ss-save').forEach(b =>
-      b.addEventListener('click', () => this._sl.save(+b.dataset.slot)));
+      b.addEventListener('click', async () => { await this._sl.save(+b.dataset.slot); await this._render(); }));
     this._el.querySelectorAll('.ss-load').forEach(b =>
-      b.addEventListener('click', () => { if (confirm('Load this save? Unsaved progress will be lost.')) this._sl.load(+b.dataset.slot); }));
+      b.addEventListener('click', async () => { if (confirm('Load this save? Unsaved progress will be lost.')) await this._sl.load(+b.dataset.slot); }));
     this._el.querySelectorAll('.ss-delete').forEach(b =>
-      b.addEventListener('click', () => { if (confirm('Delete this save?')) this._sl.deleteSlot(+b.dataset.slot); }));
+      b.addEventListener('click', async () => { if (confirm('Delete this save?')) await this._sl.deleteSlot(+b.dataset.slot); }));
   }
 
   _formatDate(ts) {
     if (!ts) return '';
     const d = new Date(ts);
     return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  _escape(text) {
+    return String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 }
