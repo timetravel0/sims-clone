@@ -27,6 +27,16 @@ const DEFAULT_EXTERNALS = [
   { name: 'Vic',  color: 0x90a4ae, role: 'coworker', traits: { ambitious: 0.7, outgoing: -0.2 } },
 ];
 
+function nextPersonId() {
+  if (globalThis.crypto?.randomUUID) return `p_${globalThis.crypto.randomUUID()}`;
+  return `p_${++_pid}`;
+}
+
+function syncCounterFromPersonId(id) {
+  const m = /^p_(\d+)$/.exec(String(id ?? ''));
+  if (m) _pid = Math.max(_pid, Number(m[1]));
+}
+
 export class PopulationSystem {
   constructor(game, initialHousehold = []) {
     this._game = game;
@@ -41,7 +51,7 @@ export class PopulationSystem {
 
   _person(def) {
     const rec = {
-      id: def.id ?? `p_${++_pid}`,
+      id: def.id ?? nextPersonId(),
       name: def.name ?? 'Person',
       color: def.color ?? 0xcccccc,
       traits: { ...(def.traits ?? {}) },
@@ -55,6 +65,7 @@ export class PopulationSystem {
       createdAt: def.createdAt ?? (this._game?.tick ?? 0),
       activeSimId: def.activeSimId ?? null,
     };
+    syncCounterFromPersonId(rec.id);
     this._people.set(rec.id, rec);
     return rec;
   }
@@ -108,7 +119,7 @@ export class PopulationSystem {
   deactivatePerson(personId) {
     const rec = this._people.get(personId);
     if (!rec || !this._active.has(personId) || rec.role === 'household') return;
-    const sim = this._game?.sims?.find(s => s.id === rec.activeSimId);
+    const sim = this._game?.sims?.find(s => s.id === rec.activeSimId || s.id === rec.id);
     if (sim) this._game._despawnSim?.(sim);
     rec.activeSimId = null;
     rec.offLotState = 'home';
