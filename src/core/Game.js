@@ -67,13 +67,20 @@ function creatorDefToSimDef(def) {
 }
 
 export class Game {
-  constructor(container) {
+  constructor(container, opts = {}) {
     this._container  = container;
+    this._persistenceAdapter = opts.persistenceAdapter ?? null;
     this.sims        = [];
     this.selectedSim = null;
     this.clock       = { hour: 8, speed: 1, paused: false, day: 0, weekday: 0 };
     this.tick        = 0;   // monotonic update counter (used by MemorySystem salience)
-    this._boot();
+    this.ready       = this._boot();
+  }
+
+  _makeSaveLoad() {
+    return this._persistenceAdapter
+      ? new SaveLoad(this, this._persistenceAdapter)
+      : new SaveLoad(this);
   }
 
   /**
@@ -82,22 +89,28 @@ export class Game {
    *  - else, if any save slot exists → start menu (Load / New Game)
    *  - else → SimCreator (or default household if no UI anchor)
    */
-  _boot() {
-    const sl       = new SaveLoad(this);   // read-only use here (slotList/readSlot)
+  async _boot() {
+    const sl       = this._makeSaveLoad();   // read-only use here (slotList/readSlot)
     const anchorEl = document.getElementById('sim-creator');
 
-    const pending = sessionStorage.getItem('simsclone_pending_load');
-    if (pending !== null) {
-      sessionStorage.removeItem('simsclone_pending_load');
-      const data = sl.readSlot(+pending);
-      if (data) { this._startFromSave(data); return; }
+    try {
+      const pending = sessionStorage.getItem('simsclone_pending_load');
+      if (pending !== null) {
+        sessionStorage.removeItem('simsclone_pending_load');
+        const data = await sl.readSlot(+pending);
+        if (data) { this._startFromSave(data); return; }
+      }
+
+      if (!anchorEl) { this._init(SIM_DEFS); return; }
+
+      const saves = (await sl.slotList()).filter(s => !s.empty);
+      if (saves.length === 0) { this._showCreator(); return; }
+      this._showStartMenu(saves, sl);
+    } catch (err) {
+      console.error('[Game] boot persistence failed; starting new game flow', err);
+      if (!anchorEl) this._init(SIM_DEFS);
+      else this._showCreator();
     }
-
-    if (!anchorEl) { this._init(SIM_DEFS); return; }
-
-    const saves = sl.slotList().filter(s => !s.empty);
-    if (saves.length === 0) { this._showCreator(); return; }
-    this._showStartMenu(saves, sl);
   }
 
   _showCreator() {
@@ -131,9 +144,9 @@ export class Game {
       el.style.display = 'none';
       this._showCreator();
     });
-    el.querySelectorAll('.sm-load').forEach(b => b.addEventListener('click', () => {
+    el.querySelectorAll('.sm-load').forEach(b => b.addEventListener('click', async () => {
       el.style.display = 'none';
-      const data = sl.readSlot(+b.dataset.slot);
+      const data = await sl.readSlot(+b.dataset.slot);
       if (data) this._startFromSave(data); else this._showCreator();
     }));
   }
@@ -143,7 +156,7 @@ export class Game {
     this.householdName = saveData.householdName;
     const state = saveData.state ?? {};
     const defs = (state.sims ?? []).map(s => ({
-      name: s.name, color: s.color, traits: s.personality ?? {},
+      id: s.id, name: s.name, color: s.color, traits: s.personality ?? {},
     }));
     this._init(defs.length ? defs : SIM_DEFS);
     this.restore(state);
@@ -200,7 +213,7 @@ export class Game {
     this.relationshipGraph = new RelationshipGraph(this.sims);
     this.socialDynamics  = new SocialDynamicsSystem(this.sims);   // Social Core 2.0
     this.romanceSystem   = new RomanceSystem(this.sims, this.relationshipGraph);
-    this._saveLoad       = new SaveLoad(this);
+    this._saveLoad       = this._makeSaveLoad();
     this._saveSlotPanel  = new SaveSlotPanel(this._saveLoad, this.clock);
     this._saveLoad.startAutoSave(5);   // auto-save slot 0 every 5 min
     this.godMode         = new GodMode(this);
@@ -581,11 +594,11 @@ export class Game {
     bus.emit('sim:selected', { sim: this.selectedSim });
   }
 
-  _save() {
-    this._saveLoad?.save();
+  async _save() {
+    await this._saveLoad?.save();
   }
 
-  _load() {
-    this._saveLoad?.load();
+  async _load() {
+    await this._saveLoad?.load();
   }
 }
