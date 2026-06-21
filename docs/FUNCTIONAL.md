@@ -1,182 +1,294 @@
 # Sims Clone — Functional Guide
 
-> Last updated: Sprint 1 — Memory System & Secondary Emotions
+Last updated: Sprint 3 — Life Cycle, Career, Schedule and LifeCyclePanel.
 
----
+## What It Is
 
-## What is Sims Clone?
+Sims Clone is a browser-based isometric life simulation. You observe and influence autonomous Sims with needs, personalities, moods, memories, emotions, relationships, an emergent social graph and now a full life-cycle simulation with ageing, careers and daily routines.
 
-Sims Clone is a browser-based life simulation game inspired by The Sims. Players observe and influence the lives of autonomous characters (**Sims**) who have personalities, needs, memories, and relationships. The game runs entirely in the browser with no installation.
+The simulation follows a Sims-style model:
 
----
+- Sims evaluate their internal state.
+- Objects and other Sims advertise possible actions.
+- Utility AI chooses the most useful available action.
+- Social interactions can succeed or be rejected.
+- A daily schedule suggests activities based on personality.
+- Career shifts temporarily suspend autonomous planning.
+- Significant events are logged for later analysis.
 
-## The Sims
+## Current Sims
 
-Each Sim is an individual with a unique combination of traits, needs, and history.
+The household contains:
 
-### Personalities
+- Alice
+- Bob
+- Cleo
 
-Every Sim has five personality axes, each ranging from –1 (strong negative) to +1 (strong positive):
+Click a Sim in the world or a portrait in the top-left corner to select them.
 
-| Trait | High (+) | Low (–) | Effects |
-|---|---|---|---|
-| **Outgoing** | Extrovert | Introvert | Initiates social interactions more often; social need decays faster |
-| **Neurotic** | Anxious | Laid-back | All needs decay faster; mood swings more extreme; prone to anger/grief |
-| **Playful** | Fun-loving | Serious | Prefers fun objects; tells jokes; fun need decays slower |
-| **Nice** | Kind | Mean | Chooses compliments/hugs; avoids arguments |
-| **Ambitious** | Driven | Lazy | Needs decay slightly slower; unsatisfied needs cause sharper mood penalty |
+Each Sim has:
 
-### The 8 Needs
+- ten needs;
+- five personality traits;
+- mood tier;
+- secondary emotions;
+- episodic memories;
+- scalar relationship score and familiarity;
+- directed typed social graph edges;
+- life stage and age in simulated days;
+- career, level and simoleons;
+- five skills;
+- a generated daily schedule.
 
-Needs range from 0 (critical) to 100 (fully satisfied). They decay over time and must be satisfied by using the right furniture.
+## Needs
 
-| Need | Satisfied by | Critical below |
+Needs range from `0` to `100` and decay over time. From Sprint 3, the decay rate is multiplied by `needMult` — a per-stage modifier that makes children and teenagers decay needs faster and adults more slowly.
+
+| Need | Meaning | Restored by examples |
 |---|---|---|
-| 🍔 Hunger | Fridge | 40 |
-| 😴 Energy | Bed | 35 |
-| 🚽 Bladder | Toilet | 50 |
-| 🚿 Hygiene | Shower | 30 |
-| 👋 Social | Interactions with other Sims | 35 |
-| 🎮 Fun | TV, social play | 30 |
-| 🛋️ Comfort | Couch | 25 |
-| 🌿 Room | (ambient, slow) | 20 |
+| Hunger | Food | Fridge, dining |
+| Energy | Rest | Bed, coffee-like energy affordances |
+| Bladder | Toilet | Toilet |
+| Hygiene | Cleanliness | Shower |
+| Social | Affiliation | Chat, jokes, gathering objects |
+| Fun | Recreation | TV, chess, piano, jokes |
+| Comfort | Physical ease | Couch, hot tub |
+| Room | Environment | Decorative/room affordances |
+| Autonomy | Self-directed agency | Reading, studying, refusing unwanted actions |
+| Status | Approval/prestige | Compliments, performance, high-status objects |
 
-When a need drops below its critical threshold, the Sim's AI **automatically** plans a route to the appropriate furniture and satisfies it — without player input.
+When needs become low, Sims seek nearby affordances that advertise useful payoffs.
 
-### Mood
+## Personality
 
-Mood is a composite score calculated from the average of all needs, amplified by personality, and now modulated by **secondary emotions**. There are five mood tiers:
+Traits range from `-1` to `+1`.
 
-| Tier | Score | Emoji |
+| Trait | High value means | Functional effect |
 |---|---|---|
-| Ecstatic | ≥ 75 | 🌟 |
-| Happy | ≥ 35 | 😊 |
-| Neutral | ≥ –10 | 😐 |
-| Sad | ≥ –40 | 😢 |
-| Miserable | < –40 | 😫 |
+| Outgoing | Extrovert | Higher social pressure and more social acceptance |
+| Neurotic | Anxious/reactive | Stronger negative swings and lower social tolerance |
+| Playful | Fun-seeking | More fun-seeking and joking |
+| Nice | Cooperative | More compliments/hugs, fewer hostile choices, slower status loss |
+| Ambitious | Driven | More status/autonomy weighting, slower general decay, stronger schedule adherence |
 
-The **selection ring** under each Sim changes colour to reflect the dominant active emotion (if any), falling back to the mood tier colour.
+God Mode can permanently bless or curse traits.
 
----
+## Life Stages
 
-## Sprint 1 — Memory & Emotions
+`AgeSystem` tracks each Sim's age in simulated days. Every 24 in-game hours counts as one day. Reaching a threshold triggers a stage transition.
 
-### Episodic Memory
+| Stage | Colour | `needMult` | Age range (default thresholds) |
+|---|---|---:|---|
+| Baby | blue | 1.4 | 0 – 3 days |
+| Child | green | 1.3 | 4 – 12 days |
+| Teen | yellow | 1.2 | 13 – 17 days |
+| Young Adult | teal | 1.0 | 18 – 29 days |
+| Adult | orange | 0.9 | 30 – 59 days |
+| Elder | red | 1.1 | 60+ days |
 
-Sims now remember significant events. Each memory has:
-- **Intensity** (0–1): how vivid it is. Fades over time.
-- **Valence** (–1 to +1): whether it was positive or negative.
-- **Type**: social interaction, need crisis, mood peak, life event, god action.
+Stage transitions are logged in the Story Log with the event category `lifecycle:stageChanged`.
 
-**Behavioural effects of memory:**
-- A Sim with positive memories of another will be warmer in social interactions.
-- A Sim who experienced a crisis near a piece of furniture will slightly prefer alternatives.
-- Strong memories (intensity > 0.75) generate story log entries.
-- Memories persist through save/load.
+## Careers
 
-### Secondary Emotions
+`CareerSystem` manages six careers:
 
-On top of the base mood, Sims can experience transient secondary emotions that last ~30 seconds:
-
-| Emotion | Trigger | Mood effect |
-|---|---|---|
-| 😄 Joy | Positive social memory cluster | +15 |
-| 😒 Jealousy | Watching partner interact positively with others | –20 |
-| 😢 Grief | Negative social memory + neurotic personality | –25 |
-| 😤 Pride | Recovering from a mood peak | +10 |
-| 🤩 Excitement | Life events (Sprint 2) | +20 |
-| 😠 Anger | Strong negative social memory, neurotic | –18 |
-| 🌧️ Loneliness | Extended social need crisis | –12 |
-| 🌱 Hope | Positive social memory, serious personality | +8 |
-
-The dominant active emotion is shown in the **selection ring colour** and logged in the Story panel.
-
----
-
-## Relationships
-
-Relationship scores between pairs of Sims range from –100 (enemies) to +100 (best friends). Scores are updated by every social interaction.
-
-| Score range | Label |
-|---|---|---|---|
-| > 60 | BFF ❤️ |
-| > 30 | Friend 😊 |
-| –10 to 30 | Neutral |
-| –30 to –10 | Tense 😕 |
-| < –30 | Enemy 😠 |
-
-Interaction types and their score effects:
-
-| Type | Score Δ |
+| Career | Skill requirement |
 |---|---|
-| Hug | +15 |
-| Compliment | +10 |
-| Joke | +8 |
-| Chat | +5 |
-| Argue | –12 |
-| Insult | –20 |
+| Unemployed | None |
+| Artist | creativity |
+| Scientist | logic |
+| Chef | cooking |
+| Programmer | logic |
+| Athlete | fitness |
 
----
+Each career has weekly shifts, a per-level salary and promotion rules.
 
-## The Story Log
+- During a shift, `sim._atWork = true` and the Sim's brain is blocked from autonomous planning.
+- Salary is paid and `need:status` is raised at the end of each shift.
+- A Sim is automatically promoted every 5 days worked (maximum level 10).
+- Using skill-related objects (bookshelf → logic, piano → creativity) emits `career:skillGain` and raises the corresponding skill.
+- God Mode life events `promoted` and `fired` override the normal promotion cycle.
 
-The **Story Log** (left sidebar, always visible) records significant events as they happen:
+Change a Sim's career from the **Life Cycle panel** via the career dropdown. The panel validates the required skill level before accepting the change.
 
-- 🟢 **Positive** (green) — friendships, mood peaks, recoveries
-- 🔴 **Drama** (red) — arguments, crises, mood crashes
-- 🟡 **Mood** (yellow) — emotional shifts, comebacks
-- 🟣 **Gossip** (purple) — jealousy, social drama
-- 🩵 **Action** (teal) — what a Sim is currently doing
-- 🟠 **Need** (orange) — critical need alerts
+## Daily Schedule
 
-Close the log with the **✕** button; re-open with **📖 Story** in the toolbar.
+`ScheduleSystem` generates a weekly routine for each Sim based on personality:
 
----
-
-## The Interface
-
-### Needs Panel (top-right)
-- **Sim name** and mood emoji
-- **Personality traits** (italic tags)
-- **Current action** (▶ label, teal)
-- **Most critical need** with percentage and colour-coded urgency
-- **8 need bars** with live colour (green → orange → red)
-
-### Sim Portraits (top-left)
-Click a portrait to select that Sim. The ring around the portrait reflects their current colour.
-
-### ♥ Relations Panel
-Click the ♥ button in the toolbar to toggle. Shows all relationship scores for the selected Sim, sorted best to worst, with score number and label.
-
-### 🔨 Build Panel
-Click to open the furniture catalogue. Select an item, then click a floor tile to place it.
-
-### ⏸ Controls
-| Button | Action |
-|---|---|
-| ⏸ Pause / ▶ Resume | Freeze/unfreeze time |
-| 1× / 2× / 5× | Set simulation speed |
-| 💾 Save | Save game to browser storage |
-| 📂 Load | Restore last save |
-
----
-
-## Controls
-
-| Input | Action |
-|---|---|
-| **Left-click** on ground | Move selected Sim to tile |
-| **Left-click** on Sim | Select that Sim |
-| **Right-click** on Sim/object | Open context menu (actions) |
-
----
-
-## Roadmap
-
-| Sprint | Feature | Status |
+| Slot | Days | Condition |
 |---|---|---|
-| 0 | Core scaffold, needs, AI, world | ✅ Done |
-| 1 | Memory system, secondary emotions, narrative planner | ✅ Done |
-| 2 | God Mode (Whisper/Impose/Curse/Bless/Life Events) | 🔜 Next |
-| 3 | Life cycle (aging, careers, schedules) | 📋 Planned |
-| 4 | Social graph (romance, jealousy, family) | 📋 Planned |
+| Sleep | Every day | 23:00 – 07:00 |
+| Breakfast | Every day | 07:00 – 08:00 |
+| Lunch | Every day | 12:00 – 13:00 |
+| Dinner | Every day | 18:00 – 19:00 |
+| Fun | Mon – Fri afternoon | `playful > 0.3` |
+| Social | Weekend | `outgoing > 0.3` |
+| Study | Mon – Fri evening | `ambitious > 0.3` |
+
+When an active slot matches the current in-game hour, `SimBrain` receives a suggestion via `suggestFurniture()` or `suggestSocial()`. The brain only accepts the suggestion if it is free or the slot priority is higher than the current action.
+
+## Life Cycle Panel
+
+Open `📋 Life` from the toolbar to see the selected Sim's life state.
+
+The panel shows:
+
+- **Stage badge** — colour-coded stage name and age in simulated days.
+- **Career row** — career name, current level (`Lv.X`) and simoleons balance.
+- **Work status** — `🏢 At Work` or `🏠 Home`.
+- **Skills** — five bars (cooking, logic, creativity, fitness, charisma) with numeric values.
+- **Career dropdown** — change career; the panel shows an inline warning if the required skill is not met.
+- **Daily timeline** — 24 tick-bars colour-coded by slot type (sleep / work / fun / eat), with the current hour highlighted in teal.
+
+The panel re-renders automatically every time:
+- `📋 Life` is clicked;
+- the selected Sim changes;
+- `_lifecyclePanel.update()` is called in the game loop (throttled).
+
+## Smart Objects and Affordances
+
+Furniture is not passive. Each object advertises actions and expected effects.
+
+Examples:
+
+| Object | Advertised action | Utility |
+|---|---|---|
+| Bed | Sleep | Energy, autonomy |
+| Bookshelf | Read | Autonomy, fun, status, logic skill |
+| Desk | Study | Autonomy, status, fun, energy cost |
+| TV | Watch TV | Fun, social, autonomy |
+| Bar | Show Off | Social, status, fun, energy cost |
+| Piano | Play Piano | Fun, status, autonomy, creativity skill |
+
+Sims score these options from current need pressure, personality and distance.
+
+## Social Interactions
+
+Other Sims also act as Smart Objects. They advertise social possibilities such as:
+
+- greet;
+- chat;
+- compliment;
+- insult.
+
+Every pair has:
+
+- `score`: affinity from `-100` to `+100`;
+- `familiarity`: how much the pair has interacted, from `0` to `100`.
+
+Familiarity increases even when the interaction is negative. Some actions require enough familiarity or a compatible score.
+
+When Sim A initiates an action toward Sim B:
+
+1. A walks near B.
+2. B evaluates whether to accept using energy, score, familiarity and personality.
+3. If accepted, both Sims receive the interaction payoff.
+4. If rejected, A loses social/status value and B regains autonomy.
+5. The event is recorded in the Story Log and Experiment Logger.
+
+## Relationship Layers
+
+There are two relationship views.
+
+### Pair Score
+
+The `Relations` panel shows scalar relationship scores and familiarity for the selected Sim.
+
+Typical score labels:
+
+| Score | Label |
+|---:|---|
+| `> 60` | BFF |
+| `> 30` | Friend |
+| `-10` to `30` | Neutral |
+| `-30` to `-10` | Tense |
+| `< -30` | Enemy |
+
+### Social Graph
+
+Open `Graph` to see directed relationships. Alice can feel differently about Bob than Bob feels about Alice.
+
+Edge types: friendship, rivalry, romance, family/kinship.
+
+Romance emerges from compatibility and repeated positive interaction. Jealousy can appear when a Sim with romantic attachment sees their romantic interest interact positively with someone else.
+
+## Mood, Emotions and Memory
+
+Mood is calculated from needs, personality and active emotions.
+
+Mood tiers:
+
+| Tier | Score |
+|---|---:|
+| Ecstatic | `>= 75` |
+| Happy | `>= 35` |
+| Neutral | `>= -10` |
+| Sad | `>= -40` |
+| Miserable | `< -40` |
+
+Secondary emotions include joy, hope, pride, excitement, anger, grief, loneliness and jealousy.
+
+Sims record episodic memories for social events, crises, mood peaks, God Mode actions and life events. Memories fade over time and can bias later choices.
+
+## God Mode
+
+Open `God` from the toolbar.
+
+| Power | Effect |
+|---|---|
+| Whisper | Suggest an action; the Sim may refuse |
+| Impose | Force an action with autonomy/mood cost |
+| Bless | Permanently raise a trait |
+| Curse | Permanently lower a trait |
+| Life Event | Inject promoted, fired, heartbreak or windfall |
+
+`promoted` and `fired` are now also handled by `CareerSystem`, which updates level, salary and the Story Log accordingly.
+
+## Story Log
+
+The Story Log records:
+
+- actions;
+- accepted and rejected social interactions;
+- arguments and positive interactions;
+- BFF/rival announcements;
+- romantic sparks and jealousy;
+- mood changes;
+- need crises;
+- God Mode actions;
+- life stage transitions (`lifecycle:stageChanged`);
+- career promotions and firings.
+
+## Experiment Data
+
+The simulation records structured events through `ExperimentLogger`.
+
+From the browser console:
+
+```js
+window._game.experimentLogger.toJSON()
+window._game.experimentLogger.toCSV()
+window._game.experimentLogger.downloadJSON()
+window._game.experimentLogger.downloadCSV()
+```
+
+## Movement and Exclusivity
+
+Sims cannot overlap. The world enforces one reserved destination tile per Sim, no walking into occupied/reserved path cells, one reserved user per object and one active user per object.
+
+## Save and Load
+
+Save/load preserves:
+
+- clock and day/night state;
+- Sim positions, needs, mood, emotions and personality;
+- memories;
+- relationship score and familiarity;
+- directed social graph;
+- romance state;
+- experiment log;
+- life cycle state (age, career level, skills, simoleons) — added Sprint 3.
+
+## Build Mode
+
+Open `Build`, choose an object and click a valid floor tile. Placement is rejected when the target cell is blocked, occupied, reserved or otherwise invalid.
