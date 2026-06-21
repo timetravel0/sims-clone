@@ -14,12 +14,13 @@ import { socialManager }       from '../systems/SocialManager.js';
 import { ContextMenu }         from '../ui/ContextMenu.js';
 import { GodPanel }            from '../ui/GodPanel.js';
 import { GraphPanel }          from '../ui/GraphPanel.js';
-import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
 import { WalkToAction }        from '../ai/Action.js';
 import { GodMode }             from '../systems/GodMode.js';
 import { RelationshipGraph }   from '../systems/RelationshipGraph.js';
 import { RomanceSystem }       from '../systems/RomanceSystem.js';
 import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
+import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
+import { LifecycleNotifier }   from '../ui/LifecycleNotifier.js';
 
 const SIM_DEFS = [
   { name: 'Alice', color: 0x4fc3f7, traits: { outgoing: 0.7, playful: 0.5, nice: 0.6 } },
@@ -74,7 +75,7 @@ export class Game {
     this.selectedSim = this.sims[0];
     this.selectedSim.setSelected(true);
 
-    // Systems
+    // Systems — Sprint 1
     this._narrative = new NarrativePlanner(this.sims);
     this.experimentLogger = new ExperimentLogger(this);
     this.relationshipGraph = new RelationshipGraph(this.sims);
@@ -89,9 +90,12 @@ export class Game {
 
     // UI
     this._ui = new UIManager(this.sims, this.selectedSim, bus);
-    this._godPanel       = new GodPanel(this);
-    this._graphPanel     = new GraphPanel(this);
-    this._lifecyclePanel = new LifeCyclePanel(this);   // Sprint 3
+    this._godPanel   = new GodPanel(this);
+    this._graphPanel = new GraphPanel(this);
+
+    // Sprint 3 — Life Cycle panel + Lifecycle event notifier
+    this._lifecyclePanel    = new LifeCyclePanel(this);
+    this._lifecycleNotifier = new LifecycleNotifier('lifecycle-toast');
 
     bus.emit('sim:selected', { sim: this.selectedSim });
 
@@ -119,15 +123,16 @@ export class Game {
     this.dayNight.update(scaled);
     this.clock.hour = this.dayNight.time * 24;
 
+    // Update all sims
     for (const sim of this.sims) sim.update(scaled);
 
+    // Systems
     memorySystem.update(scaled);
     this.experimentLogger.update(scaled);
     this._narrative.update(scaled);
     this.world.update(scaled);
 
-    // Life Cycle: tick AgeSystem + CareerSystem + ScheduleSystem,
-    // then re-render the panel if it is open.
+    // Sprint 3 — ticks AgeSystem, CareerSystem, ScheduleSystem + panel render
     this._lifecyclePanel?.update(scaled);
   }
 
@@ -136,20 +141,22 @@ export class Game {
   }
 
   _setupInput() {
-    const canvas  = this._renderer.domElement;
+    const canvas = this._renderer.domElement;
     const raycaster = new THREE.Raycaster();
     const mouse     = new THREE.Vector2();
 
     canvas.addEventListener('click', (e) => {
       if (e.button !== 0) return;
-      if (this.buildMode?.active) { this.buildMode.handleClick(e); return; }
-
+      if (this.buildMode?.active) {
+        this.buildMode.handleClick(e);
+        return;
+      }
       mouse.set(
         (e.clientX / window.innerWidth)  * 2 - 1,
         -(e.clientY / window.innerHeight) * 2 + 1
       );
       raycaster.setFromCamera(mouse, this._camera.camera);
-
+      // Try Sim selection first
       const simMeshes = this.sims.map(s => s.mesh);
       const simHits   = raycaster.intersectObjects(simMeshes, true);
       if (simHits.length > 0) {
@@ -157,7 +164,7 @@ export class Game {
         const sim = this.sims.find(s => s.mesh === hit || s.mesh.children.includes(hit));
         if (sim) { this._selectSim(sim); return; }
       }
-
+      // Ground click → move selected sim
       const groundHits = raycaster.intersectObjects(this.world.groundMeshes);
       if (groundHits.length > 0 && this.selectedSim) {
         const { gridX, gridZ } = groundHits[0].object.userData;
@@ -165,6 +172,7 @@ export class Game {
       }
     });
 
+    // Toolbar buttons
     this._bindToolbar();
   }
 
@@ -173,7 +181,7 @@ export class Game {
     sim.setSelected(true);
     this.selectedSim = sim;
     bus.emit('sim:selected', { sim });
-    // Keep lifecycle panel in sync with the newly selected Sim
+    // Keep lifecycle panel in sync when open
     if (this._lifecyclePanel?.isOpen()) this._lifecyclePanel.render();
   }
 
@@ -187,7 +195,9 @@ export class Game {
     return this.clock.paused;
   }
 
-  setSpeed(speed) { this.clock.speed = speed; }
+  setSpeed(speed) {
+    this.clock.speed = speed;
+  }
 
   start() {
     if (!this._loop?._running) this._loop?.start();
@@ -195,53 +205,47 @@ export class Game {
 
   _bindToolbar() {
     const q = id => document.getElementById(id);
-
     q('btn-pause')?.addEventListener('click', () => {
       const paused = this.togglePause();
-      q('btn-pause').textContent = paused ? '\u25b6 Resume' : '\u23f8 Pause';
+      q('btn-pause').textContent = paused ? '▶ Resume' : '⏸ Pause';
     });
-
     ['1','2','5'].forEach(v => {
       q(`btn-${v}x`)?.addEventListener('click', () => {
         this.setSpeed(+v);
         ['1','2','5'].forEach(x => q(`btn-${x}x`)?.classList.remove('active'));
         q(`btn-${v}x`)?.classList.add('active');
-        q('speed-label').textContent = `Speed: ${v}\u00d7`;
+        q('speed-label').textContent = `Speed: ${v}×`;
       });
     });
-
     q('btn-rel')?.addEventListener('click', () => {
       const el = q('rel-panel');
       if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
       q('btn-rel')?.classList.toggle('active');
     });
-
-    // ── Life Cycle panel toggle ────────────────────────────────
-    q('btn-lifecycle')?.addEventListener('click', () => {
-      const el = q('lifecycle-panel');
-      if (!el) return;
-      const opening = el.style.display === 'none' || el.style.display === '';
-      el.style.display = opening ? 'block' : 'none';
-      q('btn-lifecycle')?.classList.toggle('active', opening);
-      // On open: force an immediate render so the panel is never blank
-      if (opening) this._lifecyclePanel?.render();
-    });
-
     q('btn-save')?.addEventListener('click', () => this._saveLoad?.save());
     q('btn-load')?.addEventListener('click', () => this._saveLoad?.load());
+
+    // Sprint 3 — Life Cycle panel toggle
+    const lcEl = q('lifecycle-panel');
+    q('btn-lifecycle')?.addEventListener('click', () => {
+      const opening = !lcEl || lcEl.style.display === 'none' || lcEl.style.display === '';
+      if (lcEl) lcEl.style.display = opening ? 'block' : 'none';
+      q('btn-lifecycle')?.classList.toggle('active', opening);
+      if (opening) this._lifecyclePanel?.render();
+    });
   }
 
   serialise() {
     return {
-      clock:    this.clock,
+      clock:   this.clock,
       dayNight: { time: this.dayNight?.time ?? this.clock.hour / 24 },
-      sims:     this.sims.map(s => s.serialise()),
+      sims:    this.sims.map(s => s.serialise()),
       memories: memorySystem.serialise(),
-      social:   socialManager.serialise(),
+      social:  socialManager.serialise(),
       relationshipGraph: this.relationshipGraph.serialise(),
-      romance:  this.romanceSystem.serialise(),
+      romance: this.romanceSystem.serialise(),
       experimentLog: this.experimentLogger.serialise(),
-      lifecycle: this._lifecyclePanel?.serialise(),  // Sprint 3
+      lifecycle: this._lifecyclePanel?.serialise(),
     };
   }
 
@@ -257,12 +261,12 @@ export class Game {
       const sim = this.sims.find(s => s.id === data.id);
       if (sim) sim.restore(data);
     }
-    if (state.memories)          memorySystem.restore(state.memories);
-    if (state.social)            socialManager.restore(state.social);
-    if (state.relationshipGraph) this.relationshipGraph.restore(state.relationshipGraph);
-    if (state.romance)           this.romanceSystem.restore(state.romance);
-    if (state.experimentLog)     this.experimentLogger.restore(state.experimentLog);
-    if (state.lifecycle)         this._lifecyclePanel?.restore(state.lifecycle);  // Sprint 3
+    if (state.memories)           memorySystem.restore(state.memories);
+    if (state.social)             socialManager.restore(state.social);
+    if (state.relationshipGraph)  this.relationshipGraph.restore(state.relationshipGraph);
+    if (state.romance)            this.romanceSystem.restore(state.romance);
+    if (state.experimentLog)      this.experimentLogger.restore(state.experimentLog);
+    if (state.lifecycle)          this._lifecyclePanel?.restore(state.lifecycle);
     bus.emit('sim:selected', { sim: this.selectedSim });
   }
 
