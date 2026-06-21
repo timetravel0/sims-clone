@@ -18,6 +18,8 @@ const EVENTS = [
   'offlot:stateChanged',
   'offlot:visitIntent',
   'offlot:relationshipDrift',
+  'household:purchase',
+  'household:purchaseFailed',
   'mood:change',
   'emotion:triggered',
   'life:event',
@@ -103,6 +105,21 @@ export class ExperimentLogger {
         previous: payload.previous ?? '',
         reason: payload.reason ?? '',
         delta: payload.delta ?? '',
+      };
+    } else if (type.startsWith('household:purchase')) {
+      row = {
+        ...base,
+        eventId: payload.eventId ?? `h_${this._tick}_${this._events.length}`,
+        buyerId: payload.buyerId ?? '',
+        buyerName: payload.buyerName ?? '',
+        objectId: payload.objectId ?? '',
+        objectLabel: payload.objectLabel ?? '',
+        cost: payload.cost ?? 0,
+        gx: payload.gx ?? '',
+        gz: payload.gz ?? '',
+        reasonNeed: payload.reasonNeed ?? payload.reason ?? '',
+        score: payload.score ?? '',
+        fundsAfter: payload.fundsAfter ?? '',
       };
     } else {
       row = { ...base, ...this._sanitize(payload) };
