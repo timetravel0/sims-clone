@@ -155,6 +155,7 @@ export class Sim {
       mood:        this.mood.serialise(),
       emotions:    this.emotions.serialise(),
       personality: this.personality.serialise(),
+      brain:       this.brain?.serialise?.() ?? null,
     };
   }
 
@@ -169,5 +170,6 @@ export class Sim {
     this.needs.restore_state(data.needs);
     this.mood.restore(data.mood);
     this.emotions.restore(data.emotions || {});
+    if (data.brain) this.brain?.restore?.(data.brain);
   }
 }

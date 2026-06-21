@@ -94,6 +94,27 @@ export class World {
     return true;
   }
 
+  // ── Save/load ──────────────────────────────────────────────────────────────
+
+  /** All current furniture (defaults + player-placed) as plain data. */
+  serialiseFurniture() {
+    return this.furniture.map(f => ({
+      id: f.id, gx: f.gx, gz: f.gz, color: f.color,
+      needTarget: f.needTarget, restoreRate: f.restoreRate, social: f.social,
+    }));
+  }
+
+  /** Replace the whole furniture set from saved data. */
+  restoreFurniture(list) {
+    if (!Array.isArray(list)) return;
+    for (const f of this.furniture) {
+      this._scene.remove(f.mesh);
+      this.tilemap.set(f.gx, f.gz, TILE.FLOOR);
+    }
+    this.furniture = [];
+    for (const item of list) this._addFurniture(item);
+  }
+
   removeFurniture(gx, gz) {
     const idx = this.furniture.findIndex(f => f.gx === gx && f.gz === gz);
     if (idx < 0) return false;

@@ -24,6 +24,7 @@ import { GraphPanel }          from '../ui/GraphPanel.js';
 import { WalkToAction }        from '../ai/Action.js';
 import { GodMode }             from '../systems/GodMode.js';
 import { RelationshipGraph }   from '../systems/RelationshipGraph.js';
+import { SocialDynamicsSystem } from '../systems/SocialDynamicsSystem.js';
 import { RomanceSystem }       from '../systems/RomanceSystem.js';
 import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
 import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
@@ -38,6 +39,7 @@ import { weatherSystem }       from '../systems/WeatherSystem.js';
 import { moodEngine }          from '../systems/MoodEngine.js';
 import { EmoteRenderer }       from '../systems/EmoteRenderer.js';
 import { SkillPanel }          from '../ui/SkillPanel.js';
+import { ExperimentDashboard } from '../ui/ExperimentDashboard.js';
 
 const SIM_DEFS = [
   { name: 'Alice', color: 0x4fc3f7, traits: { outgoing: 0.7, playful: 0.5, nice: 0.6 } },
@@ -65,7 +67,8 @@ export class Game {
     this._container  = container;
     this.sims        = [];
     this.selectedSim = null;
-    this.clock       = { hour: 8, speed: 1, paused: false };
+    this.clock       = { hour: 8, speed: 1, paused: false, day: 0, weekday: 0 };
+    this.tick        = 0;   // monotonic update counter (used by MemorySystem salience)
     this._boot();
   }
 
@@ -185,7 +188,13 @@ export class Game {
     // ── Systems ────────────────────────────────────────────────────────────
     this._narrative      = new NarrativePlanner(this.sims);
     this.experimentLogger = new ExperimentLogger(this);
+    // Global cross-Sim episodic store (used by GoalSystem avoidance, UI, experiments).
+    // Distinct from each Sim's autobiographical brain.memory (src/ai/MemorySystem.js),
+    // which is persisted via Sim.serialise(). See docs/TECHNICAL.md.
+    this.memorySystem    = memorySystem;
+    this.socialManager   = socialManager;   // exposed for console experiments
     this.relationshipGraph = new RelationshipGraph(this.sims);
+    this.socialDynamics  = new SocialDynamicsSystem(this.sims);   // Social Core 2.0
     this.romanceSystem   = new RomanceSystem(this.sims, this.relationshipGraph);
     this._saveLoad       = new SaveLoad(this);
     this._saveSlotPanel  = new SaveSlotPanel(this._saveLoad, this.clock);
@@ -232,6 +241,7 @@ export class Game {
     this._skillPanel    = new SkillPanel(this);
     // BuildPanel is created by UIManager — don't duplicate it here.
     this._roomOverlay   = new RoomOverlay(this.roomDetector);
+    this._experimentDashboard = new ExperimentDashboard(this);
     this._emoteRenderer = new EmoteRenderer(this._scene, this.sims);
 
     bus.emit('sim:selected', { sim: this.selectedSim });
@@ -261,6 +271,8 @@ export class Game {
     this.dayNight.update(scaled);
     this.clock.hour = this.dayNight.time * 24;
     this.clock.weekday = Math.floor(this.dayNight.totalDays ?? 0) % 7;
+    this.clock.day = Math.floor(this.dayNight.totalDays ?? 0);
+    this.tick += 1;
 
     // Sims — those at work are hidden and frozen (off the lot)
     for (const sim of this.sims) {
@@ -281,6 +293,7 @@ export class Game {
     this.careerSystem.update(scaled);
     this.scheduleSystem.update(scaled);
     this.partySystem.update(scaled);
+    this.socialDynamics.update(scaled);
 
     // Sprint 4 systems
     this._weather.update(scaled);
@@ -446,16 +459,33 @@ export class Game {
     });
     bus.on('party:started', () => partyBtn?.classList.add('active'));
     bus.on('party:ended',   () => partyBtn?.classList.remove('active'));
+
+    // Social Core 2.0 — experiment dashboard (opens in its own window)
+    q('btn-lab')?.addEventListener('click', () => this._openLab());
+  }
+
+  /** Open the rich dashboard in a separate window; fall back to inline panel. */
+  _openLab() {
+    if (this._labWin && !this._labWin.closed) { this._labWin.focus(); return; }
+    const win = window.open('dashboard.html', 'sims-lab', 'width=1180,height=820');
+    if (win) { this._labWin = win; return; }
+    // Popup blocked → use the inline panel instead
+    this._experimentDashboard?.toggle();
   }
 
   serialise() {
     return {
       clock:    this.clock,
-      dayNight: { time: this.dayNight?.time ?? this.clock.hour / 24 },
+      dayNight: {
+        time:      this.dayNight?.time ?? this.clock.hour / 24,
+        totalDays: this.dayNight?.totalDays ?? 0,
+      },
       sims:     this.sims.map(s => s.serialise()),
+      furniture: this.world.serialiseFurniture(),
       memories: memorySystem.serialise(),
       social:   socialManager.serialise(),
       relationshipGraph: this.relationshipGraph.serialise(),
+      socialDynamics: this.socialDynamics.serialise(),
       romance:  this.romanceSystem.serialise(),
       experimentLog: this.experimentLogger.serialise(),
       age: this.ageSystem.serialise(),
@@ -474,9 +504,13 @@ export class Game {
     Object.assign(this.clock, state.clock);
     if (this.dayNight && state.dayNight?.time !== undefined) {
       this.dayNight.time = state.dayNight.time;
+      this.dayNight.totalDays = state.dayNight.totalDays ?? 0;
       this.dayNight.update(0);
       this.clock.hour = this.dayNight.time * 24;
+      this.clock.day = Math.floor(this.dayNight.totalDays);
+      this.clock.weekday = this.clock.day % 7;
     }
+    if (state.furniture) this.world.restoreFurniture(state.furniture);
     // Roster was rebuilt from state.sims in _startFromSave, so match by index
     // and adopt the saved id (subsystems below are keyed by Sim id).
     (state.sims ?? []).forEach((data, i) => {
@@ -486,6 +520,7 @@ export class Game {
     if (state.memories)           memorySystem.restore(state.memories);
     if (state.social)             socialManager.restore(state.social);
     if (state.relationshipGraph)  this.relationshipGraph.restore(state.relationshipGraph);
+    if (state.socialDynamics)     this.socialDynamics.restore(state.socialDynamics);
     if (state.romance)            this.romanceSystem.restore(state.romance);
     if (state.experimentLog)      this.experimentLogger.restore(state.experimentLog);
     if (state.age)                this.ageSystem.restore(state.age);

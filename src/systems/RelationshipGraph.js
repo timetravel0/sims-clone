@@ -1,8 +1,8 @@
 import { bus } from '../core/EventBus.js';
 
 const EDGE_TYPES = ['friendship', 'rivalry', 'romance', 'kinship'];
-const POSITIVE = new Set(['chat', 'joke', 'compliment', 'hug']);
-const NEGATIVE = new Set(['argue', 'insult']);
+const POSITIVE = new Set(['chat', 'joke', 'compliment', 'hug', 'apologize', 'forgive', 'comfort', 'offer_help', 'ask_help', 'gossip', 'flirt']);
+const NEGATIVE = new Set(['argue', 'insult', 'confront', 'avoid', 'reject_flirt']);
 
 export class RelationshipGraph {
   constructor(sims = []) {

@@ -313,6 +313,105 @@ These modules are present in source but are not currently part of the main playa
 | `src/systems/LifeCycle.js` | Alternative life-cycle model | Not used by `Game`; `AgeSystem` is active instead. |
 | `src/systems/SimCalendar.js` | Calendar events | Not wired into the active clock/schedule loop. |
 
+## Social Simulation Core 2.0
+
+A higher-resolution social layer on top of the legacy scalar systems. All three
+social layers now coexist and are updated from the same `social:interaction`
+event:
+
+| Layer | File | Role |
+|---|---|---|
+| Scalar score/familiarity | `src/systems/SocialManager.js` | Legacy pair score (−100..100). |
+| Typed directed edges | `src/systems/RelationshipGraph.js` | friendship/rivalry/romance/kinship. |
+| **Directional dimensions** | `src/systems/SocialDynamicsSystem.js` | **8-dim model (new).** |
+
+### SocialDynamicsSystem (`game.socialDynamics`)
+Directional relations `from → to`, each with eight 0–100 dimensions:
+`trust, affection, respect, attraction, resentment, fear, familiarity, dependency`.
+
+- Fed by: `social:interaction`, `life:event`, `goal:completed`, `goal:failed`,
+  `relationship:romance`.
+- The exported `INTERACTIONS` catalogue is the single source of truth for each
+  act's `requires`, `needsConsent`, `cooldown` and per-dimension
+  `accept`/`reject` effects.
+- Passive drift each tick (grudges/fear cool fastest, familiarity slowest).
+- `explainRelation(fromId, toId)` → `{ dims, label, affinity, summary, reasons }`.
+- `affinity(from, to)` → net −100..100 (dashboard heat-map). `serialise()/restore()`.
+
+### Interactions
+`chat, joke, compliment, hug, argue, insult` plus the new `apologize, forgive,
+confront, avoid, ask_help, offer_help, comfort, gossip, flirt, reject_flirt`.
+Each has requirements, an acceptance gate (`needsConsent`), need payoff +
+dimension deltas, and a per-pair per-type **cooldown** to stop spamming.
+`SocialAction` context-picks the type from personality + current dimensions.
+
+### InteractionContext
+`SocialAction._buildContext()` assembles `{ initiatorId, targetId, type,
+location, witnesses, isPublic, actorMood, targetMood, actorNeeds, targetNeeds,
+relSnapshot, recentMemories, activeGoal, timeOfDay }`, uses it to modulate the
+acceptance score and payoff, and publishes it inside `social:interaction`.
+
+### Sources of truth (clarified)
+- `game.memorySystem` (`src/systems/MemorySystem.js`) — global cross-Sim store,
+  serialised by `Game`, read by `GoalSystem` avoidance goals + UI.
+- `brain.memory` (`src/ai/MemorySystem.js`) — each Sim's salience-weighted
+  autobiographical memory, now persisted via `Sim.serialise()/restore()`.
+- `game.tick` and `game.clock.day` are maintained so memory salience and goal
+  deadlines advance.
+
+### ExperimentLogger
+`social:interaction` rows use a standardised schema: `eventId, simDay, weekday,
+actorId, targetId, interactionType, accepted, location, isPublic, witnesses,
+relationshipBefore, relationshipAfter, dominantMotive, activeGoal, delta`.
+Helpers: `summaryBySim()`, `summaryByPair()`, `relationshipTimeline([a, b])`.
+JSON/CSV export unchanged.
+
+### ExperimentDashboard (`#btn-lab` → `src/ui/ExperimentDashboard.js`)
+Recent-event timeline, directional affinity matrix (click a cell to inspect a
+pair), `explainRelation` for the selected pair, and metrics: `conflictRate,
+positiveInteractionRate, isolationIndex, strongestBond, highestResentment`.
+
+### Save format
+`Game.serialise()` also persists `socialDynamics` and each Sim's `brain`
+(memory + goals + bias + drift + emotions). `Game.restore()` rebuilds the roster
+from the save, then restores all layers.
+
+## How to run a social experiment manually
+
+Open the browser console (the game is on `window._game`):
+
+```js
+const g = window._game;
+
+// 1. Inspect a directional relationship and why it is what it is
+g.socialDynamics.explainRelation(g.sims[0].id, g.sims[1].id);
+// → { label:'Friend', affinity: 32, summary:'Aaa is fond of Bbb (54)…', dims:{…} }
+
+// 2. Force interactions between two Sims (bypasses walking)
+const { SocialAction } = window._socialActionClasses;
+const [a, b] = g.sims;
+['compliment','flirt','comfort'].forEach(t => new SocialAction(a, b, g.world, t)._doInteract());
+
+// 3. Read the 8 dimensions directly
+g.socialDynamics.get(a.id, b.id);   // a → b
+g.socialDynamics.get(b.id, a.id);   // b → a
+
+// 4. Aggregate analysis from the logger
+g.experimentLogger.summaryBySim();
+g.experimentLogger.summaryByPair();
+g.experimentLogger.relationshipTimeline([a.id, b.id]);
+
+// 5. Export structured data
+g.experimentLogger.downloadCSV();   // standardised social-event columns
+g.experimentLogger.downloadJSON();
+
+// 6. Speed the world up to watch relationships evolve, then open the dashboard
+g.setSpeed(5);                      // toolbar 🧪 Lab opens ExperimentDashboard
+```
+
+Tip: save (`💾`) to a manual slot, run an intervention, then load to compare —
+`socialDynamics`, brain memory and goals are all preserved.
+
 ## Missing Work
 
 The main missing or incomplete technical work is:

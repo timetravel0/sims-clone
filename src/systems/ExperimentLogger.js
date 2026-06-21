@@ -1,5 +1,7 @@
 import { bus } from '../core/EventBus.js';
 
+const NEGATIVE_TYPES = new Set(['argue', 'insult', 'confront', 'avoid', 'reject_flirt']);
+
 const EVENTS = [
   'social:interaction',
   'social:update',
@@ -28,13 +30,84 @@ export class ExperimentLogger {
   }
 
   record(type, payload = {}) {
-    this._events.push({
-      tick: this._tick,
-      simHour: Number(this._game?.clock?.hour ?? 0).toFixed(2),
+    const clock = this._game?.clock ?? {};
+    const base = {
+      tick:    this._tick,
+      simHour: Number(clock.hour ?? 0).toFixed(2),
+      simDay:  clock.day ?? 0,
+      weekday: clock.weekday ?? 0,
       type,
-      ...this._sanitize(payload),
-    });
+    };
+    let row;
+    if (type === 'social:interaction') {
+      // Standardised social-event schema (Social Core 2.0)
+      row = {
+        ...base,
+        eventId:            payload.eventId ?? `e_${this._tick}`,
+        actorId:            payload.idA ?? '',
+        targetId:           payload.idB ?? '',
+        actorName:          payload.nameA ?? '',
+        targetName:         payload.nameB ?? '',
+        interactionType:    payload.type ?? '',
+        accepted:           payload.accepted === true,
+        location:           payload.location ?? '',
+        isPublic:           payload.isPublic === true,
+        witnesses:          Array.isArray(payload.witnesses) ? payload.witnesses.length : 0,
+        relationshipBefore: payload.relationshipBefore ?? '',
+        relationshipAfter:  payload.relationshipAfter ?? '',
+        dominantMotive:     payload.dominantMotive ?? '',
+        activeGoal:         payload.activeGoal ?? '',
+        delta:              payload.delta ?? 0,
+      };
+    } else {
+      row = { ...base, ...this._sanitize(payload) };
+    }
+    this._events.push(row);
     if (this._events.length > 20000) this._events.shift();
+  }
+
+  // ── Analysis helpers (Social Core 2.0) ──────────────────────────────────────
+
+  _socialRows() { return this._events.filter(e => e.type === 'social:interaction'); }
+
+  /** Per-Sim aggregate: interactions initiated, acceptance rate, motive mix. */
+  summaryBySim() {
+    const out = {};
+    for (const e of this._socialRows()) {
+      const s = out[e.actorId] ??= { simId: e.actorId, name: e.actorName, total: 0, accepted: 0, positive: 0, negative: 0, motives: {} };
+      s.total++;
+      if (e.accepted) s.accepted++;
+      if (NEGATIVE_TYPES.has(e.interactionType)) s.negative++; else s.positive++;
+      if (e.dominantMotive) s.motives[e.dominantMotive] = (s.motives[e.dominantMotive] ?? 0) + 1;
+    }
+    for (const s of Object.values(out)) s.acceptanceRate = s.total ? +(s.accepted / s.total).toFixed(2) : 0;
+    return out;
+  }
+
+  /** Per-unordered-pair aggregate. */
+  summaryByPair() {
+    const out = {};
+    for (const e of this._socialRows()) {
+      const key = [e.actorId, e.targetId].sort().join('|');
+      const p = out[key] ??= { pair: key, names: `${e.actorName}/${e.targetName}`, total: 0, accepted: 0, negative: 0, lastRelationship: '' };
+      p.total++;
+      if (e.accepted) p.accepted++;
+      if (NEGATIVE_TYPES.has(e.interactionType)) p.negative++;
+      if (e.relationshipAfter !== '') p.lastRelationship = e.relationshipAfter;
+    }
+    return out;
+  }
+
+  /** Ordered timeline of interactions between two Sims (either direction). */
+  relationshipTimeline(pair = []) {
+    const [a, b] = pair;
+    return this._socialRows()
+      .filter(e => (e.actorId === a && e.targetId === b) || (e.actorId === b && e.targetId === a))
+      .map(e => ({
+        tick: e.tick, simDay: e.simDay, actorId: e.actorId, targetId: e.targetId,
+        interactionType: e.interactionType, accepted: e.accepted,
+        relationshipAfter: e.relationshipAfter, dominantMotive: e.dominantMotive,
+      }));
   }
 
   clear() {

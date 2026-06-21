@@ -173,9 +173,44 @@ Gli oggetti possono essere **riservati** da un solo Sim alla volta
 
 ---
 
+## Social Simulation Core 2.0
+
+Il sistema sociale non è più un singolo punteggio: ogni Sim ha relazioni
+**direzionali** verso gli altri, descritte da otto dimensioni 0–100 — *fiducia,
+affetto, rispetto, attrazione, risentimento, paura, familiarità, dipendenza*.
+
+**Interazioni disponibili.** Oltre a chiacchierare, scherzare, complimentarsi,
+abbracciare, litigare e insultare, i Sim possono ora **scusarsi, perdonare,
+affrontare (confront), evitare, chiedere aiuto, offrire aiuto, consolare,
+spettegolare, flirtare e respingere un flirt**. Ogni interazione ha requisiti
+(es. ci si scusa solo se l'altro ti porta rancore), può essere **rifiutata**, ha
+un costo/ricompensa sui bisogni e un effetto sulle dimensioni relazionali. Un
+**cooldown per coppia e tipo** evita che ripetano sempre la stessa azione.
+
+**Contesto.** Prima di risolvere un'interazione il gioco considera luogo,
+eventuali testimoni (interazione pubblica o privata), umore e bisogni dei due
+Sim, la relazione attuale, i ricordi recenti, gli obiettivi attivi e l'ora del
+giorno — tutto questo modula la probabilità di accettazione e il risultato.
+
+**Experiment Dashboard (pulsante 🧪 Lab).** Un pannello mostra: la timeline
+degli eventi sociali recenti, una matrice relazionale a colori (clic su una
+cella per i dettagli di una coppia), la spiegazione leggibile di una relazione
+(*“Aaa è affezionata a Bbb, ma le porta un po' di rancore”*) e metriche
+aggregate: tasso di conflitto, tasso di interazioni positive, indice di
+isolamento, legame più forte, risentimento più alto. Esporta CSV/JSON.
+
+**Salvataggio.** Le dimensioni relazionali, la memoria e gli obiettivi di ogni
+Sim vengono salvati e ripristinati assieme al resto della partita.
+
+> Per gli esperimenti da console vedi “How to run a social experiment manually”
+> in `docs/TECHNICAL.md`.
+
 ## Roadmap
 
 ### Implementato ✅
+- **Social Simulation Core 2.0**: relazioni direzionali a 8 dimensioni,
+  10 nuove interazioni con requisiti/rifiuto/cooldown, InteractionContext,
+  ExperimentDashboard, logger con campi standardizzati ✅ NEW
 - Vista isometrica Three.js con ombre
 - Tilemap 16×16 con walkable mask
 - 8 bisogni con decay + barre UI

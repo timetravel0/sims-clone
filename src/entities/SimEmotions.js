@@ -1,4 +1,3 @@
-import { memorySystem } from '../systems/MemorySystem.js';
 import { bus }          from '../core/EventBus.js';
 
 /**
@@ -91,7 +90,7 @@ export class SimEmotions {
    */
   _evaluateMemoryEmotions() {
     const p    = this._sim.personality;
-    const mems = memorySystem.of(this._sim.id);
+    const mems = this._sim.brain?.memory?.topN?.(1) ?? [];
     if (mems.length === 0) return;
 
     // Most intense recent memory

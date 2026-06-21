@@ -1,0 +1,173 @@
+import { bus } from '../core/EventBus.js';
+
+/**
+ * ExperimentDashboard — observation panel for Social Simulation Core 2.0.
+ *
+ * Shows, for the current household:
+ *   - a timeline of recent social events,
+ *   - a directional relationship matrix (affinity heat-map),
+ *   - a human-readable explanation for a selected (from → to) pair,
+ *   - aggregate metrics: conflictRate, positiveInteractionRate,
+ *     isolationIndex, strongestBond, highestResentment.
+ *
+ * Reads game.experimentLogger and game.socialDynamics. Toolbar button #btn-lab.
+ * DOM anchor: <div id="experiment-panel">.
+ */
+
+const NEG = new Set(['argue', 'insult', 'confront', 'avoid', 'reject_flirt']);
+
+function affColor(v) {
+  // v in [-100,100] → red↔grey↔green
+  if (v >= 0) { const t = Math.min(1, v / 80); return `rgba(${Math.round(120 - 90 * t)},${Math.round(120 + 80 * t)},110,0.85)`; }
+  const t = Math.min(1, -v / 80); return `rgba(${Math.round(150 + 80 * t)},${Math.round(90 - 50 * t)},90,0.85)`;
+}
+
+export class ExperimentDashboard {
+  constructor(game) {
+    this._game = game;
+    this._el = document.getElementById('experiment-panel');
+    this._pair = null;   // [fromId, toId]
+    this._open = false;
+    bus.on('social:interaction', () => { if (this._open) this._render(); });
+  }
+
+  toggle() { this._open ? this.close() : this.open(); }
+  open()  { this._open = true;  if (this._el) this._el.style.display = 'block'; this._render(); }
+  close() { this._open = false; if (this._el) this._el.style.display = 'none'; }
+  isOpen() { return this._open; }
+
+  _sims() { return this._game.sims ?? []; }
+
+  _render() {
+    if (!this._el) return;
+    const sims = this._sims();
+    if (!this._pair && sims.length >= 2) this._pair = [sims[0].id, sims[1].id];
+
+    this._el.innerHTML = `
+      <div class="exp-head">
+        <span>🧪 Experiment Dashboard</span>
+        <div>
+          <button id="exp-csv" title="Download CSV">⬇ CSV</button>
+          <button id="exp-close" title="Close">✕</button>
+        </div>
+      </div>
+      <div class="exp-metrics">${this._metricsHTML()}</div>
+      <div class="exp-section-title">Relationship matrix (row → col affinity)</div>
+      <div class="exp-matrix">${this._matrixHTML()}</div>
+      <div class="exp-section-title">Explain relation</div>
+      <div class="exp-explain">${this._explainHTML()}</div>
+      <div class="exp-section-title">Recent events</div>
+      <div class="exp-timeline">${this._timelineHTML()}</div>`;
+
+    this._el.querySelector('#exp-close')?.addEventListener('click', () => {
+      this.close();
+      document.getElementById('btn-lab')?.classList.remove('active');
+    });
+    this._el.querySelector('#exp-csv')?.addEventListener('click', () => this._game.experimentLogger?.downloadCSV());
+    this._el.querySelectorAll('.exp-cell[data-from]').forEach(c => c.addEventListener('click', () => {
+      this._pair = [c.dataset.from, c.dataset.to];
+      this._render();
+    }));
+  }
+
+  // ── Metrics ─────────────────────────────────────────────────────────────────
+
+  _metrics() {
+    const logger = this._game.experimentLogger;
+    const dyn = this._game.socialDynamics;
+    const sims = this._sims();
+    const rows = logger?._socialRows?.() ?? [];
+    const total = rows.length;
+    const negative = rows.filter(r => NEG.has(r.interactionType)).length;
+    const acceptedPos = rows.filter(r => r.accepted && !NEG.has(r.interactionType)).length;
+
+    let strongest = { names: '—', val: -Infinity };
+    let resent    = { names: '—', val: -Infinity };
+    let isolated  = 0;
+    for (const a of sims) {
+      let maxAff = -Infinity;
+      for (const b of sims) {
+        if (a.id === b.id) continue;
+        const aff = dyn?.affinity(a.id, b.id) ?? 0;
+        maxAff = Math.max(maxAff, aff);
+        if (aff > strongest.val) strongest = { names: `${a.name}→${b.name}`, val: Math.round(aff) };
+        const res = dyn?.get(a.id, b.id)?.resentment ?? 0;
+        if (res > resent.val) resent = { names: `${a.name}→${b.name}`, val: Math.round(res) };
+      }
+      if (maxAff < 15) isolated++;
+    }
+    return {
+      conflictRate: total ? (negative / total) : 0,
+      positiveInteractionRate: total ? (acceptedPos / total) : 0,
+      isolationIndex: sims.length ? (isolated / sims.length) : 0,
+      strongestBond: strongest.val > -Infinity ? `${strongest.names} (${strongest.val})` : '—',
+      highestResentment: resent.val > 0 ? `${resent.names} (${resent.val})` : '—',
+      total,
+    };
+  }
+
+  _metricsHTML() {
+    const m = this._metrics();
+    const pct = v => `${Math.round(v * 100)}%`;
+    return `
+      <div class="exp-metric"><b>${pct(m.conflictRate)}</b><span>conflict rate</span></div>
+      <div class="exp-metric"><b>${pct(m.positiveInteractionRate)}</b><span>positive rate</span></div>
+      <div class="exp-metric"><b>${pct(m.isolationIndex)}</b><span>isolation</span></div>
+      <div class="exp-metric"><b>${m.strongestBond}</b><span>strongest bond</span></div>
+      <div class="exp-metric"><b>${m.highestResentment}</b><span>highest resentment</span></div>
+      <div class="exp-metric"><b>${m.total}</b><span>events logged</span></div>`;
+  }
+
+  // ── Matrix ──────────────────────────────────────────────────────────────────
+
+  _matrixHTML() {
+    const dyn = this._game.socialDynamics;
+    const sims = this._sims();
+    if (sims.length === 0 || !dyn) return '<div class="exp-empty">No Sims.</div>';
+    let html = '<table class="exp-mtx"><tr><th></th>';
+    for (const c of sims) html += `<th>${c.name[0]}</th>`;
+    html += '</tr>';
+    for (const r of sims) {
+      html += `<tr><th>${r.name}</th>`;
+      for (const c of sims) {
+        if (r.id === c.id) { html += '<td class="exp-cell exp-diag">·</td>'; continue; }
+        const v = Math.round(dyn.affinity(r.id, c.id));
+        const sel = this._pair && this._pair[0] === r.id && this._pair[1] === c.id ? ' exp-sel' : '';
+        html += `<td class="exp-cell${sel}" data-from="${r.id}" data-to="${c.id}" style="background:${affColor(v)}">${v}</td>`;
+      }
+      html += '</tr>';
+    }
+    return html + '</table>';
+  }
+
+  // ── Explanation ───────────────────────────────────────────────────────────────
+
+  _explainHTML() {
+    const dyn = this._game.socialDynamics;
+    if (!this._pair || !dyn) return '<div class="exp-empty">Click a matrix cell.</div>';
+    const [from, to] = this._pair;
+    const ex = dyn.explainRelation(from, to);
+    const dims = Object.entries(ex.dims)
+      .map(([k, v]) => `<span class="exp-dim"><i>${k}</i>${Math.round(v)}</span>`).join('');
+    return `
+      <div class="exp-explain-head"><b>${ex.fromName} → ${ex.toName}</b>
+        <span class="exp-label">${ex.label} · affinity ${ex.affinity}</span></div>
+      <div class="exp-summary">${ex.summary}</div>
+      <div class="exp-dims">${dims}</div>`;
+  }
+
+  // ── Timeline ──────────────────────────────────────────────────────────────────
+
+  _timelineHTML() {
+    const rows = (this._game.experimentLogger?._socialRows?.() ?? []).slice(-14).reverse();
+    if (rows.length === 0) return '<div class="exp-empty">No social events yet.</div>';
+    return rows.map(e => {
+      const cls = NEG.has(e.interactionType) ? 'neg' : (e.accepted ? 'pos' : 'rej');
+      const ok = e.accepted ? '✓' : '✗';
+      return `<div class="exp-evt exp-${cls}">
+        <span class="exp-day">D${e.simDay}</span>
+        <span>${e.actorName} <b>${e.interactionType}</b> ${e.targetName} ${ok}</span>
+        <span class="exp-motive">${e.dominantMotive || ''}</span></div>`;
+    }).join('');
+  }
+}

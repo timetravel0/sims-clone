@@ -81,6 +81,17 @@ const INTERACTION_DELTA = {
   hug:        15,
   argue:     -12,
   insult:    -20,
+  // Social Core 2.0 interactions
+  apologize:   8,
+  forgive:    10,
+  confront:   -6,
+  avoid:      -4,
+  ask_help:    4,
+  offer_help: 10,
+  comfort:    12,
+  gossip:      6,
+  flirt:      12,
+  reject_flirt: -12,
 };
 
 const FAMILIARITY_GAIN = {
@@ -90,6 +101,16 @@ const FAMILIARITY_GAIN = {
   hug:        7,
   argue:      4,
   insult:     3,
+  apologize:   4,
+  forgive:     4,
+  confront:    3,
+  avoid:       0,
+  ask_help:    4,
+  offer_help:  5,
+  comfort:     5,
+  gossip:      6,
+  flirt:       6,
+  reject_flirt:2,
 };
 
 export const socialManager = new SocialManager();

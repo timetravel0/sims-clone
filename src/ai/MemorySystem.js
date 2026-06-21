@@ -1,7 +1,15 @@
 import { bus } from '../core/EventBus.js';
 
 /**
- * MemorySystem — episodic memory per Sim.
+ * MemorySystem (per-Sim, autobiographical) — one instance lives on each
+ * SimBrain as `brain.memory` and is persisted via Sim.serialise()/restore().
+ * It is the rich, salience-weighted memory a Sim has of its OWN experiences.
+ *
+ * NOT to be confused with the global cross-Sim store in
+ * src/systems/MemorySystem.js (exposed as game.memorySystem), which indexes
+ * every Sim's memories centrally for GoalSystem avoidance, UI and experiments.
+ * Both listen to the same bus events on purpose: the global one answers
+ * "what does X feel about Y" cheaply; this one answers "what do *I* remember".
  *
  * Stores a bounded queue of MemoryEntry objects for each Sim.
  * Memories influence:

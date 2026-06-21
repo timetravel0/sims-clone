@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sims Lab — Experiment Dashboard</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0e0d0b;color:#ddd;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;min-height:100vh}
+    a{color:#4fc3f7}
+    /* header */
+    header{position:sticky;top:0;z-index:10;background:rgba(14,13,11,0.96);backdrop-filter:blur(8px);
+      border-bottom:1px solid rgba(255,255,255,0.08);padding:12px 18px}
+    .h-top{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+    h1{font-size:17px;color:#fff;font-weight:700}
+    #subtitle{color:#9a9a96;font-size:12px}
+    .h-actions{margin-left:auto;display:flex;gap:6px}
+    button{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.13);color:#ccc;
+      border-radius:6px;padding:5px 11px;cursor:pointer;font-size:12px;transition:background .15s}
+    button:hover{background:rgba(255,255,255,0.16)}
+    .tabs{display:flex;gap:4px;margin-top:10px}
+    .tab{padding:6px 14px;border-radius:7px 7px 0 0;border:1px solid transparent;color:#999}
+    .tab.active{background:#01696f;color:#fff;border-color:#01696f}
+    /* layout */
+    main{padding:16px 18px;max-width:1200px;margin:0 auto}
+    .grid{display:grid;gap:12px}
+    .cards{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+    .card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:12px 14px}
+    .card .big{font-size:22px;color:#fff;font-weight:700;display:block;line-height:1.2}
+    .card .lbl{color:#8a8a86;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+    h2{font-size:11px;color:#80cbc4;text-transform:uppercase;letter-spacing:.07em;margin:18px 0 8px}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th,td{text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.06);white-space:nowrap}
+    th{color:#9a9a96;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+    tr:hover td{background:rgba(255,255,255,0.03)}
+    .bar{height:6px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden;min-width:60px}
+    .bar > i{display:block;height:100%;border-radius:999px}
+    .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:600}
+    .muted{color:#777}
+    .empty{color:#777;padding:40px;text-align:center}
+    /* matrix */
+    .mtx{border-collapse:separate;border-spacing:3px}
+    .mtx th{font-size:11px;color:#bbb;text-align:center;padding:2px 4px}
+    .mtx td{padding:0;border:none}
+    .cell{width:46px;height:34px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+      font-size:11px;font-weight:700;color:#10100e;cursor:pointer}
+    .cell.diag{background:rgba(255,255,255,0.05);color:#555;cursor:default}
+    .cell.sel{outline:2px solid #fff;outline-offset:-2px}
+    select{background:rgba(255,255,255,0.07);color:#ddd;border:1px solid rgba(255,255,255,0.13);
+      border-radius:6px;padding:4px 8px;font-size:12px}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .dimrow{display:grid;grid-template-columns:84px 1fr 30px;align-items:center;gap:8px;margin-bottom:4px}
+    .dimrow .k{color:#999;font-size:11px;text-transform:capitalize}
+    .dimrow .v{color:#aaa;font-size:11px;text-align:right}
+    .summary{background:rgba(255,255,255,0.04);border-radius:8px;padding:10px 12px;margin-bottom:8px;line-height:1.5}
+    .summary b{color:#fff}
+    .tag{color:#ffd580}
+    .needbars{display:flex;flex-direction:column;gap:2px}
+    .pos{color:#a5d6a7}.neg{color:#ef9a9a}.neu{color:#ffcc80}
+    @media (max-width:760px){.two-col{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="h-top">
+      <h1>🧪 Sims Experiment Dashboard</h1>
+      <span id="subtitle"></span>
+      <div class="h-actions">
+        <button id="btn-refresh">↻ Refresh</button>
+        <button id="btn-csv">⬇ CSV</button>
+        <button id="btn-json">⬇ JSON</button>
+      </div>
+    </div>
+    <div class="tabs">
+      <div class="tab active" data-tab="overview">Overview</div>
+      <div class="tab" data-tab="sims">Sims</div>
+      <div class="tab" data-tab="rel">Relationships</div>
+      <div class="tab" data-tab="events">Events</div>
+    </div>
+  </header>
+  <main id="content"></main>
+  <script type="module" src="./src/ui/dashboard-page.js"></script>
+</body>
+</html>

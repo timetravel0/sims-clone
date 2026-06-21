@@ -8,7 +8,7 @@ import { PersonalityDrift }   from '../ai/PersonalityDrift.js';
 import { ContextualNoise }    from '../ai/ContextualNoise.js';
 import { GoalSystem }         from '../ai/GoalSystem.js';
 import { SocialLearning }     from '../ai/SocialLearning.js';
-import { MemorySystem }       from './MemorySystem.js';
+import { MemorySystem }       from '../ai/MemorySystem.js';
 import { EmotionEngine }      from './EmotionEngine.js';
 
 export class SimBrain {
