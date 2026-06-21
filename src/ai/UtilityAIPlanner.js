@@ -206,20 +206,25 @@ export class UtilityAIPlanner {
       }
     }
 
-    // ── 3. Distance penalty ─────────────────────────────────────────────────
+    // ── 3. WellbeingAmbition — personal happiness + family welfare ──────────
+    if (this._brain?.wellbeing) {
+      score += this._brain.wellbeing.boost(affordance);
+    }
+
+    // ── 4. Distance penalty ─────────────────────────────────────────────────
     score -= this._distanceTo(affordance.target) * 0.35;
 
-    // ── 4. ExperientialBias — learned from history ──────────────────────────
+    // ── 5. ExperientialBias — learned from history ──────────────────────────
     if (this._brain?.expBias) {
       score += this._brain.expBias.get(affordance) * 1.8;
     }
 
-    // ── 5. GoalSystem boost — medium-term objectives ────────────────────────
+    // ── 6. GoalSystem boost — medium-term objectives ────────────────────────
     if (this._brain?.goalSystem) {
       score += this._brain.goalSystem.boost(affordance);
     }
 
-    // ── 6. ContextualNoise — circadian + mood-modulated variance ────────────
+    // ── 7. ContextualNoise — circadian + mood-modulated variance ────────────
     if (this._brain?.ctxNoise) {
       score += this._brain.ctxNoise.sample(affordance, 4.0);
     } else {
@@ -245,6 +250,8 @@ export class UtilityAIPlanner {
   }
 
   _distanceTo(target) {
-    return Math.abs((target.gx ?? 0) - this._sim.gx) + Math.abs((target.gz ?? 0) - this._sim.gz);
+    const dx = (target.gx ?? target.worldX) - this._sim.gx;
+    const dz = (target.gz ?? target.worldZ) - this._sim.gz;
+    return Math.abs(dx) + Math.abs(dz);
   }
 }
