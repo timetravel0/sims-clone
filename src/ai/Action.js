@@ -1,5 +1,6 @@
 import { Pathfinder } from './Pathfinder.js';
 import { Logger }    from '../utils/Logger.js';
+import { bus }       from '../core/EventBus.js';
 
 export class Action {
   constructor(label) { this.label = label; this.done = false; }
@@ -25,7 +26,8 @@ export class WalkToAction extends Action {
     this.label = `WalkTo(${this._gx},${this._gz})`;
     const pf = new Pathfinder(this._world.tilemap, (x, z) =>
       this._world.isCellOccupied(x, z, this._sim.id) ||
-      this._world.isCellReserved(x, z, this._sim.id)
+      this._world.isCellReserved(x, z, this._sim.id),
+      (x1, z1, x2, z2) => this._world.wallManager?.isPassable(x1, z1, x2, z2) ?? true
     );
     const path = pf.find(this._sim.gx, this._sim.gz, this._gx, this._gz);
     if (path && path.length > 0) {
@@ -82,7 +84,15 @@ export class UseObjectAction extends Action {
       this._sim.needs.restore(this._furniture.needTarget, this._furniture.restoreRate * dt);
     }
     this._furniture.onUseTick?.(this._sim, dt);
-    if (this._elapsed >= this._duration) this.done = true;
+    if (this._elapsed >= this._duration) {
+      bus.emit('sim:objectUsed', {
+        sim: this._sim,
+        simId: this._sim.id,
+        furniture: this._furniture,
+        objectType: this._furniture.id,
+      });
+      this.done = true;
+    }
   }
   exit() {
     if (this._using) this._furniture.inUse = false;

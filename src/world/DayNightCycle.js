@@ -19,6 +19,7 @@ export class DayNightCycle {
   constructor(scene) {
     this._scene = scene;
     this.time = 0.35; // start at morning
+    this.totalDays = 0;
 
     this._ambient = new THREE.AmbientLight(0xfff5e0, 0.75);
     scene.add(this._ambient);
@@ -95,7 +96,9 @@ export class DayNightCycle {
   }
 
   update(dt) {
+    const prevTime = this.time;
     this.time = (this.time + dt / DAY_DURATION) % 1;
+    if (this.time < prevTime) this.totalDays += 1;
     this._apply();
     bus.emit('daynight:update', { time: this.time, hour: Math.floor(this.time * 24) });
   }

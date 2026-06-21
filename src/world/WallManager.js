@@ -52,7 +52,7 @@ export class WallManager {
     const mesh = this._buildMesh('wall', x1, z1, x2, z2);
     this._scene.add(mesh);
     this._edges.set(key, { type: 'wall', mesh });
-    this._tileMap?.blockEdge(x1, z1, x2, z2, true);
+    this._tileMap?.blockEdge?.(x1, z1, x2, z2, true);
     bus.emit('wall:placed', { x1, z1, x2, z2 });
     return true;
   }
@@ -64,7 +64,7 @@ export class WallManager {
     const mesh = this._buildMesh('door', x1, z1, x2, z2);
     this._scene.add(mesh);
     this._edges.set(key, { type: 'door', mesh });
-    this._tileMap?.blockEdge(x1, z1, x2, z2, false); // doors are passable
+    this._tileMap?.blockEdge?.(x1, z1, x2, z2, false); // doors are passable
     bus.emit('door:placed', { x1, z1, x2, z2 });
     return true;
   }
@@ -100,7 +100,7 @@ export class WallManager {
     this._edges.delete(key);
     // Unblock edge in tileMap
     const [a, b] = key.split(':').map(p => p.split(',').map(Number));
-    this._tileMap?.blockEdge(a[0], a[1], b[0], b[1], false);
+    this._tileMap?.blockEdge?.(a[0], a[1], b[0], b[1], false);
     const evName = entry.type === 'wall' ? 'wall:removed' : 'door:removed';
     bus.emit(evName, { x1: a[0], z1: a[1], x2: b[0], z2: b[1] });
     return true;

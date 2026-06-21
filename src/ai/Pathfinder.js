@@ -1,7 +1,9 @@
 export class Pathfinder {
-  constructor(tilemap, isBlocked = null) {
+  constructor(tilemap, isBlocked = null, isEdgePassable = null) {
     this._map = tilemap;
     this._isBlocked = isBlocked;
+    // Optional edge predicate (x1,z1,x2,z2)->bool, e.g. walls between tiles.
+    this._isEdgePassable = isEdgePassable;
   }
 
   find(sx, sz, gx, gz) {
@@ -41,7 +43,8 @@ export class Pathfinder {
   }
   _neighbors(x, z, sx, sz, gx, gz) {
     return [{x:x+1,z},{x:x-1,z},{x,z:z+1},{x,z:z-1}]
-      .filter(n => this._isWalkable(n.x, n.z, sx, sz, gx, gz));
+      .filter(n => this._isWalkable(n.x, n.z, sx, sz, gx, gz) &&
+                   (this._isEdgePassable?.(x, z, n.x, n.z) ?? true));
   }
   _adjacent(x, z) {
     return [{x:x+1,z},{x:x-1,z},{x,z:z+1},{x,z:z-1}]

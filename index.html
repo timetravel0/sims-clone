@@ -332,6 +332,117 @@
       display:flex; justify-content:space-between;
       color:#444; font-size:9px; margin-top:2px;
     }
+
+    /* ── Skill panel (Sprint 4) ──────────────────────────────── */
+    #skill-panel {
+      display:none;
+      position:fixed; bottom:48px; right:16px; z-index:60;
+      width:240px;
+      background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
+      border:1px solid rgba(255,255,255,0.1); border-radius:10px;
+      padding:12px 14px; color:#ccc; font-size:12px;
+    }
+    #skill-panel .panel-header,
+    #save-slot-panel .ss-header {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:10px; color:#eee; font-size:11px;
+      text-transform:uppercase; letter-spacing:.08em;
+    }
+    #skill-panel .panel-header button,
+    #save-slot-panel button {
+      background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12);
+      color:#ccc; border-radius:6px; padding:3px 8px; cursor:pointer; font-size:11px;
+    }
+    #skill-panel .panel-header button:hover,
+    #save-slot-panel button:hover { background:rgba(255,255,255,0.15); }
+    .skill-list { display:flex; flex-direction:column; gap:6px; }
+    .skill-row  { display:flex; align-items:center; gap:8px; }
+    .skill-icon { width:16px; text-align:center; }
+    .skill-name { color:#999; font-size:11px; width:64px; text-transform:capitalize; }
+    .skill-bar-track { flex:1; height:5px; background:rgba(255,255,255,0.08); border-radius:999px; overflow:hidden; }
+    .skill-bar-fill  { height:100%; border-radius:999px; transition:width .4s; }
+    .skill-level { color:#888; font-size:11px; width:16px; text-align:right; }
+
+    /* ── Save-slot modal (Sprint 6) ──────────────────────────── */
+    #save-slot-panel {
+      display:none; position:fixed; inset:0; z-index:90;
+      background:rgba(0,0,0,0.55); align-items:center; justify-content:center;
+    }
+    #save-slot-panel .ss-modal {
+      width:420px; max-width:92vw;
+      background:rgba(20,19,17,0.98); backdrop-filter:blur(10px);
+      border:1px solid rgba(255,255,255,0.12); border-radius:12px;
+      color:#ccc; font-size:12px; overflow:hidden;
+    }
+    #save-slot-panel .ss-header { padding:12px 16px; margin:0;
+      border-bottom:1px solid rgba(255,255,255,0.08); }
+    .ss-tab.active { background:#01696f; color:#fff; border-color:#01696f; }
+    .ss-body { padding:12px 16px; display:flex; flex-direction:column; gap:8px; }
+    .ss-card {
+      border:1px solid rgba(255,255,255,0.08); border-radius:8px;
+      padding:10px 12px; display:flex; flex-direction:column; gap:6px;
+      background:rgba(255,255,255,0.03);
+    }
+    .ss-label { color:#eee; font-weight:600; }
+    .ss-info  { font-size:11px; }
+    .ss-actions { display:flex; gap:6px; }
+
+    /* ── Build tools (Sprint 5/6) ────────────────────────────── */
+    #build-tools { display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+    .bt-tool, #bt-rooms {
+      background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
+      color:#ccc; border-radius:6px; padding:4px 9px; cursor:pointer; font-size:11px;
+    }
+    .bt-tool:hover, #bt-rooms:hover { background:rgba(255,255,255,0.14); }
+    .bt-tool.active, #bt-rooms.active { background:#01696f; color:#fff; border-color:#01696f; }
+    #bt-funds { margin-left:auto; color:#a5d6a7; font-size:12px; font-weight:600; }
+    #room-overlay {
+      display:none; position:fixed; right:16px; bottom:96px; z-index:55;
+      width:160px; height:160px; border-radius:8px;
+      border:1px solid rgba(255,255,255,0.12); background:rgba(14,13,11,0.6);
+      pointer-events:none;
+    }
+
+    /* ── Sim Creator (Sprint 6 onboarding) ───────────────────── */
+    #sim-creator {
+      display:none; position:fixed; inset:0; z-index:100;
+      background:rgba(8,7,6,0.92); align-items:center; justify-content:center;
+    }
+    #sim-creator .sc-modal {
+      width:520px; max-width:94vw; max-height:90vh; overflow-y:auto;
+      background:rgba(22,21,18,0.99); border:1px solid rgba(255,255,255,0.12);
+      border-radius:14px; color:#ddd; font-size:13px;
+    }
+    .sc-header { font-size:18px; font-weight:700; color:#fff; padding:18px 22px 4px; }
+    .sc-steps  { display:flex; align-items:center; gap:6px; padding:0 22px 12px;
+      color:#666; font-size:11px; border-bottom:1px solid rgba(255,255,255,0.07); }
+    .sc-step.active { color:#4fc3f7; font-weight:700; }
+    .sc-body   { padding:18px 22px; }
+    .sc-label  { display:block; color:#888; font-size:11px; margin:12px 0 5px;
+      text-transform:uppercase; letter-spacing:.06em; }
+    .sc-input  { width:100%; background:rgba(255,255,255,0.06); color:#fff;
+      border:1px solid rgba(255,255,255,0.12); border-radius:7px; padding:8px 10px; font-size:14px; }
+    .sc-simtabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+    .sc-simtab, .sc-radio, .sc-trait, #sc-addsim, #sc-remsim {
+      background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
+      color:#ccc; border-radius:6px; padding:5px 10px; cursor:pointer; font-size:12px; }
+    .sc-simtab.active, .sc-radio.active { background:#01696f; color:#fff; border-color:#01696f; }
+    .sc-radio-row { display:flex; gap:6px; }
+    .sc-swatches { display:flex; gap:7px; }
+    .sc-swatch { width:26px; height:26px; border-radius:50%; border:2px solid transparent; cursor:pointer; }
+    .sc-swatch.active { border-color:#fff; }
+    .sc-traits { display:flex; flex-wrap:wrap; gap:6px; }
+    .sc-trait.selected { background:#7e57c2; color:#fff; border-color:#7e57c2; }
+    .sc-trait.disabled { opacity:.35; cursor:not-allowed; }
+    .sc-confirm-grid { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; }
+    .sc-confirm-card { text-align:center; width:120px; }
+    .sc-avatar { width:54px; height:54px; border-radius:50%; margin:0 auto 6px; }
+    .sc-footer { padding:14px 22px 20px; border-top:1px solid rgba(255,255,255,0.07); }
+    .sc-footer-inner { display:flex; justify-content:space-between; gap:10px; }
+    .sc-btn-pri { margin-left:auto; background:#01696f; color:#fff; border:none;
+      border-radius:8px; padding:9px 18px; cursor:pointer; font-size:14px; font-weight:600; }
+    .sc-btn-sec { background:rgba(255,255,255,0.08); color:#ccc; border:1px solid rgba(255,255,255,0.12);
+      border-radius:8px; padding:9px 16px; cursor:pointer; font-size:13px; }
   </style>
 </head>
 <body>
@@ -363,11 +474,23 @@
   <div id="rel-panel"></div>
   <div id="god-panel"></div>
   <div id="graph-panel"></div>
+  <div id="skill-panel"></div>
+  <div id="save-slot-panel"></div>
+  <div id="sim-creator"></div>
 
   <div id="build-panel">
-    <p>Select an object then click a tile to place it. ✦ = social</p>
+    <div id="build-tools">
+      <button class="bt-tool active" data-tool="furniture">🪑 Furniture</button>
+      <button class="bt-tool" data-tool="wall">🧱 Wall</button>
+      <button class="bt-tool" data-tool="door">🚪 Door</button>
+      <button class="bt-tool" data-tool="eraser">🧹 Erase</button>
+      <button id="bt-rooms">🏠 Rooms</button>
+      <span id="bt-funds">§20,000</span>
+    </div>
+    <p>Furniture: pick an item then click a tile. Wall/Door: click two adjacent tiles. ✦ = social</p>
     <div id="build-catalog"></div>
   </div>
+  <canvas id="room-overlay"></canvas>
 
   <div id="hint">Left-click: move / select &nbsp;|&nbsp; Right-click: actions</div>
 
@@ -384,6 +507,7 @@
     <button id="btn-god">⚡ God</button>
     <button id="btn-build">🔨 Build</button>
     <button id="btn-lifecycle">📋 Life</button>
+    <button id="btn-skills">⚙ Skills</button>
     <button id="btn-save">💾 Save</button>
     <button id="btn-load">📂 Load</button>
     <span id="speed-label" style="color:#555;font-size:12px">Speed: 1×</span>

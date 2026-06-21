@@ -1,322 +1,407 @@
-/**
- * CareerSystem
- * ------------
- * Manages careers, daily shifts, salary, skill gain and promotions.
- *
- * Emits:
- *   career:promoted   { sim, career, oldLevel, newLevel, salary }
- *   career:fired      { sim, career }
- *   career:skillGain  { sim, skill, value }
- *   story:entry       { text, category }
- *
- * Listens:
- *   life:event        { sim, type: 'promoted' | 'fired' }
- */
-
 import { bus } from '../core/EventBus.js';
 
-// ── career definitions ────────────────────────────────────────────
-// day: 0 = Mon … 4 = Fri, 5 = Sat, 6 = Sun
 export const CAREERS = [
   {
-    id: 'unemployed', label: 'Unemployed',
+    id: 'unemployed',
+    label: 'Unemployed',
     emoji: '-',
+    icon: '-',
+    levels: 1,
     requiredSkill: {},
     skillReq: {},
     shifts: [],
-    salaryBase: 0, salaryPerLevel: 0, salaryPerDay: 0,
+    salaryBase: 0,
+    salaryPerLevel: 0,
+    salaryPerDay: 0,
   },
   {
-    id: 'artist', label: 'Artist',
+    id: 'artist',
+    label: 'Artist',
     emoji: 'Art',
+    icon: 'Art',
+    levels: 10,
     requiredSkill: { creativity: 2 },
     skillReq: { creativity: 2 },
+    skillRequired: 'creativity',
     shifts: [{ day: 1, start: 10, end: 16 }, { day: 3, start: 10, end: 16 }, { day: 5, start: 11, end: 15 }],
-    salaryBase: 120, salaryPerLevel: 40, salaryPerDay: 160,
+    salaryBase: 120,
+    salaryPerLevel: 40,
+    salaryStep: 40,
+    salaryPerDay: 160,
   },
   {
-    id: 'scientist', label: 'Scientist',
+    id: 'scientist',
+    label: 'Scientist',
     emoji: 'Sci',
+    icon: 'Sci',
+    levels: 10,
     requiredSkill: { logic: 2 },
     skillReq: { logic: 2 },
+    skillRequired: 'logic',
     shifts: [{ day: 0, start: 9, end: 17 }, { day: 2, start: 9, end: 17 }, { day: 4, start: 9, end: 17 }],
-    salaryBase: 180, salaryPerLevel: 60, salaryPerDay: 240,
+    salaryBase: 180,
+    salaryPerLevel: 60,
+    salaryStep: 60,
+    salaryPerDay: 240,
   },
   {
-    id: 'chef', label: 'Chef',
+    id: 'chef',
+    label: 'Chef',
     emoji: 'Chef',
+    icon: 'Chef',
+    levels: 10,
     requiredSkill: { cooking: 2 },
     skillReq: { cooking: 2 },
+    skillRequired: 'cooking',
     shifts: [{ day: 0, start: 11, end: 21 }, { day: 2, start: 11, end: 21 }, { day: 4, start: 11, end: 21 }, { day: 5, start: 11, end: 21 }],
-    salaryBase: 150, salaryPerLevel: 50, salaryPerDay: 200,
+    salaryBase: 150,
+    salaryPerLevel: 50,
+    salaryStep: 50,
+    salaryPerDay: 200,
   },
   {
-    id: 'programmer', label: 'Programmer',
+    id: 'programmer',
+    label: 'Programmer',
     emoji: 'Code',
+    icon: 'Code',
+    levels: 10,
     requiredSkill: { logic: 2 },
     skillReq: { logic: 2 },
+    skillRequired: 'logic',
     shifts: [{ day: 0, start: 9, end: 17 }, { day: 1, start: 9, end: 17 }, { day: 2, start: 9, end: 17 }, { day: 3, start: 9, end: 17 }, { day: 4, start: 9, end: 17 }],
-    salaryBase: 200, salaryPerLevel: 80, salaryPerDay: 280,
+    salaryBase: 200,
+    salaryPerLevel: 80,
+    salaryStep: 80,
+    salaryPerDay: 280,
   },
   {
-    id: 'athlete', label: 'Athlete',
+    id: 'athlete',
+    label: 'Athlete',
     emoji: 'Fit',
+    icon: 'Fit',
+    levels: 10,
     requiredSkill: { fitness: 2 },
     skillReq: { fitness: 2 },
+    skillRequired: 'fitness',
     shifts: [{ day: 0, start: 8, end: 14 }, { day: 2, start: 8, end: 14 }, { day: 4, start: 8, end: 14 }],
-    salaryBase: 160, salaryPerLevel: 55, salaryPerDay: 215,
+    salaryBase: 160,
+    salaryPerLevel: 55,
+    salaryStep: 55,
+    salaryPerDay: 215,
   },
 ];
 
-// furniture type → skill gained
+const CAREER_BY_ID = new Map(CAREERS.map(c => [c.id, c]));
+const MAX_SKILL = 10;
+const MAX_LEVEL = 10;
+const SKILL_GAIN_PER_USE = 0.2;
+const PROMOTION_PERFORMANCE = 100;
+
 const SKILL_MAP = {
-  bookshelf  : 'logic',
-  piano      : 'creativity',
-  desk       : 'logic',
-  treadmill  : 'fitness',
-  easel      : 'creativity',
-  kitchen    : 'cooking',
-  fridge     : 'cooking',
+  bookshelf: 'logic',
+  piano: 'creativity',
+  desk: 'logic',
+  treadmill: 'fitness',
+  easel: 'creativity',
+  kitchen: 'cooking',
+  fridge: 'cooking',
 };
 
-const SKILL_GAIN_PER_USE = 0.2;  // per completed UseObjectAction
-const MAX_SKILL          = 10;
-const MAX_LEVEL          = 10;
-const DAYS_PER_PROMOTION = 5;
-
 export class CareerSystem {
-  /**
-   * @param {Sim[]}   sims
-   * @param {object}  clock   game clock { hour, weekday, simSeconds }
-   */
-  constructor(sims, clock) {
-    this._sims  = sims;
+  constructor(sims = [], clock = null) {
+    this._sims = sims;
     this._clock = clock;
-
-    // Per-sim state  { simId -> SimCareerData }
     this._data = new Map();
+
     for (const sim of sims) this._initSim(sim);
 
-    // Listen for God Mode life events
-    bus.on('life:event', ({ sim, type }) => {
-      if (!sim) return;
-      if (type === 'promoted') this._promote(sim, 'god');
-      if (type === 'fired')    this._fire(sim);
-    });
-
-    // Listen for UseObjectAction completions to award skill gain
+    bus.on('life:event', payload => this._handleLifeEvent(payload));
     bus.on('sim:objectUsed', ({ sim, objectType }) => {
-      const skill = SKILL_MAP[objectType];
-      if (skill) this._gainSkill(sim, skill);
+      if (sim && objectType) this.gainSkillFromObject(sim, objectType);
     });
   }
 
-  // ── public ──────────────────────────────────────────────────────
-
-  update(dt) {
-    const { hour, weekday } = this._clock;
+  update(_dt) {
+    this._ensureSims();
+    const hour = Number(this._clock?.hour ?? 0);
+    const weekday = Number(this._clock?.weekday ?? 0);
 
     for (const sim of this._sims) {
-      const d = this._data.get(sim.id);
-      if (!d) continue;
-
-      const career = CAREERS.find(c => c.id === d.careerId);
-      if (!career || career.shifts.length === 0) {
-        sim._atWork = false;
+      const state = this._data.get(sim.id);
+      const career = state ? this._career(state.careerId) : null;
+      if (!state || !career || career.id === 'unemployed') {
+        if (sim) sim._atWork = false;
         continue;
       }
 
-      const inShift = career.shifts.some(
-        s => s.day === weekday && hour >= s.start && hour < s.end
-      );
-
-      if (inShift && !sim._atWork) {
-        // shift start
-        sim._atWork = true;
-        d._shiftStarted = true;
-      }
-
-      if (!inShift && sim._atWork) {
-        // shift end
-        sim._atWork = false;
-        if (d._shiftStarted) {
-          d._shiftStarted = false;
-          this._endShift(sim, d, career);
-        }
-      }
+      const inShift = this._isInShift(career, weekday, hour);
+      if (inShift && !state.atWork) this._startShift(sim, state, career);
+      if (!inShift && state.atWork) this._endShift(sim, state, career);
     }
   }
 
-  /** Change a Sim's career. Returns false if skill requirement not met. */
+  assign(simId, careerId) {
+    const sim = this._findSim(simId);
+    if (!sim) return false;
+    return this.setCareer(sim, careerId);
+  }
+
+  joinCareer(simId, careerId) {
+    return this.assign(simId, careerId);
+  }
+
+  quit(simId) {
+    const sim = this._findSim(simId);
+    if (!sim) return false;
+    const state = this._data.get(sim.id) ?? this._initSim(sim);
+    const oldCareer = this._career(state.careerId);
+    state.careerId = 'unemployed';
+    state.level = 1;
+    state.performance = 50;
+    state.daysWorked = 0;
+    state.atWork = false;
+    sim._atWork = false;
+    bus.emit('career:quit', { simId: sim.id, sim, career: oldCareer?.label ?? 'Unemployed' });
+    bus.emit('career:changed', { sim, career: this._career('unemployed') });
+    return true;
+  }
+
   setCareer(sim, careerId) {
-    const career = CAREERS.find(c => c.id === careerId);
-    if (!career) return false;
+    const career = this._career(careerId);
+    if (!sim || !career) return false;
+    const state = this._data.get(sim.id) ?? this._initSim(sim);
 
-    const d = this._data.get(sim.id);
-    if (!d) return false;
-
-    // Validate skill requirement
-    for (const [skill, min] of Object.entries(career.skillReq)) {
-      if ((d.skills[skill] ?? 0) < min) return false;
+    for (const [skill, min] of Object.entries(career.skillReq ?? {})) {
+      if ((state.skills[skill] ?? 0) < min) return false;
     }
 
-    d.careerId    = careerId;
-    d.level       = 1;
-    d.daysWorked  = 0;
-    sim._atWork   = false;
+    state.careerId = career.id;
+    state.level = 1;
+    state.performance = 50;
+    state.daysWorked = 0;
+    state.atWork = false;
+    sim._atWork = false;
+    bus.emit('career:assigned', { simId: sim.id, sim, careerId: career.id });
     bus.emit('career:changed', { sim, career });
     return true;
   }
 
-  getCareerData(sim) {
-    return this._data.get(sim.id);
+  getState(simId) {
+    const state = this._data.get(simId);
+    return state ? { ...state, skills: { ...state.skills } } : null;
   }
 
-  joinCareer(simId, careerId) {
-    const sim = this._sims.find(s => s.id === simId);
-    return sim ? this.setCareer(sim, careerId) : false;
+  getCareerData(sim) {
+    return sim ? this.getState(sim.id) : null;
   }
 
   getInfo(simId) {
-    const sim = this._sims.find(s => s.id === simId);
-    const d = sim ? this._data.get(sim.id) : null;
-    if (!sim || !d) return null;
-    const career = CAREERS.find(c => c.id === d.careerId) ?? CAREERS[0];
+    const sim = this._findSim(simId);
+    const state = this._data.get(simId);
+    if (!sim || !state) return null;
+    const career = this._career(state.careerId) ?? this._career('unemployed');
     return {
-      careerId: d.careerId,
+      careerId: state.careerId,
       career: {
         ...career,
-        emoji: CAREER_EMOJI[career.id] ?? '•',
-        requiredSkill: career.skillReq,
-        salaryPerDay: career.salaryBase + d.level * career.salaryPerLevel,
+        requiredSkill: career.skillReq ?? {},
+        salaryPerDay: this._salaryFor(career, state.level),
       },
-      level: d.level,
-      simoleons: d.simoleons,
-      atWork: !!sim._atWork,
-      skills: d.skills,
+      level: state.level,
+      performance: state.performance,
+      daysWorked: state.daysWorked,
+      simoleons: state.simoleons,
+      atWork: state.atWork,
+      skills: { ...state.skills },
     };
   }
 
-  // ── serialise / restore ─────────────────────────────────────────
+  gainSkill(sim, skill, amount = SKILL_GAIN_PER_USE) {
+    const state = this._data.get(sim.id) ?? this._initSim(sim);
+    if (!(skill in state.skills)) state.skills[skill] = 0;
+    const prev = state.skills[skill];
+    const next = Math.min(MAX_SKILL, prev + amount);
+    state.skills[skill] = next;
+    bus.emit('career:skillGain', { sim, skill, value: next });
+    return next;
+  }
+
+  gainSkillFromObject(sim, objectType) {
+    const skill = SKILL_MAP[objectType];
+    if (!skill) return null;
+    return this.gainSkill(sim, skill);
+  }
 
   serialise() {
     const out = {};
-    for (const [id, d] of this._data) {
-      out[id] = {
-        careerId   : d.careerId,
-        level      : d.level,
-        daysWorked : d.daysWorked,
-        simoleons  : d.simoleons,
-        skills     : { ...d.skills },
-      };
+    for (const [id, state] of this._data) {
+      out[id] = { ...state, skills: { ...state.skills } };
     }
     return out;
   }
 
-  restore(state) {
-    if (!state) return;
-    for (const sim of this._sims) {
-      const saved = state[sim.id];
-      if (!saved) continue;
-      const d = this._data.get(sim.id);
-      if (!d) continue;
-      d.careerId   = saved.careerId  ?? 'unemployed';
-      d.level      = saved.level     ?? 1;
-      d.daysWorked = saved.daysWorked ?? 0;
-      d.simoleons  = saved.simoleons  ?? 0;
-      d.skills     = { ...saved.skills };
+  restore(data = {}) {
+    this._data.clear();
+    this._ensureSims();
+    for (const [id, saved] of Object.entries(data || {})) {
+      const sim = this._findSim(id);
+      const state = {
+        careerId: saved.careerId ?? 'unemployed',
+        level: saved.level ?? 1,
+        performance: saved.performance ?? 50,
+        daysWorked: saved.daysWorked ?? 0,
+        simoleons: saved.simoleons ?? 0,
+        atWork: saved.atWork ?? false,
+        _shiftStarted: saved._shiftStarted ?? false,
+        skills: this._defaultSkills(saved.skills),
+      };
+      this._data.set(id, state);
+      if (sim) sim._atWork = state.atWork;
     }
   }
 
-  // ── private ──────────────────────────────────────────────────────
+  _ensureSims() {
+    for (const sim of this._sims) {
+      if (!this._data.has(sim.id)) this._initSim(sim);
+    }
+  }
 
   _initSim(sim) {
-    sim._atWork = false;
-    this._data.set(sim.id, {
-      careerId     : 'unemployed',
-      level        : 1,
-      daysWorked   : 0,
-      simoleons    : 0,
+    const state = {
+      careerId: 'unemployed',
+      level: 1,
+      performance: 50,
+      daysWorked: 0,
+      simoleons: 0,
+      atWork: false,
       _shiftStarted: false,
-      skills       : { cooking: 0, logic: 0, creativity: 0, fitness: 0, charisma: 0 },
+      skills: this._defaultSkills(),
+    };
+    this._data.set(sim.id, state);
+    sim._atWork = false;
+    return state;
+  }
+
+  _defaultSkills(overrides = {}) {
+    return {
+      cooking: 0,
+      logic: 0,
+      creativity: 0,
+      fitness: 0,
+      charisma: 0,
+      ...overrides,
+    };
+  }
+
+  _findSim(simId) {
+    return this._sims.find(s => s.id === simId) ?? null;
+  }
+
+  _career(careerId) {
+    return CAREER_BY_ID.get(careerId) ?? null;
+  }
+
+  _isInShift(career, weekday, hour) {
+    return (career.shifts ?? []).some(shift => {
+      if (shift.day !== weekday) return false;
+      return shift.start < shift.end
+        ? hour >= shift.start && hour < shift.end
+        : hour >= shift.start || hour < shift.end;
     });
   }
 
-  _endShift(sim, d, career) {
-    const salary = career.salaryBase + d.level * career.salaryPerLevel;
-    d.simoleons += salary;
-    d.daysWorked++;
+  _startShift(sim, state) {
+    state.atWork = true;
+    state._shiftStarted = true;
+    sim._atWork = true;
+    bus.emit('career:atWork', { simId: sim.id, sim, careerId: state.careerId });
+  }
 
-    // Raise status need as reward
-    sim.needs?.raise?.('status', 15);
+  _endShift(sim, state, career) {
+    state.atWork = false;
+    sim._atWork = false;
+    if (!state._shiftStarted) return;
+    state._shiftStarted = false;
 
-    // Promotion check
-    if (d.daysWorked % DAYS_PER_PROMOTION === 0 && d.level < MAX_LEVEL) {
-      this._promote(sim, career.id);
-    }
+    const salary = this._salaryFor(career, state.level);
+    state.simoleons += salary;
+    state.daysWorked += 1;
+    state.performance = Math.min(PROMOTION_PERFORMANCE, state.performance + this._performanceGain(state, career));
+    sim.needs?.restore?.('status', 12);
 
+    bus.emit('career:salary', { simId: sim.id, sim, amount: salary });
+    bus.emit('career:shiftEnd', { sim, career: career.label, salary });
     bus.emit('story:entry', {
       text: `${sim.name} finished a shift as ${career.label} and earned §${salary}.`,
+      cat: 'positive',
       category: 'positive',
     });
+
+    if (state.performance >= PROMOTION_PERFORMANCE && state.level < MAX_LEVEL) {
+      this._promote(sim, 'performance');
+    }
   }
 
-  _promote(sim, source) {
-    const d = this._data.get(sim.id);
-    if (!d || d.level >= MAX_LEVEL) return;
+  _performanceGain(state, career) {
+    const requiredSkills = Object.entries(career.skillReq ?? {});
+    if (requiredSkills.length === 0) return 8;
+    const bonus = requiredSkills.reduce((sum, [skill, min]) => {
+      return sum + Math.max(0, (state.skills[skill] ?? 0) - min) * 2;
+    }, 0);
+    return 8 + bonus;
+  }
 
-    const career   = CAREERS.find(c => c.id === d.careerId) ?? CAREERS[0];
-    const oldLevel = d.level;
-    d.level++;
-    const salary   = career.salaryBase + d.level * career.salaryPerLevel;
+  _salaryFor(career, level) {
+    if (!career) return 0;
+    return career.salaryBase + Math.max(0, level - 1) * career.salaryPerLevel;
+  }
 
-    bus.emit('career:promoted', { sim, career: career.label, oldLevel, newLevel: d.level, salary });
+  _promote(sim, source = 'system') {
+    const state = this._data.get(sim.id);
+    if (!state || state.careerId === 'unemployed' || state.level >= MAX_LEVEL) return false;
+    const career = this._career(state.careerId);
+    const oldLevel = state.level;
+    state.level += 1;
+    state.performance = 50;
+    const salary = this._salaryFor(career, state.level);
+    sim.needs?.restore?.('status', 20);
+    bus.emit('career:promoted', { sim, career: career.label, oldLevel, newLevel: state.level, salary, source });
+    bus.emit('career:levelUp', { simId: sim.id, careerId: state.careerId, newLevel: state.level });
     bus.emit('story:entry', {
-      text: `${sim.name} was promoted to ${career.label} Lv.${d.level}!`,
+      text: `${sim.name} was promoted to ${career.label} Lv.${state.level}.`,
+      cat: 'positive',
       category: 'positive',
     });
+    return true;
   }
 
   _fire(sim) {
-    const d = this._data.get(sim.id);
-    if (!d) return;
-
-    const career = CAREERS.find(c => c.id === d.careerId) ?? CAREERS[0];
-    const label  = career.label;
-
-    d.careerId   = 'unemployed';
-    d.level      = 1;
-    d.daysWorked = 0;
-    sim._atWork  = false;
-
-    sim.needs?.drop?.('status', 20);
-
-    bus.emit('career:fired', { sim, career: label });
+    const state = this._data.get(sim.id);
+    if (!state || state.careerId === 'unemployed') return false;
+    const career = this._career(state.careerId);
+    state.careerId = 'unemployed';
+    state.level = 1;
+    state.performance = 50;
+    state.daysWorked = 0;
+    state.atWork = false;
+    sim._atWork = false;
+    sim.needs?.decay?.('status', 20);
+    bus.emit('career:fired', { sim, career: career.label });
+    bus.emit('career:changed', { sim, career: this._career('unemployed') });
     bus.emit('story:entry', {
-      text: `${sim.name} was fired from ${label}.`,
+      text: `${sim.name} was fired from ${career.label}.`,
+      cat: 'drama',
       category: 'drama',
     });
+    return true;
   }
 
-  _gainSkill(sim, skill) {
-    const d = this._data.get(sim.id);
-    if (!d) return;
-
-    const prev = d.skills[skill] ?? 0;
-    if (prev >= MAX_SKILL) return;
-
-    const next = Math.min(MAX_SKILL, prev + SKILL_GAIN_PER_USE);
-    d.skills[skill] = next;
-
-    bus.emit('career:skillGain', { sim, skill, value: next });
+  _handleLifeEvent(payload = {}) {
+    const sim = payload.sim ?? this._findSim(payload.simId);
+    if (!sim) return;
+    if (payload.type === 'promoted') this._promote(sim, 'life_event');
+    if (payload.type === 'fired') this._fire(sim);
   }
 }
 
-const CAREER_EMOJI = {
-  unemployed: '-',
-  artist: 'Art',
-  scientist: 'Sci',
-  chef: 'Chef',
-  programmer: 'Code',
-  athlete: 'Fit',
-};
+export const careerSystem = new CareerSystem();

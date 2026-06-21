@@ -4,12 +4,19 @@ import { Sim }                 from '../entities/Sim.js';
 import { UIManager }           from '../ui/UIManager.js';
 import { IsometricCamera }     from '../world/IsometricCamera.js';
 import { BuildMode }           from '../world/BuildMode.js';
+import { BuildModeWalls }      from '../world/BuildModeWalls.js';
+import { WallManager }         from '../world/WallManager.js';
+import { RoomDetector }        from '../world/RoomDetector.js';
+import { budgetSystem }        from '../systems/BudgetSystem.js';
+import { RoomOverlay }         from '../ui/RoomOverlay.js';
 import { DayNightCycle }       from '../world/DayNightCycle.js';
 import { GameLoop }            from './GameLoop.js';
 import { bus }                 from './EventBus.js';
 import { memorySystem }        from '../systems/MemorySystem.js';
 import { NarrativePlanner }    from '../systems/NarrativePlanner.js';
 import { SaveLoad }            from '../systems/SaveLoad.js';
+import { SaveSlotPanel }       from '../ui/SaveSlotPanel.js';
+import { SimCreator }          from '../ui/SimCreator.js';
 import { socialManager }       from '../systems/SocialManager.js';
 import { ContextMenu }         from '../ui/ContextMenu.js';
 import { GodPanel }            from '../ui/GodPanel.js';
@@ -37,16 +44,46 @@ const SIM_DEFS = [
   { name: 'Cleo',  color: 0xa5d6a7, traits: { nice: 0.9, outgoing: -0.3 } },
 ];
 
+// Map SimCreator string traits onto the 5 personality axes.
+const TRAIT_AXIS = {
+  Outgoing: { outgoing: 0.8 }, Shy: { outgoing: -0.7 }, Bookworm: { outgoing: -0.3 },
+  Playful: { playful: 0.8 }, Active: { playful: 0.5 }, Serious: { playful: -0.5 },
+  Nice: { nice: 0.8 }, Grouchy: { nice: -0.7 }, Romantic: { nice: 0.4 },
+  Lazy: { ambitious: -0.6 }, Creative: { playful: 0.4 }, Logical: { neurotic: -0.3 },
+};
+
+function creatorDefToSimDef(def) {
+  const traits = {};
+  for (const t of def.traits ?? []) Object.assign(traits, TRAIT_AXIS[t] ?? {});
+  const color = def.skintone ? parseInt(def.skintone.slice(1), 16) : 0x4fc3f7;
+  return { name: def.name || 'Sim', color, traits };
+}
+
 export class Game {
   constructor(container) {
     this._container  = container;
     this.sims        = [];
     this.selectedSim = null;
     this.clock       = { hour: 8, speed: 1, paused: false };
-    this._init();
+    this._boot();
   }
 
-  _init() {
+  /** First launch (no save in slot 0) → SimCreator; otherwise default household. */
+  _boot() {
+    const hasSave  = !!localStorage.getItem('simsclone_save_v2_0');
+    const anchorEl = document.getElementById('sim-creator');
+    if (hasSave || !anchorEl) { this._init(SIM_DEFS); return; }
+
+    const creator = new SimCreator();
+    creator.show();
+    bus.on('simcreator:done', ({ householdName, simDefs }) => {
+      this.householdName = householdName;
+      const defs = (simDefs ?? []).map(creatorDefToSimDef);
+      this._init(defs.length ? defs : SIM_DEFS);
+    });
+  }
+
+  _init(simDefs = SIM_DEFS) {
     // ── Renderer ──────────────────────────────────────────────────────────
     this._renderer = new THREE.WebGLRenderer({ antialias: true });
     this._renderer.setPixelRatio(window.devicePixelRatio);
@@ -77,7 +114,7 @@ export class Game {
     this.dayNight = new DayNightCycle(this._scene);
 
     // ── Sims ──────────────────────────────────────────────────────────────
-    for (const def of SIM_DEFS) {
+    for (const def of simDefs) {
       const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {});
       const pos = this.world.randomAvailableCell(sim);
       if (pos) sim.setPosition(pos.x, pos.z);
@@ -92,8 +129,16 @@ export class Game {
     this.relationshipGraph = new RelationshipGraph(this.sims);
     this.romanceSystem   = new RomanceSystem(this.sims, this.relationshipGraph);
     this._saveLoad       = new SaveLoad(this);
+    this._saveSlotPanel  = new SaveSlotPanel(this._saveLoad, this.clock);
+    this._saveLoad.startAutoSave(5);   // auto-save slot 0 every 5 min
     this.godMode         = new GodMode(this);
     this.buildMode       = new BuildMode(this.world, this._scene, this._renderer, this._camera);
+    // ── Build: budget, walls, rooms ───────────────────────────────────────
+    this.budgetSystem    = budgetSystem;
+    this.wallManager     = new WallManager(this._scene, this.world.tilemap);
+    this.world.wallManager = this.wallManager;   // reachable by Sim/Action pathfinding
+    this.roomDetector    = new RoomDetector(this.world.tilemap, this.wallManager);
+    this._buildWalls     = new BuildModeWalls(this.buildMode, this.wallManager, this._scene, this._renderer, this._camera, this.world);
     this._contextMenu    = new ContextMenu(this, this._renderer);
     this.ageSystem       = new AgeSystem(this.sims);
     this.careerSystem    = new CareerSystem(this.sims, this.clock);
@@ -121,6 +166,8 @@ export class Game {
     this._lifecyclePanel    = new LifeCyclePanel(this);
     this._lifecycleNotifier = new LifecycleNotifier('lifecycle-toast');
     this._skillPanel    = new SkillPanel(this);
+    // BuildPanel is created by UIManager — don't duplicate it here.
+    this._roomOverlay   = new RoomOverlay(this.roomDetector);
     this._emoteRenderer = new EmoteRenderer(this._scene, this.sims);
 
     bus.emit('sim:selected', { sim: this.selectedSim });
@@ -171,6 +218,9 @@ export class Game {
       for (const [need, delta] of Object.entries(deltas)) {
         sim.needs?.delta?.(need, delta * scaled);
       }
+      // Enclosed-room bonus feeds the 'room' need (ponytail: 0.5 = tuning knob)
+      const roomBonus = this.roomDetector?.moodBonusAt(sim.gx, sim.gz) ?? 0;
+      if (roomBonus) sim.needs?.delta?.('room', roomBonus * scaled * 0.5);
       // Recompute mood score; stored on sim for external access
       sim._mood      = this._moodEngine.compute(sim);
       sim._moodLabel = this._moodEngine.getMoodLabel(sim);
@@ -192,7 +242,7 @@ export class Game {
 
     canvas.addEventListener('click', (e) => {
       if (e.button !== 0) return;
-      if (this.buildMode?.active) { this.buildMode.handleClick(e); return; }
+      if (this.buildMode?.active) { this._buildWalls.handleClick(e); return; }
 
       mouse.set(
         (e.clientX / window.innerWidth)  * 2 - 1,
@@ -223,7 +273,7 @@ export class Game {
     sim.setSelected(true);
     this.selectedSim = sim;
     bus.emit('sim:selected', { sim });
-    if (this._lifecyclePanel?.isOpen()) this._lifecyclePanel.render();
+    // LifeCyclePanel re-renders itself on sim:selected (see its constructor).
   }
 
   selectSimByIndex(index) {
@@ -263,16 +313,13 @@ export class Game {
       if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
       q('btn-rel')?.classList.toggle('active');
     });
-    q('btn-save')?.addEventListener('click', () => this._saveLoad?.save());
-    q('btn-load')?.addEventListener('click', () => this._saveLoad?.load());
+    q('btn-save')?.addEventListener('click', () => this._saveSlotPanel?.open('save'));
+    q('btn-load')?.addEventListener('click', () => this._saveSlotPanel?.open('load'));
 
-    // Sprint 3 — lifecycle panel
-    const lcEl = q('lifecycle-panel');
+    // Sprint 3 — lifecycle panel (LifeCyclePanel owns its visibility via toggle())
     q('btn-lifecycle')?.addEventListener('click', () => {
-      const opening = !lcEl || lcEl.style.display === 'none' || lcEl.style.display === '';
-      if (lcEl) lcEl.style.display = opening ? 'block' : 'none';
-      q('btn-lifecycle')?.classList.toggle('active', opening);
-      if (opening) this._lifecyclePanel?.render();
+      this._lifecyclePanel?.toggle();
+      q('btn-lifecycle')?.classList.toggle('active', !!this._lifecyclePanel?._visible);
     });
 
     // Sprint 4 — skill panel
@@ -282,6 +329,24 @@ export class Game {
       if (skEl) skEl.style.display = opening ? 'block' : 'none';
       q('btn-skills')?.classList.toggle('active', opening);
     });
+
+    // Sprint 5/6 — build tools (furniture/wall/door/eraser), rooms overlay, funds
+    document.querySelectorAll('#build-tools .bt-tool').forEach(b => {
+      b.addEventListener('click', () => {
+        this._buildWalls.setTool(b.dataset.tool);
+        document.querySelectorAll('#build-tools .bt-tool')
+          .forEach(x => x.classList.toggle('active', x === b));
+      });
+    });
+    q('bt-rooms')?.addEventListener('click', () => {
+      this.roomDetector.analyse();
+      this._roomOverlay.toggle();
+      q('bt-rooms')?.classList.toggle('active');
+    });
+    const fundsEl = q('bt-funds');
+    const renderFunds = v => { if (fundsEl) fundsEl.textContent = '§' + Math.round(v).toLocaleString(); };
+    renderFunds(this.budgetSystem.funds);
+    bus.on('budget:changed', ({ next }) => renderFunds(next));
   }
 
   serialise() {
@@ -299,6 +364,9 @@ export class Game {
       // Sprint 4
       weather:  this._weather.serialise(),
       skills:   skillSystem.serialise(),
+      // Sprint 5/6 — build
+      budget:   this.budgetSystem.serialise(),
+      walls:    this.wallManager.serialise(),
     };
   }
 
@@ -324,6 +392,9 @@ export class Game {
     // Sprint 4
     if (state.weather)            this._weather.restore(state.weather);
     if (state.skills)             skillSystem.restore(state.skills);
+    // Sprint 5/6 — build
+    if (state.budget)             this.budgetSystem.restore(state.budget);
+    if (state.walls)            { this.wallManager.restore(state.walls); this.roomDetector.analyse(); }
     bus.emit('sim:selected', { sim: this.selectedSim });
   }
 

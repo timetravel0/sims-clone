@@ -1,206 +1,253 @@
 # Sims Clone - Functional Guide
 
-Last updated: implementation through Sprint 4 plus Utility AI, Smart Objects and experiment logging.
+This document describes what is currently playable or observable from the frontend, what exists only as backend/runtime logic, and what is still missing.
 
-## What It Is
+## Current Experience
 
-Sims Clone is a browser-based isometric life simulation. You observe and influence autonomous Sims with needs, personalities, moods, memories, emotions, relationships and an emergent social graph.
+Sims Clone is a browser-based isometric life simulation. You observe and influence autonomous Sims with needs, personalities, moods, memories, relationships, careers, aging and a directed social graph.
 
-The simulation now follows a Sims-style model:
+The current household contains:
 
-- Sims evaluate their internal state.
-- Objects and other Sims advertise possible actions.
-- Utility AI chooses the most useful available action.
-- Social interactions can succeed or be rejected.
-- Significant events are logged for later analysis.
+- Alice;
+- Bob;
+- Cleo.
 
-## Current Sims
+You can select Sims in the world or from the selector UI. The toolbar exposes simulation speed, story, relations, graph, God Mode, build, life, save and load.
 
-The household contains:
+## Available In The Frontend
 
-- Alice
-- Bob
-- Cleo
-
-Click a Sim in the world or a portrait in the top-left corner to select them.
-
-Each Sim has:
-
-- ten needs;
-- five personality traits;
-- mood tier;
-- secondary emotions;
-- episodic memories;
-- scalar relationship score and familiarity;
-- directed typed social graph edges.
-
-## Needs
-
-Needs range from `0` to `100` and decay over time.
-
-| Need | Meaning | Restored by examples |
+| Feature | Frontend access | Status |
 |---|---|---|
-| Hunger | Food | Fridge, dining |
-| Energy | Rest | Bed, coffee-like energy affordances |
-| Bladder | Toilet | Toilet |
-| Hygiene | Cleanliness | Shower |
-| Social | Affiliation | Chat, jokes, gathering objects |
-| Fun | Recreation | TV, chess, piano, jokes |
-| Comfort | Physical ease | Couch, hot tub |
-| Room | Environment | Decorative/room affordances |
-| Autonomy | Self-directed agency | Reading, studying, refusing unwanted actions |
-| Status | Approval/prestige | Compliments, performance, high-status objects |
+| Isometric world | Main scene | Available. |
+| Sim selection | Sim selector and world click | Available. |
+| Needs | Needs/status panel | Available. |
+| Mood/status | Status UI and visual feedback | Available. |
+| Autonomous behavior | Runs automatically | Available. |
+| Smart object use | Context actions and AI | Available. |
+| Object exclusivity | Runtime behavior | Available. |
+| Anti-overlap movement | Runtime behavior | Available. |
+| Social interactions | Autonomous and context-driven | Available. |
+| Pair relations | `Relations` button | Available. |
+| Social graph | `Graph` button | Available. |
+| Story log | `Story` button | Available. |
+| God Mode | `God` button | Available. |
+| Build mode | `Build` button | Available for basic object placement. |
+| Life/career/schedule view | `Life` button | Available. |
+| Save/load | `Save` and `Load` buttons | Available for the default save flow. |
 
-When needs become low, Sims seek nearby affordances that advertise useful payoffs.
+## Needs And Autonomy
 
-## Personality
+Each Sim has needs from `0` to `100`:
 
-Traits range from `-1` to `+1`.
+- hunger;
+- energy;
+- bladder;
+- hygiene;
+- social;
+- fun;
+- comfort;
+- room;
+- autonomy;
+- status.
 
-| Trait | High value means | Functional effect |
-|---|---|---|
-| Outgoing | Extrovert | Higher social pressure and more social acceptance |
-| Neurotic | Anxious/reactive | Stronger negative swings and lower social tolerance |
-| Playful | Fun-seeking | More fun-seeking and joking |
-| Nice | Cooperative | More compliments/hugs, fewer hostile choices, slower status loss |
-| Ambitious | Driven | More status/autonomy weighting and slower general decay |
-
-God Mode can permanently bless or curse traits.
-
-## Smart Objects and Affordances
-
-Furniture is not passive. Each object advertises actions and expected effects.
+Needs decay over time. When idle, a Sim evaluates nearby objects and other Sims, then chooses the action with the best expected utility.
 
 Examples:
 
-| Object | Advertised action | Utility |
+| Need pressure | Typical response |
+|---|---|
+| Low hunger | Use food-related furniture. |
+| Low energy | Sleep, rest or use an energy affordance. |
+| Low social | Seek interaction with another Sim. |
+| Low fun | Use entertainment objects. |
+| Low autonomy | Prefer individual activities or resist imposed control. |
+| Low status | Prefer high-status actions or positive social feedback. |
+
+## Smart Objects
+
+Objects advertise what they can do for a Sim. Sims do not need hard-coded behavior for every object; they score advertised affordances.
+
+Examples:
+
+| Object type | Example action | Effect |
 |---|---|---|
-| Bed | Sleep | Energy, autonomy |
-| Bookshelf | Read | Autonomy, fun, status |
-| Desk | Study | Autonomy, status, fun, energy cost |
-| TV | Watch TV | Fun, social, autonomy |
-| Bar | Show Off | Social, status, fun, energy cost |
-| Piano | Play Piano | Fun, status, autonomy |
+| Bed | Sleep | Restores energy. |
+| Bookshelf | Read | Restores autonomy/fun/status. |
+| Desk | Study | Supports autonomy/status and career-related growth. |
+| TV | Watch | Restores fun and sometimes social value. |
+| Piano | Play | Restores fun/status and can support artistic growth. |
 
-Sims score these options from current need pressure, personality and distance.
+Only one Sim can reserve and use a given object at a time.
 
-## Social Interactions
+## Movement And Collision
 
-Other Sims also act as Smart Objects. They advertise social possibilities such as:
+Sims cannot overlap.
 
-- greet;
-- chat;
-- compliment;
-- insult.
+The simulation enforces:
 
-Every pair has:
+- one reserved destination tile per Sim;
+- no walking into occupied or reserved cells;
+- no standing on the same tile as another Sim;
+- one active user per furniture object;
+- build placement rejection on occupied or reserved cells.
 
-- `score`: affinity from `-100` to `+100`;
-- `familiarity`: how much the pair has interacted, from `0` to `100`.
+If two Sims want the same object, the first valid reservation wins and the other Sim must choose a different action or retry later.
 
-Familiarity increases even when the interaction is negative. Some actions require enough familiarity or a compatible score.
+## Social System
 
-When Sim A initiates an action toward Sim B:
+Sims can greet, chat, compliment or insult each other. Social actions are not guaranteed to succeed.
 
-1. A walks near B.
-2. B evaluates whether to accept using energy, score, familiarity and personality.
-3. If accepted, both Sims receive the interaction payoff.
-4. If rejected, A loses social/status value and B regains autonomy.
-5. The event is recorded in the Story Log and Experiment Logger.
+When a Sim initiates a social action:
 
-## Relationship Layers
+1. the initiator walks near the target;
+2. the target evaluates whether to accept;
+3. acceptance depends on energy, familiarity, relationship score and personality;
+4. success gives social payoff and updates relationships;
+5. rejection penalizes the initiator and can improve the target's autonomy.
 
-There are two relationship views.
+Each pair tracks:
 
-### Pair Score
+| Value | Range | Meaning |
+|---|---:|---|
+| Score | `-100` to `100` | Affinity, from hostile to close. |
+| Familiarity | `0` to `100` | How much they know each other. |
 
-The `Relations` panel shows scalar relationship scores and familiarity for the selected Sim.
+## Social Graph
 
-Typical score labels:
+The `Graph` panel shows directed relationships. Direction matters: Alice can like Bob more than Bob likes Alice.
 
-| Score | Label |
-|---:|---|
-| `> 60` | BFF |
-| `> 30` | Friend |
-| `-10` to `30` | Neutral |
-| `-30` to `-10` | Tense |
-| `< -30` | Enemy |
-
-### Social Graph
-
-Open `Graph` to see directed relationships. Alice can feel differently about Bob than Bob feels about Alice.
-
-Edge types:
+Supported edge types:
 
 - friendship;
 - rivalry;
 - romance;
 - family/kinship.
 
-Romance emerges from compatibility and repeated positive interaction. Jealousy can appear when a Sim with romantic attachment sees their romantic interest interact positively with someone else.
+Friendship, rivalry and romance can emerge from repeated interactions. The family/kinship edge type exists, but a complete family system is not implemented yet.
 
-## Mood, Emotions and Memory
+## Romance And Jealousy
 
-Mood is calculated from needs, personality and active emotions.
+Romance can emerge from personality compatibility and repeated positive interactions.
 
-Mood tiers:
+Jealousy can appear when a Sim with romantic attachment observes the romantic target having a positive interaction with someone else.
 
-| Tier | Score |
-|---|---:|
-| Ecstatic | `>= 75` |
-| Happy | `>= 35` |
-| Neutral | `>= -10` |
-| Sad | `>= -40` |
-| Miserable | `< -40` |
+This is implemented as simulation behavior and story events, not as a full dating, partnership or household system.
 
-Secondary emotions include:
+## Memory, Emotions And Story
 
-- joy;
-- hope;
-- pride;
-- excitement;
-- anger;
-- grief;
-- loneliness;
-- jealousy.
+Sims record episodic memories for important events:
 
-Sims record episodic memories for social events, crises, mood peaks, God Mode actions and life events. Memories fade over time and can bias later choices.
+- social successes;
+- social rejections;
+- need crises;
+- mood peaks;
+- God Mode actions;
+- life events;
+- career events.
+
+Secondary emotions can appear and decay over time, including joy, hope, pride, excitement, anger, grief, loneliness and jealousy.
+
+The `Story` panel shows human-readable events from the simulation.
+
+There is currently no dedicated frontend panel that lists all raw memories for a selected Sim.
 
 ## God Mode
 
-Open `God` from the toolbar.
+The `God` panel is available from the toolbar.
 
-Available powers:
-
-| Power | Effect |
+| Power | Behavior |
 |---|---|
-| Whisper | Suggest an action; the Sim may refuse |
-| Impose | Force an action with autonomy/mood cost |
-| Bless | Permanently raise a trait |
-| Curse | Permanently lower a trait |
-| Life Event | Inject promoted, fired, heartbreak or windfall |
+| Whisper | Suggests an action; the Sim can refuse. |
+| Impose | Forces an action and costs autonomy/mood. |
+| Bless | Raises a trait. |
+| Curse | Lowers a trait. |
+| Life Event | Injects promoted, fired, heartbreak or windfall. |
 
-God Mode creates memories and story events, and its effects are saved.
+God Mode actions create events and memories.
 
-## Story Log
+## Life Cycle
 
-The Story Log records important visible events:
+The life-cycle system is active and visible through the `Life` panel.
 
-- actions;
-- accepted and rejected social interactions;
-- arguments and positive interactions;
-- BFF/rival announcements;
-- romantic sparks and jealousy;
-- mood changes;
-- need crises;
-- God Mode actions;
-- life event ripples.
+Each Sim has a simulated age and life stage:
 
-Use the Story button or close button to toggle it.
+- baby;
+- child;
+- teen;
+- young adult;
+- adult;
+- elder.
+
+The current implementation tracks aging and life-stage transitions. It does not yet implement birth, death, inheritance, marriage, adoption or household membership.
+
+## Career
+
+Career functionality is implemented and surfaced mainly through the `Life` panel.
+
+The system tracks:
+
+- selected career;
+- career level;
+- performance;
+- work days;
+- salary;
+- shift start/end;
+- promotions;
+- firing;
+- career-related skills.
+
+Available careers include:
+
+- artist;
+- scientist;
+- chef;
+- programmer;
+- athlete.
+
+The dedicated `CareerPanel` component exists in the source code but is not mounted in the current frontend. In practice, career information is accessed from the `Life` panel.
+
+## Schedule
+
+The schedule system is active and visible in the `Life` panel.
+
+It defines weekly routine slots such as:
+
+- sleep;
+- meals;
+- work;
+- study;
+- fun;
+- social time.
+
+Current limitation: the schedule is mostly a state/routine layer. Some direct behavior hooks are still partial, so not every routine slot reliably forces a matching Sim action.
+
+## Skills
+
+Skill logic exists, but frontend exposure is incomplete.
+
+Implemented logic:
+
+- Sims are registered in a global skill system;
+- social interactions can increase charisma;
+- career logic tracks career-local skills;
+- object use can increase relevant career skills;
+- skill state can be serialized.
+
+Current limitations:
+
+- the global skill system and career skill map are separate;
+- the skill UI component exists, but the current HTML does not expose the required panel/button;
+- skills are therefore not reliably inspectable from the frontend.
+
+## Weather
+
+Weather logic is active. It can change environmental state, influence lighting and apply need deltas.
+
+Current limitation: there is no mounted weather panel, so weather is mostly visible indirectly through mood/need effects and scene changes.
 
 ## Experiment Data
 
-The simulation records structured events through `ExperimentLogger`.
+The experiment logger is active and records structured events suitable for later analysis.
 
 From the browser console:
 
@@ -211,37 +258,83 @@ window._game.experimentLogger.downloadJSON()
 window._game.experimentLogger.downloadCSV()
 ```
 
-Rows include simulation tick, simulated hour, event type and event-specific fields such as actor, target, action type, score delta, familiarity and acceptance result.
+Current limitation: there is no frontend export panel for the experiment logger.
 
-## Movement and Exclusivity
+## Save And Load
 
-Sims cannot overlap.
+The toolbar save/load buttons are active.
 
-The world enforces:
+The saved state includes:
 
-- one reserved destination tile per Sim;
-- no walking into occupied/reserved path cells;
-- one reserved user per object;
-- one active user per object.
-
-If two Sims want the same object, only the first reservation succeeds. The other Sim replans.
-
-Build Mode also refuses occupied or reserved cells.
-
-## Save and Load
-
-Save/load preserves:
-
-- clock and day/night state;
-- Sim positions, needs, mood, emotions and personality;
+- Sims;
+- needs and personality;
+- mood/emotions;
 - memories;
-- relationship score and familiarity;
-- directed social graph;
+- social relations;
+- relationship graph;
 - romance state;
+- age state;
+- career state;
+- weather state;
+- skills;
 - experiment log.
+
+Current limitations:
+
+- the multi-slot save panel exists in source but is not mounted;
+- budget, wall and room fields exist in the save schema but are empty in the current runtime because those systems are not wired into `Game`.
 
 ## Build Mode
 
-Open `Build`, choose an object and click a valid floor tile.
+The `Build` button opens the current build flow for placing objects.
 
-Placement is rejected when the target cell is blocked, occupied, reserved or otherwise invalid.
+Implemented:
+
+- basic furniture placement;
+- rejection of invalid, blocked, occupied or reserved cells.
+
+Present but not active in the main frontend:
+
+- budget-aware catalogue;
+- wall placement;
+- door placement as build objects;
+- room detection;
+- room overlay;
+- room mood bonuses from detected enclosed rooms.
+
+## Present But Not Available From The Frontend
+
+These pieces exist in the codebase but are not currently reachable in the playable UI:
+
+| Feature | Current state |
+|---|---|
+| Skill panel | Component exists; missing current DOM anchor/button. |
+| Dedicated career panel | Component exists; career is shown through `Life` instead. |
+| Multi-slot save panel | Component exists; toolbar uses default save/load. |
+| Sim creator | Component exists; not mounted. |
+| Room overlay | Component exists; not mounted. |
+| Advanced build catalogue | Component exists; not mounted. |
+| Budget display/economy | System exists; not connected to `Game`. |
+| Wall/door build flow | Systems exist; not connected to `Game`. |
+| Raw memory browser | Not implemented. |
+| Experiment logger panel | Not implemented. |
+| Weather panel | Not implemented. |
+
+## Missing Functional Areas
+
+The major missing product features are:
+
+- full family and household simulation;
+- birth, death, marriage, adoption and inheritance;
+- complete career frontend with job history and skill requirements shown everywhere;
+- unified skill UI and unified skill model;
+- direct control and visualization of schedules;
+- memory browser per Sim;
+- experiment dashboard with filters and exports;
+- weather panel and weather history;
+- budget economy integrated with build mode;
+- wall, room and floor-plan gameplay;
+- Sim creation and editing from the frontend;
+- headless fast-forward mode for scientific experiments;
+- seeded deterministic experiment runs;
+- automated regression tests for gameplay rules.

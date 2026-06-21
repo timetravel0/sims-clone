@@ -79,7 +79,8 @@ export class Sim {
     if (!target) return;
     const pf = new Pathfinder(this._world.tilemap, (x, z) =>
       this._world.isCellOccupied(x, z, this.id) ||
-      this._world.isCellReserved(x, z, this.id)
+      this._world.isCellReserved(x, z, this.id),
+      (x1, z1, x2, z2) => this._world.wallManager?.isPassable(x1, z1, x2, z2) ?? true
     );
     const path = pf.find(this.gx, this.gz, target.x, target.z);
     if (path && path.length > 0) {
