@@ -54,6 +54,9 @@ export class SimNeeds {
   getAll()          { return { ...this._values }; }
   restore(key, amt) { this._values[key] = Math.min(100, (this._values[key] ?? 0) + amt); }
   decay(key, amt)   { this._values[key] = Math.max(0,   (this._values[key] ?? 0) - amt); }
+  delta(key, amt)   { amt >= 0 ? this.restore(key, amt) : this.decay(key, Math.abs(amt)); }
+  raise(key, amt)   { this.restore(key, amt); }
+  drop(key, amt)    { this.decay(key, amt); }
 
   /**
    * Returns the KEY of the most critical need below `threshold`.

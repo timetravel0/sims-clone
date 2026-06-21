@@ -21,6 +21,9 @@ import { RomanceSystem }       from '../systems/RomanceSystem.js';
 import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
 import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
 import { LifecycleNotifier }   from '../ui/LifecycleNotifier.js';
+import { AgeSystem }           from '../systems/AgeSystem.js';
+import { CareerSystem }        from '../systems/CareerSystem.js';
+import { ScheduleSystem }      from '../systems/ScheduleSystem.js';
 // Sprint 4
 import { skillSystem }         from '../systems/SkillSystem.js';
 import { weatherSystem }       from '../systems/WeatherSystem.js';
@@ -83,7 +86,7 @@ export class Game {
     this.selectedSim = this.sims[0];
     this.selectedSim.setSelected(true);
 
-    // ── Systems — Sprint 1-3 ──────────────────────────────────────────────
+    // ── Systems ────────────────────────────────────────────────────────────
     this._narrative      = new NarrativePlanner(this.sims);
     this.experimentLogger = new ExperimentLogger(this);
     this.relationshipGraph = new RelationshipGraph(this.sims);
@@ -92,8 +95,10 @@ export class Game {
     this.godMode         = new GodMode(this);
     this.buildMode       = new BuildMode(this.world, this._scene, this._renderer, this._camera);
     this._contextMenu    = new ContextMenu(this, this._renderer);
+    this.ageSystem       = new AgeSystem(this.sims);
+    this.careerSystem    = new CareerSystem(this.sims, this.clock);
+    this.scheduleSystem  = new ScheduleSystem(this.sims, this.clock);
 
-    // ── Systems — Sprint 4 ────────────────────────────────────────────────
     for (const sim of this.sims) skillSystem.register(sim);
     this._weather       = weatherSystem;
     this._moodEngine    = moodEngine;
@@ -113,30 +118,8 @@ export class Game {
     this._godPanel   = new GodPanel(this);
     this._graphPanel = new GraphPanel(this);
 
-    // Sprint 3 — lifecycle
     this._lifecyclePanel    = new LifeCyclePanel(this);
     this._lifecycleNotifier = new LifecycleNotifier('lifecycle-toast');
-
-    // Systems — Sprint 1
-    this._narrative = new NarrativePlanner(this.sims);
-    this.experimentLogger = new ExperimentLogger(this);
-    this.relationshipGraph = new RelationshipGraph(this.sims);
-    this.romanceSystem = new RomanceSystem(this.sims, this.relationshipGraph);
-    this._saveLoad = new SaveLoad(this);
-    this.godMode = new GodMode(this);
-    this.buildMode = new BuildMode(this.world, this._scene, this._renderer, this._camera);
-    this._contextMenu = new ContextMenu(this, this._renderer);
-
-    // Expose globally for UI panels
-    window._game = this;
-
-    // UI
-    this._ui = new UIManager(this.sims, this.selectedSim, bus);
-    this._godPanel = new GodPanel(this);
-    this._graphPanel = new GraphPanel(this);
-    bus.emit('sim:selected', { sim: this.selectedSim });
-
-    // Sprint 4 — skill panel + emote renderer
     this._skillPanel    = new SkillPanel(this);
     this._emoteRenderer = new EmoteRenderer(this._scene, this.sims);
 
@@ -166,6 +149,7 @@ export class Game {
 
     this.dayNight.update(scaled);
     this.clock.hour = this.dayNight.time * 24;
+    this.clock.weekday = Math.floor(this.dayNight.totalDays ?? 0) % 7;
 
     // Sims
     for (const sim of this.sims) sim.update(scaled);
@@ -175,7 +159,9 @@ export class Game {
     this.experimentLogger.update(scaled);
     this._narrative.update(scaled);      // story beats
     this.world.update(scaled);
-    this._lifecyclePanel?.update(scaled);
+    this.ageSystem.update(scaled);
+    this.careerSystem.update(scaled);
+    this.scheduleSystem.update(scaled);
 
     // Sprint 4 systems
     this._weather.update(scaled);
@@ -250,16 +236,6 @@ export class Game {
     return this.clock.paused;
   }
 
-  selectSimByIndex(index) {
-    const sim = this.sims[index];
-    if (sim) this._selectSim(sim);
-  }
-
-  togglePause() {
-    this.clock.paused = !this.clock.paused;
-    return this.clock.paused;
-  }
-
   setSpeed(speed) {
     this.clock.speed = speed;
   }
@@ -318,18 +294,11 @@ export class Game {
       relationshipGraph: this.relationshipGraph.serialise(),
       romance:  this.romanceSystem.serialise(),
       experimentLog: this.experimentLogger.serialise(),
-      lifecycle: this._lifecyclePanel?.serialise(),
+      age: this.ageSystem.serialise(),
+      career: this.careerSystem.serialise(),
       // Sprint 4
       weather:  this._weather.serialise(),
       skills:   skillSystem.serialise(),
-      clock:   this.clock,
-      dayNight: { time: this.dayNight?.time ?? this.clock.hour / 24 },
-      sims:    this.sims.map(s => s.serialise()),
-      memories: memorySystem.serialise(),
-      social:  socialManager.serialise(),
-      relationshipGraph: this.relationshipGraph.serialise(),
-      romance: this.romanceSystem.serialise(),
-      experimentLog: this.experimentLogger.serialise(),
     };
   }
 
@@ -350,16 +319,11 @@ export class Game {
     if (state.relationshipGraph)  this.relationshipGraph.restore(state.relationshipGraph);
     if (state.romance)            this.romanceSystem.restore(state.romance);
     if (state.experimentLog)      this.experimentLogger.restore(state.experimentLog);
-    if (state.lifecycle)          this._lifecyclePanel?.restore(state.lifecycle);
+    if (state.age)                this.ageSystem.restore(state.age);
+    if (state.career)             this.careerSystem.restore(state.career);
     // Sprint 4
     if (state.weather)            this._weather.restore(state.weather);
     if (state.skills)             skillSystem.restore(state.skills);
-    bus.emit('sim:selected', { sim: this.selectedSim });
-    if (state.memories) memorySystem.restore(state.memories);
-    if (state.social) socialManager.restore(state.social);
-    if (state.relationshipGraph) this.relationshipGraph.restore(state.relationshipGraph);
-    if (state.romance) this.romanceSystem.restore(state.romance);
-    if (state.experimentLog) this.experimentLogger.restore(state.experimentLog);
     bus.emit('sim:selected', { sim: this.selectedSim });
   }
 
@@ -371,6 +335,4 @@ export class Game {
     this._saveLoad?.load();
   }
 
-  _save() { this._saveLoad?.save(); }
-  _load() { this._saveLoad?.load(); }
 }

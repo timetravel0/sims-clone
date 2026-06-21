@@ -79,6 +79,27 @@ export class ScheduleSystem {
     return this._active.get(sim.id) ?? null;
   }
 
+  getSchedule(simId) {
+    const sim = this._sims.find(s => s.id === simId);
+    if (!sim) return [];
+    const p = sim.personality ?? {};
+    const out = [];
+    for (const tpl of SLOT_TEMPLATES) {
+      if (tpl.condition && !tpl.condition(p)) continue;
+      const days = tpl.days === -1 ? [0, 1, 2, 3, 4, 5, 6] : tpl.days;
+      for (const day of days) {
+        out.push({
+          day,
+          type: tpl.type,
+          label: tpl.label,
+          startHour: tpl.startHour,
+          endHour: tpl.endHour,
+        });
+      }
+    }
+    return out;
+  }
+
   // ── private ──────────────────────────────────────────────────────
 
   _resolveSlot(sim, hour, weekday) {

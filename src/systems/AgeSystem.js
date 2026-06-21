@@ -99,6 +99,20 @@ export class AgeSystem {
     return this._data.get(sim.id)?.stage ?? 'youngAdult';
   }
 
+  getInfo(simId) {
+    const d = this._data.get(simId);
+    if (!d) return null;
+    return {
+      ageDays: d.days,
+      ageYears: d.days,
+      stage: {
+        id: d.stage,
+        label: STAGE_LABELS[d.stage] ?? d.stage,
+        color: STAGE_COLORS[d.stage] ?? '#aaa',
+      },
+    };
+  }
+
   // ── serialise / restore ─────────────────────────────────────────
 
   serialise() {
@@ -131,3 +145,21 @@ export class AgeSystem {
     this._data.set(sim.id, { seconds: 0, days: 18, stage });
   }
 }
+
+const STAGE_LABELS = {
+  baby: 'Baby',
+  child: 'Child',
+  teen: 'Teen',
+  youngAdult: 'Young Adult',
+  adult: 'Adult',
+  elder: 'Elder',
+};
+
+const STAGE_COLORS = {
+  baby: '#ffd580',
+  child: '#a5d6a7',
+  teen: '#80cbc4',
+  youngAdult: '#4fc3f7',
+  adult: '#ce93d8',
+  elder: '#b0bec5',
+};

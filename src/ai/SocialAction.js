@@ -1,164 +1,75 @@
-/**
- * SocialAction — Sprint 4
- * An Action that moves Sim A next to Sim B, then executes a social interaction.
- *
- * Supported interactions:
- *   chat     — small +social for both, slight +charisma XP
- *   joke     — +fun for both if charisma >= 3, else −social for B
- *   hug      — +social +comfort for both, requires relationship >= 30
- *   argue    — −social for both, −relationship; higher neurotic → more likely
- *   compliment — +social +relationship for B; tiny +charisma XP for A
- *
- * On completion emits: social:interaction { simA, simB, type, outcome }
- */
-import { WalkToAction }  from './Action.js';
+import { Action }        from './Action.js';
+import { socialManager } from '../systems/SocialManager.js';
 import { skillSystem }   from '../systems/SkillSystem.js';
+import { Logger }        from '../utils/Logger.js';
 import { bus }           from '../core/EventBus.js';
-const TYPES_POSITIVE = ['chat', 'joke', 'compliment', 'hug'];
+
 const TYPES_NEGATIVE = ['argue', 'insult'];
 
 export class SocialAction extends Action {
-  constructor(simA, simB, world, type, affordance = null) {
-    super(affordance?.label || `Social(${simA.name}→${simB.name})`);
-    this._sim   = simA;
-    this._simA  = simA;
-    this._simB  = simB;
+  constructor(simA, simB, world, type = null, affordance = null) {
+    super(affordance?.label || `Social(${simA.name}->${simB.name})`);
+    this._sim = simA;
+    this._simA = simA;
+    this._simB = simB;
     this._world = world;
-    this._type  = type || this._pickType();
+    this._type = type || this._pickType();
     this._affordance = affordance;
     this._phase = 'walk';
     this._timer = 0;
   }
 
-const INTERACTION_DEFS = {
-  chat: {
-    duration: 8,
-    execute(a, b, rel) {
-      a.needs.delta('social',  8);
-      b.needs.delta('social',  6);
-      skillSystem.gain(a, 'charisma', 0.1);
-      return { success: true, relDelta: 3 };
-    },
-  },
-  joke: {
-    duration: 6,
-    execute(a, b, rel) {
-      const charisma = skillSystem.getLevel(a, 'charisma');
-      if (charisma >= 3) {
-        a.needs.delta('fun', 10);
-        b.needs.delta('fun', 12);
-        skillSystem.gain(a, 'charisma', 0.15);
-        return { success: true, relDelta: 5 };
-      }
-      // Failed joke
-      b.needs.delta('social', -5);
-      return { success: false, relDelta: -3 };
-    },
-  },
-  hug: {
-    duration: 5,
-    execute(a, b, rel) {
-      if (rel < 30) return { success: false, relDelta: 0 };
-      a.needs.delta('social',  12);
-      b.needs.delta('social',  12);
-      a.needs.delta('comfort',  5);
-      b.needs.delta('comfort',  5);
-      return { success: true, relDelta: 8 };
-    },
-  },
-  argue: {
-    duration: 10,
-    execute(a, b, rel) {
-      a.needs.delta('social', -8);
-      b.needs.delta('social', -8);
-      a.needs.delta('fun',    -5);
-      b.needs.delta('fun',    -5);
-      return { success: true, relDelta: -12 };
-    },
-  },
-  compliment: {
-    duration: 4,
-    execute(a, b, rel) {
-      b.needs.delta('social', 10);
-      skillSystem.gain(a, 'charisma', 0.1);
-      return { success: true, relDelta: 6 };
-    },
-  },
-};
-
-export class SocialAction {
-  /**
-   * @param {object} simA       — the actor Sim
-   * @param {object} simB       — the target Sim
-   * @param {string} type       — one of the INTERACTION_DEFS keys
-   * @param {object} world      — World reference for pathfinding
-   * @param {object} relGraph   — RelationshipGraph reference
-   */
-  constructor(simA, simB, type, world, relGraph) {
-    this.simA     = simA;
-    this.simB     = simB;
-    this.type     = type in INTERACTION_DEFS ? type : 'chat';
-    this.world    = world;
-    this.relGraph = relGraph;
-    this._phase   = 'walk';   // 'walk' | 'interact' | 'done'
-    this._walkAction = null;
-    this._timer      = 0;
-    this.done        = false;
-  }
-
   enter() {
-    // Walk to a tile adjacent to simB
-    const tx = this.simB.gridX + 1;
-    const tz = this.simB.gridZ;
-    this._walkAction = new WalkToAction(this.simA, this.world, tx, tz);
-    this._walkAction.enter();
-    this._phase = 'walk';
+    const tx = this._simB.gx;
+    const tz = Math.min(this._simB.gz + 1, this._world?.tilemap?.height ? this._world.tilemap.height - 1 : 14);
+    this._simA.walkTo(tx, tz);
   }
 
   update(dt) {
     if (this._phase === 'walk') {
-      this._walkAction.update(dt);
-      if (this._walkAction.done) {
+      if (!this._simA.isMoving) {
         this._phase = 'interact';
-        this._timer = 0;
+        this._timer = this._affordance?.duration ?? INTERACTION_DURATION[this._type] ?? 2.5;
+        this._doInteract();
       }
       return;
     }
 
     if (this._phase === 'interact') {
-      const def = INTERACTION_DEFS[this.type];
-      this._timer += dt;
-      if (this._timer >= def.duration) {
-        const rel = this.relGraph?.getScore(this.simA.id, this.simB.id) ?? 0;
-        const outcome = def.execute(this.simA, this.simB, rel);
-        // Update relationship graph
-        if (this.relGraph && outcome.relDelta !== 0) {
-          this.relGraph.adjustScore(this.simA.id, this.simB.id, outcome.relDelta);
-        }
-        bus.emit('social:interaction', {
-          simA: this.simA,
-          simB: this.simB,
-          type: this.type,
-          outcome,
-        });
-        this._phase = 'done';
-        this.done   = true;
-      }
+      this._timer -= dt;
+      if (this._timer <= 0) this.done = true;
     }
   }
 
-  exit() {
-    this._walkAction?.exit?.();
+  _pickType() {
+    const p = this._simA.personality;
+    const score = socialManager.score(this._simA.id, this._simB.id);
+
+    if (p.nice < -0.4 && score < -10 && Math.random() < 0.6) {
+      return p.neurotic > 0 ? 'insult' : 'argue';
+    }
+    if (score > 50) {
+      if (p.playful > 0.3) return Math.random() < 0.5 ? 'joke' : 'hug';
+      return 'compliment';
+    }
+
+    const pool = ['chat', 'chat'];
+    if (p.playful > 0) pool.push('joke');
+    if (p.nice > 0) pool.push('compliment');
+    if (score > 20) pool.push('hug');
+    if (p.nice < -0.2 && Math.random() < 0.3) pool.push('argue');
+    return pool[Math.floor(Math.random() * pool.length)];
   }
-}
+
   _doInteract() {
     const before = socialManager.score(this._simA.id, this._simB.id);
     const accepted = this._acceptanceScore() >= 0;
+
     if (!accepted) {
       const score = socialManager.applyOutcome(this._simA.id, this._simB.id, -10, 2, `reject_${this._type}`);
-      this._simA.needs.decay('status', 10);
-      this._simA.needs.decay('social', 5);
-      this._simB.needs.restore('autonomy', 5);
+      this._changeNeed(this._simA, 'status', -10);
+      this._changeNeed(this._simA, 'social', -5);
+      this._changeNeed(this._simB, 'autonomy', 5);
       this._simA.showBubble('No', 2);
       this._simB.showBubble('No', 2);
       Logger.info(`[Social] ${this._simA.name} -> ${this._simB.name}: ${this._type} rejected`);
@@ -168,17 +79,21 @@ export class SocialAction {
 
     const score = socialManager.interact(this._simA.id, this._simB.id, this._type);
     const delta = score - before;
+
     if (this._affordance?.utility) {
       this._applyUtility(this._simA, this._affordance.utility, 1);
       this._applyUtility(this._simB, this._affordance.utility, this._type === 'insult' ? 0.35 : 0.55);
     } else {
-      const gain = this._type === 'hug' ? 30 : this._type === 'argue' ? -5 : 20;
-      this._simA.needs.restore('social', Math.abs(gain));
-      this._simB.needs.restore('social', Math.abs(gain) / 2);
+      this._applyDefaultPayoff();
     }
-    const emoji = EMOJI[this._type] || '💬';
+
+    if (['chat', 'joke', 'compliment'].includes(this._type)) {
+      skillSystem.gain(this._simA, 'charisma', this._type === 'joke' ? 0.15 : 0.1);
+    }
+
+    const emoji = EMOJI[this._type] || '...';
     this._simA.showBubble(`${emoji} ${this._type}`, 2.5);
-    this._simB.showBubble(score >= 0 ? '😊' : '😤', 2);
+    this._simB.showBubble(score >= 0 ? 'OK' : 'No', 2);
     Logger.info(`[Social] ${this._simA.name} -> ${this._simB.name}: ${this._type} (score ${score})`);
     this._emitInteraction(score, delta, true);
   }
@@ -199,11 +114,33 @@ export class SocialAction {
     return score;
   }
 
+  _applyDefaultPayoff() {
+    const gain = this._type === 'hug' ? 30 : this._type === 'argue' ? -5 : 20;
+    this._changeNeed(this._simA, 'social', Math.abs(gain));
+    this._changeNeed(this._simB, 'social', Math.abs(gain) / 2);
+    if (this._type === 'joke') {
+      this._changeNeed(this._simA, 'fun', 8);
+      this._changeNeed(this._simB, 'fun', skillSystem.getLevel(this._simA, 'charisma') >= 3 ? 10 : 3);
+    }
+    if (this._type === 'hug') {
+      this._changeNeed(this._simA, 'comfort', 5);
+      this._changeNeed(this._simB, 'comfort', 5);
+    }
+  }
+
   _applyUtility(sim, utility, multiplier = 1) {
     for (const [need, amount] of Object.entries(utility || {})) {
-      const value = amount * multiplier;
-      if (value >= 0) sim.needs.restore(need, value);
-      else sim.needs.decay(need, Math.abs(value));
+      this._changeNeed(sim, need, amount * multiplier);
+    }
+  }
+
+  _changeNeed(sim, need, amount) {
+    if (typeof sim.needs.delta === 'function') {
+      sim.needs.delta(need, amount);
+    } else if (amount >= 0) {
+      sim.needs.restore(need, amount);
+    } else {
+      sim.needs.decay(need, Math.abs(amount));
     }
   }
 
@@ -212,10 +149,14 @@ export class SocialAction {
     bus.emit('social:interaction', {
       idA: this._simA.id,
       idB: this._simB.id,
-      nameA: this._simA.name, nameB: this._simB.name,
+      nameA: this._simA.name,
+      nameB: this._simB.name,
+      simA: this._simA,
+      simB: this._simB,
       type: this._type,
       result: accepted ? 'success' : 'rejected',
       accepted,
+      outcome: { success: accepted, relDelta: delta },
       score,
       delta,
       familiarity: rel.familiarity ?? 0,
@@ -223,9 +164,22 @@ export class SocialAction {
   }
 }
 
+const INTERACTION_DURATION = {
+  chat: 4,
+  joke: 4,
+  compliment: 4,
+  hug: 5,
+  argue: 5,
+  insult: 3,
+};
+
 const EMOJI = {
-  chat: '💬', joke: '😄', compliment: '🌟',
-  hug: '🤗', argue: '😠', insult: '😡',
+  chat: '...',
+  joke: 'ha',
+  compliment: '+',
+  hug: 'hug',
+  argue: '!',
+  insult: '!!',
 };
 
 if (typeof window !== 'undefined') {

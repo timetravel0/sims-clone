@@ -20,39 +20,51 @@ import { bus } from '../core/EventBus.js';
 export const CAREERS = [
   {
     id: 'unemployed', label: 'Unemployed',
+    emoji: '-',
+    requiredSkill: {},
     skillReq: {},
     shifts: [],
-    salaryBase: 0, salaryPerLevel: 0,
+    salaryBase: 0, salaryPerLevel: 0, salaryPerDay: 0,
   },
   {
     id: 'artist', label: 'Artist',
+    emoji: 'Art',
+    requiredSkill: { creativity: 2 },
     skillReq: { creativity: 2 },
     shifts: [{ day: 1, start: 10, end: 16 }, { day: 3, start: 10, end: 16 }, { day: 5, start: 11, end: 15 }],
-    salaryBase: 120, salaryPerLevel: 40,
+    salaryBase: 120, salaryPerLevel: 40, salaryPerDay: 160,
   },
   {
     id: 'scientist', label: 'Scientist',
+    emoji: 'Sci',
+    requiredSkill: { logic: 2 },
     skillReq: { logic: 2 },
     shifts: [{ day: 0, start: 9, end: 17 }, { day: 2, start: 9, end: 17 }, { day: 4, start: 9, end: 17 }],
-    salaryBase: 180, salaryPerLevel: 60,
+    salaryBase: 180, salaryPerLevel: 60, salaryPerDay: 240,
   },
   {
     id: 'chef', label: 'Chef',
+    emoji: 'Chef',
+    requiredSkill: { cooking: 2 },
     skillReq: { cooking: 2 },
     shifts: [{ day: 0, start: 11, end: 21 }, { day: 2, start: 11, end: 21 }, { day: 4, start: 11, end: 21 }, { day: 5, start: 11, end: 21 }],
-    salaryBase: 150, salaryPerLevel: 50,
+    salaryBase: 150, salaryPerLevel: 50, salaryPerDay: 200,
   },
   {
     id: 'programmer', label: 'Programmer',
+    emoji: 'Code',
+    requiredSkill: { logic: 2 },
     skillReq: { logic: 2 },
     shifts: [{ day: 0, start: 9, end: 17 }, { day: 1, start: 9, end: 17 }, { day: 2, start: 9, end: 17 }, { day: 3, start: 9, end: 17 }, { day: 4, start: 9, end: 17 }],
-    salaryBase: 200, salaryPerLevel: 80,
+    salaryBase: 200, salaryPerLevel: 80, salaryPerDay: 280,
   },
   {
     id: 'athlete', label: 'Athlete',
+    emoji: 'Fit',
+    requiredSkill: { fitness: 2 },
     skillReq: { fitness: 2 },
     shifts: [{ day: 0, start: 8, end: 14 }, { day: 2, start: 8, end: 14 }, { day: 4, start: 8, end: 14 }],
-    salaryBase: 160, salaryPerLevel: 55,
+    salaryBase: 160, salaryPerLevel: 55, salaryPerDay: 215,
   },
 ];
 
@@ -152,11 +164,37 @@ export class CareerSystem {
     d.level       = 1;
     d.daysWorked  = 0;
     sim._atWork   = false;
+    bus.emit('career:changed', { sim, career });
     return true;
   }
 
   getCareerData(sim) {
     return this._data.get(sim.id);
+  }
+
+  joinCareer(simId, careerId) {
+    const sim = this._sims.find(s => s.id === simId);
+    return sim ? this.setCareer(sim, careerId) : false;
+  }
+
+  getInfo(simId) {
+    const sim = this._sims.find(s => s.id === simId);
+    const d = sim ? this._data.get(sim.id) : null;
+    if (!sim || !d) return null;
+    const career = CAREERS.find(c => c.id === d.careerId) ?? CAREERS[0];
+    return {
+      careerId: d.careerId,
+      career: {
+        ...career,
+        emoji: CAREER_EMOJI[career.id] ?? '•',
+        requiredSkill: career.skillReq,
+        salaryPerDay: career.salaryBase + d.level * career.salaryPerLevel,
+      },
+      level: d.level,
+      simoleons: d.simoleons,
+      atWork: !!sim._atWork,
+      skills: d.skills,
+    };
   }
 
   // ── serialise / restore ─────────────────────────────────────────
@@ -273,3 +311,12 @@ export class CareerSystem {
     bus.emit('career:skillGain', { sim, skill, value: next });
   }
 }
+
+const CAREER_EMOJI = {
+  unemployed: '-',
+  artist: 'Art',
+  scientist: 'Sci',
+  chef: 'Chef',
+  programmer: 'Code',
+  athlete: 'Fit',
+};
