@@ -38,7 +38,6 @@
       text-transform:uppercase; letter-spacing:.08em; }
     #sim-mood   { font-size:13px; margin-bottom:2px; }
     #sim-traits { color:#666; font-size:10px; margin-bottom:6px; font-style:italic; }
-    /* Sim status: what they're doing + missing need */
     #sim-status {
       font-size:10px; color:#ffd580; margin-bottom:8px;
       min-height:14px; letter-spacing:.02em;
@@ -70,7 +69,6 @@
       background:rgba(14,13,11,0.82); backdrop-filter:blur(8px);
       border:1px solid rgba(255,255,255,0.08); border-radius:10px;
       padding:10px 12px;
-      /* visible by default — toggle only hides it */
       display:flex; flex-direction:column;
       max-height:calc(100vh - 110px);
     }
@@ -139,6 +137,120 @@
     .ci-swatch { display:inline-block; width:9px; height:9px; border-radius:2px; flex-shrink:0; }
     .ci-social { font-size:9px; color:#ffd54f; margin-left:2px; }
 
+    /* ── God panel ───────────────────────────────────────────── */
+    #god-panel {
+      display:none; position:fixed; bottom:48px; left:16px; z-index:60;
+      width:210px; background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
+      border:1px solid rgba(255,255,255,0.1); border-radius:10px;
+      padding:12px 14px;
+    }
+    #god-panel h3 { color:#eee; font-size:11px; margin-bottom:8px;
+      text-transform:uppercase; letter-spacing:.08em; }
+    #god-panel label { display:block; color:#777; font-size:10px; margin:8px 0 4px; }
+    #god-panel select {
+      width:100%; background:rgba(255,255,255,0.07); color:#ddd;
+      border:1px solid rgba(255,255,255,0.12); border-radius:6px;
+      padding:5px 7px; font-size:11px;
+    }
+    #god-panel button {
+      background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12);
+      color:#ddd; border-radius:6px; padding:5px 8px; cursor:pointer;
+      font-size:11px;
+    }
+    #god-panel button:hover { background:rgba(255,255,255,0.15); }
+    .god-row { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; }
+    .god-target { color:#ffd580; font-size:12px; font-weight:700; }
+
+    /* ── Graph panel ─────────────────────────────────────────── */
+    #graph-panel {
+      display:none; position:fixed; bottom:48px; left:238px; z-index:60;
+      width:260px; background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
+      border:1px solid rgba(255,255,255,0.1); border-radius:10px;
+      padding:12px 14px;
+    }
+    #graph-panel h3 { color:#eee; font-size:11px; margin-bottom:8px;
+      text-transform:uppercase; letter-spacing:.08em; }
+    .graph-svg {
+      width:100%; height:150px; display:block;
+      background:rgba(255,255,255,0.035); border-radius:8px;
+      border:1px solid rgba(255,255,255,0.06);
+    }
+    .graph-svg text { fill:#fff; font-size:8px; font-weight:700; pointer-events:none; }
+    .graph-legend { display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; margin:8px 0; }
+    .graph-legend span { color:#888; font-size:10px; display:flex; align-items:center; gap:5px; }
+    .graph-legend i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+    .graph-list { display:flex; flex-direction:column; gap:4px; max-height:130px; overflow:auto; }
+    .graph-row { display:grid; grid-template-columns:52px 1fr 28px; align-items:center; gap:6px; font-size:10px; }
+    .graph-type { font-weight:700; }
+    .graph-names { color:#bbb; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .graph-score { color:#777; text-align:right; }
+    .graph-empty { color:#666; font-size:11px; }
+
+    /* ── Life Cycle panel ────────────────────────────────────── */
+    #lifecycle-panel {
+      display:none; position:fixed; bottom:48px; right:16px; z-index:60;
+      width:240px; background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
+      border:1px solid rgba(255,255,255,0.1); border-radius:10px;
+      padding:12px 14px;
+    }
+    #lifecycle-panel h3 {
+      color:#eee; font-size:11px; margin-bottom:10px;
+      text-transform:uppercase; letter-spacing:.08em;
+    }
+    .lc-stage-badge {
+      display:inline-flex; align-items:center; gap:6px;
+      background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
+      border-radius:999px; padding:3px 10px; font-size:11px; color:#ffd580;
+      font-weight:700; margin-bottom:10px;
+    }
+    .lc-stage-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .lc-career-row {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:8px;
+    }
+    .lc-career-name { color:#ccc; font-size:11px; font-weight:600; }
+    .lc-career-lv   { color:#80cbc4; font-size:10px; }
+    .lc-simoleons   { color:#ffd54f; font-size:11px; font-weight:700; }
+    .lc-at-work     { font-size:10px; margin-bottom:8px; }
+    .lc-at-work.working { color:#a5d6a7; }
+    .lc-at-work.home    { color:#555; }
+    .lc-section-label {
+      color:#555; font-size:10px; text-transform:uppercase;
+      letter-spacing:.08em; margin:8px 0 5px;
+    }
+    .lc-skill-row { display:flex; align-items:center; gap:7px; margin-bottom:4px; }
+    .lc-skill-name  { color:#999; font-size:10px; width:64px; }
+    .lc-skill-bar-bg {
+      flex:1; height:4px; background:rgba(255,255,255,0.08);
+      border-radius:999px; overflow:hidden;
+    }
+    .lc-skill-bar-fill {
+      height:100%; border-radius:999px;
+      background:#4f98a3; transition:width .4s;
+    }
+    .lc-skill-val { color:#666; font-size:10px; width:22px; text-align:right; }
+    #lc-career-select {
+      width:100%; background:rgba(255,255,255,0.07); color:#ddd;
+      border:1px solid rgba(255,255,255,0.12); border-radius:6px;
+      padding:5px 7px; font-size:11px; margin-top:8px;
+    }
+    .lc-timeline { display:flex; gap:2px; margin-top:8px; height:16px; }
+    .lc-tick {
+      flex:1; border-radius:2px;
+      background:rgba(255,255,255,0.06);
+      transition:background .3s;
+    }
+    .lc-tick.active { background:#01696f; }
+    .lc-tick.past   { background:rgba(255,255,255,0.12); }
+    .lc-tick.sleep  { background:rgba(79,152,163,0.4); }
+    .lc-tick.work   { background:rgba(255,213,79,0.4); }
+    .lc-tick.fun    { background:rgba(206,147,216,0.4); }
+    .lc-tick.eat    { background:rgba(165,214,167,0.4); }
+    .lc-timeline-labels {
+      display:flex; justify-content:space-between;
+      margin-top:2px; color:#444; font-size:9px;
+    }
+
     /* ── Speech bubbles ──────────────────────────────────────── */
     #bubbles { position:fixed; inset:0; pointer-events:none; z-index:30; }
     .bubble {
@@ -200,6 +312,11 @@
   </div>
 
   <div id="rel-panel"></div>
+  <div id="god-panel"></div>
+  <div id="graph-panel"></div>
+
+  <!-- Life Cycle panel (populated by LifeCyclePanel.js) -->
+  <div id="lifecycle-panel"></div>
 
   <div id="build-panel">
     <p>Select an object then click a tile to place it. ✦ = social</p>
@@ -217,6 +334,9 @@
     <div class="tb-sep"></div>
     <button id="btn-story">📖 Story</button>
     <button id="btn-rel">♥ Relations</button>
+    <button id="btn-graph">🕸 Graph</button>
+    <button id="btn-god">⚡ God</button>
+    <button id="btn-lifecycle">📋 Life</button>
     <button id="btn-build">🔨 Build</button>
     <button id="btn-save">💾 Save</button>
     <button id="btn-load">📂 Load</button>
