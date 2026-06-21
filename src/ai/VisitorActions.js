@@ -1,9 +1,23 @@
 import { Action, WalkToAction, IdleAction } from './Action.js';
 import { SocialAction } from './SocialAction.js';
 
+function point(entryPoint, preferred = 'porch') {
+  if (preferred === 'door') {
+    return { gx: entryPoint?.doorGx ?? entryPoint?.gx, gz: entryPoint?.doorGz ?? entryPoint?.gz };
+  }
+  if (preferred === 'inside') {
+    return { gx: entryPoint?.insideGx ?? entryPoint?.gx, gz: entryPoint?.insideGz ?? entryPoint?.gz };
+  }
+  return {
+    gx: entryPoint?.porchGx ?? entryPoint?.spawnGx ?? entryPoint?.gx,
+    gz: entryPoint?.porchGz ?? entryPoint?.spawnGz ?? entryPoint?.gz,
+  };
+}
+
 export class WalkToDoorAction extends WalkToAction {
   constructor(sim, world, entryPoint) {
-    super(sim, world, entryPoint?.doorGx ?? entryPoint?.gx ?? sim.gx, entryPoint?.doorGz ?? entryPoint?.gz ?? sim.gz);
+    const p = point(entryPoint, 'porch');
+    super(sim, world, p.gx ?? sim.gx, p.gz ?? sim.gz);
     this.label = 'WalkToDoor';
   }
 }
@@ -33,9 +47,8 @@ export class WaitForInviteAction extends IdleAction {
 
 export class EnterHouseAction extends WalkToAction {
   constructor(sim, world, entryPoint) {
-    const gx = entryPoint?.insideGx ?? entryPoint?.doorGx ?? sim.gx;
-    const gz = entryPoint?.insideGz ?? ((entryPoint?.doorGz ?? sim.gz) + 1);
-    super(sim, world, gx, gz);
+    const p = point(entryPoint, 'inside');
+    super(sim, world, p.gx ?? sim.gx, p.gz ?? sim.gz);
     this.label = 'EnterHouse';
   }
 }
@@ -53,14 +66,17 @@ export class VisitSocializeAction extends SocialAction {
 
 export class LeaveHouseAction extends WalkToAction {
   constructor(sim, world, entryPoint) {
-    super(sim, world, entryPoint?.doorGx ?? entryPoint?.gx ?? sim.gx, entryPoint?.doorGz ?? entryPoint?.gz ?? sim.gz);
+    const p = point(entryPoint, 'porch');
+    super(sim, world, p.gx ?? sim.gx, p.gz ?? sim.gz);
     this.label = 'LeaveHouse';
   }
 }
 
-export class ReturnHomeAction extends WalkToAction {
-  constructor(sim, world, entryPoint) {
-    super(sim, world, entryPoint?.gx ?? sim.gx, entryPoint?.gz ?? sim.gz);
+export class ReturnHomeAction extends IdleAction {
+  constructor(sim, _world, _entryPoint) {
+    // The map has no physical outside area yet; after reaching the porch, the
+    // VisitorSystem deactivates the Sim and returns the person to off-lot state.
+    super(sim, 0.4);
     this.label = 'ReturnHome';
   }
 }
