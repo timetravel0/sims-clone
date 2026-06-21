@@ -64,6 +64,12 @@ export class World {
       { id: 'couch',  gx: 3,  gz: 12, color: 0xc9a96e, needTarget: 'comfort', restoreRate: 20 },
       { id: 'tv',     gx: 8,  gz: 5,  color: 0x1a1a2e, needTarget: 'fun',     restoreRate: 20 },
       { id: 'shower', gx: 8,  gz: 12, color: 0xa8d8ea, needTarget: 'hygiene', restoreRate: 35 },
+      // Skill-building objects so every skill has a source out of the box
+      { id: 'bookshelf', gx: 5, gz: 3,  color: 0x8d6e63, needTarget: 'fun', restoreRate: 12 }, // logic
+      { id: 'desk',      gx: 6, gz: 3,  color: 0xa1887f, needTarget: 'fun', restoreRate: 10 }, // logic
+      { id: 'piano',     gx: 3, gz: 8,  color: 0x212121, needTarget: 'fun', restoreRate: 25 }, // creativity
+      { id: 'treadmill', gx: 12, gz: 8, color: 0xb0bec5, needTarget: 'comfort', restoreRate: 8 }, // fitness
+      { id: 'workbench', gx: 6, gz: 12, color: 0x90a4ae, needTarget: 'fun', restoreRate: 10 }, // handiness
     ];
     for (const item of items) this._addFurniture(item);
   }
@@ -111,6 +117,7 @@ export class World {
     const sims = window._game?.sims || [];
     return sims.some(sim => {
       if (sim.id === exceptSimId) return false;
+      if (sim._atWork) return false;   // away at work — not a blocker
       const dx = sim.worldX - gx;
       const dz = sim.worldZ - gz;
       return Math.sqrt(dx * dx + dz * dz) < 0.55;

@@ -38,6 +38,8 @@ const DEFAULTS = [
   { id: 'bookshelf', label: 'Bookshelf',    color: 0x8d6e63, needTarget: 'fun',     restoreRate: 12,
     affordances: [{ verb: 'read', label: 'Read', utility: { autonomy: 25, fun: 12, status: 4 }, duration: 6 }],
     onUse: (sim) => sim.needs.restore('social', 2) },
+  { id: 'workbench', label: 'Workbench',    color: 0x90a4ae, needTarget: 'fun',    restoreRate: 10,
+    affordances: [{ verb: 'tinker', label: 'Tinker', utility: { fun: 10, status: 6, autonomy: 12, energy: -4 }, duration: 6 }] },
 
   // ── Social furniture (social: true) ──────────────────────────────────────
   {
@@ -99,4 +101,25 @@ const DEFAULTS = [
   },
 ];
 
-for (const def of DEFAULTS) ObjectRegistry.register(def);
+// Single source of truth: which object trains which skill (used by SkillSystem,
+// CareerSystem and the build catalogue). Skill is exposed as def.skill.
+export const SKILL_BY_OBJECT = {
+  fridge:       'cooking',
+  bookshelf:    'logic',
+  desk:         'logic',
+  chess:        'logic',
+  treadmill:    'fitness',
+  hot_tub:      'fitness',
+  workbench:    'handiness',
+  piano:        'creativity',
+  couch:        'charisma',
+  tv:           'charisma',
+  bar:          'charisma',
+  fire_pit:     'charisma',
+  dining_table: 'charisma',
+};
+
+for (const def of DEFAULTS) {
+  def.skill = SKILL_BY_OBJECT[def.id] ?? null;
+  ObjectRegistry.register(def);
+}

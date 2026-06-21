@@ -5,25 +5,12 @@
  * Skills decay very slowly when unused (0.001/day). Serialisable.
  */
 import { bus } from '../core/EventBus.js';
+import { ObjectRegistry, SKILL_BY_OBJECT } from './ObjectRegistry.js';
 
 export const SKILLS = ['cooking', 'logic', 'charisma', 'fitness', 'creativity', 'handiness'];
 
-// Which furniture id (furniture.id, emitted as objectType on sim:objectUsed)
-// advances which skill. Keys MUST match real ObjectRegistry ids.
-export const OBJECT_SKILL_MAP = {
-  bookshelf:    'logic',
-  desk:         'logic',
-  chess:        'logic',
-  treadmill:    'fitness',
-  hot_tub:      'fitness',
-  piano:        'creativity',
-  bar:          'charisma',
-  couch:        'charisma',
-  tv:           'charisma',
-  fire_pit:     'charisma',
-  dining_table: 'charisma',
-  fridge:       'cooking',
-};
+// Object→skill mapping lives in ObjectRegistry (single source of truth).
+export const OBJECT_SKILL_MAP = SKILL_BY_OBJECT;
 
 const GAIN_PER_USE  = 0.25;   // XP per object interaction tick
 const DECAY_RATE    = 0.001;  // per simulated day
@@ -49,7 +36,7 @@ export class SkillSystem {
 
   /** Called by UseObjectAction when a Sim finishes interacting */
   gainFromObject(sim, furnitureTag) {
-    const skillName = OBJECT_SKILL_MAP[furnitureTag];
+    const skillName = ObjectRegistry.get(furnitureTag)?.skill ?? OBJECT_SKILL_MAP[furnitureTag];
     if (!skillName) return;
     this._gain(sim, skillName, GAIN_PER_USE);
   }

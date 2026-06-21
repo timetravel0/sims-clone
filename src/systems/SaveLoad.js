@@ -66,26 +66,34 @@ export class SaveLoad {
 
   // ── Load ────────────────────────────────────────────────────────────────
 
-  load(slot = 0) {
+  /** Parse a slot's save data (with version check). Returns the data or null. */
+  readSlot(slot) {
+    const raw = localStorage.getItem(SLOT_KEY(slot));
+    if (!raw) return null;
     try {
-      const raw = localStorage.getItem(SLOT_KEY(slot));
-      if (!raw) throw new Error('No save data in slot ' + slot);
       const data = JSON.parse(raw);
-      if (!data._version || data._version < SAVE_VERSION) {
-        throw new Error(`Save version mismatch: expected ${SAVE_VERSION}, got ${data._version}`);
-      }
-      const g = this._game;
-      g.householdName = data.householdName;
-      g.restore(data.state);
-      // Recompute rooms after walls are restored
-      g.roomDetector?.analyse();
-      bus.emit('load:completed', { slot });
-      return true;
-    } catch (err) {
-      console.error('[SaveLoad] load failed', err);
-      bus.emit('load:failed', { slot, error: err.message });
+      if (!data._version || data._version < SAVE_VERSION) return null;
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Load a slot. Because the Sim roster (count, traits) is fixed at Game
+   * construction, we reload the page and rebuild the game from the saved
+   * roster on boot (Game._boot reads the pending-load flag). This guarantees
+   * the right number of Sims and a clean state — patching the live game in
+   * place could not add/remove Sims.
+   */
+  load(slot = 0) {
+    if (!this.hasSlot(slot)) {
+      bus.emit('load:failed', { slot, error: 'empty slot' });
       return false;
     }
+    try { sessionStorage.setItem('simsclone_pending_load', String(slot)); } catch { /* ignore */ }
+    location.reload();
+    return true;
   }
 
   // ── Slot metadata ─────────────────────────────────────────────────────────

@@ -31,8 +31,9 @@ export class BuildPanel {
       btn.className = 'catalog-item';
       const hex = `#${item.color.toString(16).padStart(6, '0')}`;
       const socialBadge = item.social ? '<span class="ci-social">✦</span>' : '';
+      const skillBadge  = item.skill ? `<span class="ci-skill">📈 ${item.skill}</span>` : '';
       btn.innerHTML =
-        `<span class="ci-swatch" style="background:${hex}"></span>${item.label}${socialBadge}`;
+        `<span class="ci-swatch" style="background:${hex}"></span>${item.label}${socialBadge}${skillBadge}`;
       btn.addEventListener('click', () => {
         window._game?.buildMode.selectCatalogItem(item);
         this._list.querySelectorAll('button').forEach(b => b.classList.remove('active'));

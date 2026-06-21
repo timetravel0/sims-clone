@@ -137,6 +137,7 @@
     .catalog-item.active { border-color:#01696f; color:#fff; }
     .ci-swatch { display:inline-block; width:9px; height:9px; border-radius:2px; flex-shrink:0; }
     .ci-social { font-size:9px; color:#ffd54f; margin-left:2px; }
+    .ci-skill  { font-size:9px; color:#80cbc4; margin-left:4px; text-transform:capitalize; }
 
     /* ── God panel ───────────────────────────────────────────── */
     #god-panel {
@@ -443,6 +444,31 @@
       border-radius:8px; padding:9px 18px; cursor:pointer; font-size:14px; font-weight:600; }
     .sc-btn-sec { background:rgba(255,255,255,0.08); color:#ccc; border:1px solid rgba(255,255,255,0.12);
       border-radius:8px; padding:9px 16px; cursor:pointer; font-size:13px; }
+
+    /* ── Start menu (Load / New Game) ─────────────────────────── */
+    #start-menu {
+      display:none; position:fixed; inset:0; z-index:110;
+      background:rgba(8,7,6,0.94); align-items:center; justify-content:center;
+    }
+    #start-menu .sm-modal {
+      width:440px; max-width:92vw;
+      background:rgba(22,21,18,0.99); border:1px solid rgba(255,255,255,0.12);
+      border-radius:14px; padding:22px; color:#ddd; text-align:center;
+    }
+    #start-menu h2 { color:#fff; font-size:22px; margin-bottom:16px; }
+    #sm-new {
+      width:100%; background:#01696f; color:#fff; border:none; border-radius:9px;
+      padding:11px; cursor:pointer; font-size:15px; font-weight:600; margin-bottom:14px;
+    }
+    #sm-new:hover { background:#018a92; }
+    .sm-loads { display:flex; flex-direction:column; gap:8px; }
+    .sm-load {
+      text-align:left; background:rgba(255,255,255,0.05); color:#ddd;
+      border:1px solid rgba(255,255,255,0.12); border-radius:9px;
+      padding:10px 13px; cursor:pointer; font-size:13px; line-height:1.5;
+    }
+    .sm-load:hover { background:rgba(255,255,255,0.12); }
+    .sm-when { display:block; color:#7a7974; font-size:11px; }
   </style>
 </head>
 <body>
@@ -477,6 +503,7 @@
   <div id="skill-panel"></div>
   <div id="save-slot-panel"></div>
   <div id="sim-creator"></div>
+  <div id="start-menu"></div>
 
   <div id="build-panel">
     <div id="build-tools">

@@ -69,12 +69,31 @@ export class Game {
     this._boot();
   }
 
-  /** First launch (no save in slot 0) → SimCreator; otherwise default household. */
+  /**
+   * Boot flow:
+   *  - pending load (set by SaveLoad.load before a reload) → rebuild from that save
+   *  - else, if any save slot exists → start menu (Load / New Game)
+   *  - else → SimCreator (or default household if no UI anchor)
+   */
   _boot() {
-    const hasSave  = !!localStorage.getItem('simsclone_save_v2_0');
+    const sl       = new SaveLoad(this);   // read-only use here (slotList/readSlot)
     const anchorEl = document.getElementById('sim-creator');
-    if (hasSave || !anchorEl) { this._init(SIM_DEFS); return; }
 
+    const pending = sessionStorage.getItem('simsclone_pending_load');
+    if (pending !== null) {
+      sessionStorage.removeItem('simsclone_pending_load');
+      const data = sl.readSlot(+pending);
+      if (data) { this._startFromSave(data); return; }
+    }
+
+    if (!anchorEl) { this._init(SIM_DEFS); return; }
+
+    const saves = sl.slotList().filter(s => !s.empty);
+    if (saves.length === 0) { this._showCreator(); return; }
+    this._showStartMenu(saves, sl);
+  }
+
+  _showCreator() {
     const creator = new SimCreator();
     creator.show();
     bus.on('simcreator:done', ({ householdName, simDefs }) => {
@@ -82,6 +101,45 @@ export class Game {
       const defs = (simDefs ?? []).map(creatorDefToSimDef);
       this._init(defs.length ? defs : SIM_DEFS);
     });
+  }
+
+  /** Start screen offering to load an existing save or begin a new game. */
+  _showStartMenu(saves, sl) {
+    const el = document.getElementById('start-menu');
+    if (!el) { this._showCreator(); return; }   // fallback if HTML anchor missing
+    const rows = saves.map(s => {
+      const name = s.slot === 0 ? '🔄 Auto-Save' : `Slot ${s.slot}`;
+      const when = s.timestamp ? new Date(s.timestamp).toLocaleString() : '';
+      return `<button class="sm-load" data-slot="${s.slot}">
+        <b>▶ ${name}</b> — ${s.householdName} · ${s.simCount} Sim${s.simCount !== 1 ? 's' : ''}
+        <span class="sm-when">${when}</span></button>`;
+    }).join('');
+    el.innerHTML = `<div class="sm-modal">
+      <h2>Sims Clone</h2>
+      <button id="sm-new">🆕 Nuova partita</button>
+      <div class="sm-loads">${rows}</div>
+    </div>`;
+    el.style.display = 'flex';
+    el.querySelector('#sm-new').addEventListener('click', () => {
+      el.style.display = 'none';
+      this._showCreator();
+    });
+    el.querySelectorAll('.sm-load').forEach(b => b.addEventListener('click', () => {
+      el.style.display = 'none';
+      const data = sl.readSlot(+b.dataset.slot);
+      if (data) this._startFromSave(data); else this._showCreator();
+    }));
+  }
+
+  /** Build the game with the saved roster, then restore all state onto it. */
+  _startFromSave(saveData) {
+    this.householdName = saveData.householdName;
+    const state = saveData.state ?? {};
+    const defs = (state.sims ?? []).map(s => ({
+      name: s.name, color: s.color, traits: s.personality ?? {},
+    }));
+    this._init(defs.length ? defs : SIM_DEFS);
+    this.restore(state);
   }
 
   _init(simDefs = SIM_DEFS) {
@@ -204,8 +262,15 @@ export class Game {
     this.clock.hour = this.dayNight.time * 24;
     this.clock.weekday = Math.floor(this.dayNight.totalDays ?? 0) % 7;
 
-    // Sims
-    for (const sim of this.sims) sim.update(scaled);
+    // Sims — those at work are hidden and frozen (off the lot)
+    for (const sim of this.sims) {
+      if (sim._atWork) {
+        if (sim.mesh.visible) this._sendToWork(sim);
+        continue;
+      }
+      if (!sim.mesh.visible) this._returnFromWork(sim);
+      sim.update(scaled);
+    }
 
     // Systems
     memorySystem.update(scaled);         // decay memories
@@ -222,6 +287,7 @@ export class Game {
     // Apply weather mood deltas to each sim
     const deltas = this._weather.getMoodDeltas();
     for (const sim of this.sims) {
+      if (sim._atWork) continue;   // away at work — don't simulate needs/mood
       for (const [need, delta] of Object.entries(deltas)) {
         sim.needs?.delta?.(need, delta * scaled);
       }
@@ -256,8 +322,8 @@ export class Game {
         -(e.clientY / window.innerHeight) * 2 + 1,
       );
       raycaster.setFromCamera(mouse, this._camera.camera);
-      // Sim selection
-      const simMeshes = this.sims.map(s => s.mesh);
+      // Sim selection (Sims at work are hidden and not selectable)
+      const simMeshes = this.sims.filter(s => !s._atWork).map(s => s.mesh);
       const simHits   = raycaster.intersectObjects(simMeshes, true);
       if (simHits.length > 0) {
         const hit = simHits[0].object;
@@ -281,6 +347,21 @@ export class Game {
     this.selectedSim = sim;
     bus.emit('sim:selected', { sim });
     // LifeCyclePanel re-renders itself on sim:selected (see its constructor).
+  }
+
+  /** Hide a Sim and halt its AI while it's away at work. */
+  _sendToWork(sim) {
+    sim.mesh.visible = false;
+    sim._path = [];
+    sim.isMoving = false;
+    sim.brain?.override?.([]);            // drop current action
+    this.world.releaseCellFor(sim.id);    // free its tile/reservation
+    sim.showBubble?.('', 0);
+  }
+
+  /** Bring a Sim back onto the lot after work. */
+  _returnFromWork(sim) {
+    sim.mesh.visible = true;
   }
 
   selectSimByIndex(index) {
@@ -396,10 +477,12 @@ export class Game {
       this.dayNight.update(0);
       this.clock.hour = this.dayNight.time * 24;
     }
-    for (const data of state.sims) {
-      const sim = this.sims.find(s => s.id === data.id);
-      if (sim) sim.restore(data);
-    }
+    // Roster was rebuilt from state.sims in _startFromSave, so match by index
+    // and adopt the saved id (subsystems below are keyed by Sim id).
+    (state.sims ?? []).forEach((data, i) => {
+      const sim = this.sims[i];
+      if (sim) { sim.id = data.id; sim.restore(data); }
+    });
     if (state.memories)           memorySystem.restore(state.memories);
     if (state.social)             socialManager.restore(state.social);
     if (state.relationshipGraph)  this.relationshipGraph.restore(state.relationshipGraph);

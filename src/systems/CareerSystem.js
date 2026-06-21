@@ -1,4 +1,5 @@
 import { bus } from '../core/EventBus.js';
+import { ObjectRegistry } from './ObjectRegistry.js';
 
 export const CAREERS = [
   {
@@ -97,15 +98,7 @@ const MAX_LEVEL = 10;
 const SKILL_GAIN_PER_USE = 0.2;
 const PROMOTION_PERFORMANCE = 100;
 
-const SKILL_MAP = {
-  bookshelf: 'logic',
-  piano: 'creativity',
-  desk: 'logic',
-  treadmill: 'fitness',
-  easel: 'creativity',
-  kitchen: 'cooking',
-  fridge: 'cooking',
-};
+// Object→skill mapping lives in ObjectRegistry (single source of truth).
 
 export class CareerSystem {
   constructor(sims = [], clock = null) {
@@ -242,7 +235,7 @@ export class CareerSystem {
   }
 
   gainSkillFromObject(sim, objectType) {
-    const skill = SKILL_MAP[objectType];
+    const skill = ObjectRegistry.get(objectType)?.skill;
     if (!skill) return null;
     return this.gainSkill(sim, skill);
   }
