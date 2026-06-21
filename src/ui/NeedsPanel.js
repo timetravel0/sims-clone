@@ -3,7 +3,8 @@ import { NEED_KEYS } from '../entities/SimNeeds.js';
 const COLORS = {
   hunger:'#ef9a9a', energy:'#fff59d', bladder:'#80deea',
   hygiene:'#a5d6a7', social:'#ce93d8', fun:'#ffcc80',
-  comfort:'#f48fb1', room:'#90caf9',
+  comfort:'#f48fb1', room:'#90caf9', autonomy:'#80cbc4',
+  status:'#b39ddb',
 };
 
 export class NeedsPanel {

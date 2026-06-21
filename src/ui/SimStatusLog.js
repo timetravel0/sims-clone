@@ -4,11 +4,13 @@ import { NEED_KEYS }          from '../entities/SimNeeds.js';
 const NEED_LABEL = {
   hunger: 'Hunger', energy: 'Energy', bladder: 'Bladder',
   hygiene: 'Hygiene', social: 'Social', fun: 'Fun',
-  comfort: 'Comfort', room: 'Room',
+  comfort: 'Comfort', room: 'Room', autonomy: 'Autonomy',
+  status: 'Status',
 };
 const NEED_EMOJI = {
   hunger:'🍔', energy:'😴', bladder:'🚽', hygiene:'🚿',
   social:'👋', fun:'🎮', comfort:'🛋️', room:'🌿',
+  autonomy:'🧭', status:'🏅',
 };
 
 /**
@@ -65,8 +67,8 @@ export class SimStatusLog {
     // Story log entries
     bus.on('story:entry',       e => this._addEntry(e));
     bus.on('social:interaction', e => this._addEntry({
-      text: `${e.nameA} → ${e.nameB}: ${e.type} (${e.score > 0 ? '+' : ''}${Math.round(e.score)})`,
-      cat:  e.score >= 0 ? 'positive' : 'drama',
+      text: `${e.nameA} → ${e.nameB}: ${e.type}${e.accepted === false ? ' rejected' : ''} (${e.score > 0 ? '+' : ''}${Math.round(e.score)})`,
+      cat:  e.accepted === false || e.score < 0 ? 'drama' : 'positive',
     }));
     bus.on('sim:action', ({ simId, label }) => {
       if (!label) return;

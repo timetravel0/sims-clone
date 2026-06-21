@@ -1,245 +1,263 @@
-# Sims Clone — Technical Reference
+# Sims Clone - Technical Reference
 
-> Last updated: Sprint 1 — Memory System & Secondary Emotions
+Last updated: implementation through Sprint 4 plus Utility AI, Smart Objects and experiment logging.
 
----
+## Runtime Architecture
 
-## Architecture Overview
+The project is a browser-only Three.js application using vanilla ES modules. There is no bundler or build step: `index.html` loads `src/main.js` through an import map.
 
-```
-sims-clone/
-├── index.html                  Entry point, CSS design system, DOM scaffold
-├── src/
-│   ├── main.js                 Bootstrap: instantiates Game
-│   ├── core/
-│   │   ├── Game.js             Orchestrator: scene, loop, input, systems
-│   │   ├── GameLoop.js         Fixed-timestep loop (60 UPS, uncapped render)
-│   │   └── EventBus.js         Pub/Sub decoupling (bus.on / bus.emit)
-│   ├── world/
-│   │   ├── World.js            Scene construction, furniture placement, DoorManager
-│   │   ├── TileMap.js          16×16 grid — FLOOR/WALL/FURNITURE/DOOR tile types
-│   │   ├── IsometricCamera.js  OrthographicCamera, pan/zoom, focusOn()
-│   │   └── DoorManager.js      Animated doors, path resolution
-│   ├── entities/
-│   │   ├── Sim.js              Entity root: mesh, needs, mood, emotions, brain
-│   │   ├── SimNeeds.js         8-axis need model with personality-modulated decay
-│   │   ├── SimEmotions.js      Secondary emotions: joy/jealousy/grief/pride/…
-│   │   ├── Mood.js             Primary mood tier (need average + emotion bonus)
-│   │   ├── Personality.js      5-trait model: outgoing/neurotic/playful/nice/ambitious
-│   │   └── SimBrain.js         AI controller: planner → action queue → override
-│   ├── ai/
-│   │   ├── NeedDrivenPlanner.js  Selects critical need → target furniture (memory-biased)
-│   │   ├── ActionQueue.js        FIFO FSM: enter/update/exit lifecycle
-│   │   ├── Action.js             WalkToAction, UseObjectAction, IdleAction
-│   │   ├── SocialAction.js       Personality-aware social interactions
-│   │   └── Pathfinder.js         A* on TileMap grid
-│   ├── systems/
-│   │   ├── MemorySystem.js     Episodic memory store (per-Sim, intensity decay)
-│   │   ├── NarrativePlanner.js Story beat generator (emergent narrative events)
-│   │   └── SocialManager.js    Relationship graph: score ±100, interact(), relationsOf()
-│   ├── ui/
-│   │   ├── UIManager.js        Instantiates all panels, wires bus events
-│   │   ├── NeedsPanel.js       Right panel: need bars, mood, traits
-│   │   ├── SimStatusLog.js     #sim-status (action) + #sim-missing (need) + story feed
-│   │   ├── SimSelector.js      Portrait strip (top-left)
-│   │   ├── RelationshipPanel.js  ♥ panel: sorted rel rows with score
-│   │   ├── ClockDisplay.js     Clock display (top-right toolbar)
-│   │   ├── BuildPanel.js       Furniture placement UI
-│   │   └── SpeechBubble.js     DOM bubbles anchored to Sim world position
-│   └── utils/
-│       └── Logger.js           Centralised log (info/warn/error)
-└── docs/
-    ├── TECHNICAL.md            ← this file
-    └── FUNCTIONAL.md           User-facing feature documentation
+`src/core/Game.js` is the composition root. It owns renderer, scene, world, camera, Sims, UI, save/load and the simulation systems:
+
+- `MemorySystem`
+- `NarrativePlanner`
+- `SocialManager`
+- `RelationshipGraph`
+- `RomanceSystem`
+- `GodMode`
+- `ExperimentLogger`
+- `BuildMode`
+
+Three.js is the view layer. The core simulation state lives in entities and systems: Sims, needs, mood, emotions, relationships, object reservations and event logs.
+
+## Main Folders
+
+| Folder | Purpose |
+|---|---|
+| `src/core` | Game orchestration, loop, event bus and life-event bus |
+| `src/world` | Grid, pathing context, doors, camera, build placement and reservations |
+| `src/entities` | Sims, needs, mood, personality, emotions and furniture |
+| `src/ai` | Utility planner, legacy need planner, action FSM, movement, object use and social actions |
+| `src/systems` | Memory, narrative, social state, God Mode, object catalog, relationship graph, romance and experiment logging |
+| `src/ui` | Panels, context menu, needs, relations, graph, God Mode, build mode and story log |
+
+## Simulation Loop
+
+`GameLoop` provides fixed simulation updates and render callbacks:
+
+```text
+Game._update(dt)
+  scaled = dt * clock.speed
+  dayNight.update(scaled)
+  sims.forEach(sim.update(scaled))
+  memorySystem.update(scaled)
+  experimentLogger.update(scaled)
+  narrativePlanner.update(scaled)
+  world.update(scaled)
 ```
 
----
+`clock.speed` supports `1x`, `2x` and `5x`. `clock.paused` stops simulation updates while rendering remains active.
 
-## Core Systems
+## Event Bus
 
-### Game Loop (`core/GameLoop.js`)
+`src/core/EventBus.js` is the shared pub/sub channel.
 
-Fixed-timestep update at **60 UPS** with uncapped render. The update callback receives `dt` in **real seconds**; all game logic multiplies by `clock.speed` (1×/2×/5×) to get `scaledDt`.
-
-```
-real dt → Game._update(dt)
-  scaledDt = dt × clock.speed
-  sims.forEach(s => s.update(scaledDt))
-  memorySystem.update(scaledDt)
-  narrativePlanner.update(scaledDt)
-  world.update(scaledDt)
-```
-
-### Event Bus (`core/EventBus.js`)
-
-Lightweight pub/sub. All cross-system communication flows through `bus.emit()` / `bus.on()`. No direct references between systems.
-
-**Key events:**
-
-| Event | Payload | Producer | Consumers |
-|---|---|---|---|
-| `sim:selected` | `{ sim }` | Game | UIManager, RelationshipPanel, SimStatusLog |
-| `simNeeds:update` | `{ simId, values }` | SimNeeds | NeedsPanel, SimStatusLog |
-| `sim:moodChanged` | `{ simId, name, from, to, tier }` | Mood | MemorySystem, NarrativePlanner, SimStatusLog |
-| `social:interaction` | `{ idA, idB, nameA, nameB, type, score, delta }` | SocialAction | SocialManager, MemorySystem, NarrativePlanner, RelationshipPanel |
-| `emotion:triggered` | `{ simId, simName, type, intensity, def }` | SimEmotions | NarrativePlanner, SimStatusLog |
-| `memory:recorded` | `{ simId, memory }` | MemorySystem | NarrativePlanner |
-| `need:crisis` | `{ simId, need, value }` | NeedDrivenPlanner | MemorySystem, SimStatusLog |
-| `story:entry` | `{ text, cat }` | NarrativePlanner, various | SimStatusLog (story log) |
-| `sim:action` | `{ simId, label }` | ActionQueue | SimStatusLog |
-| `daynight:update` | `{ hour }` | Game | ClockDisplay |
-
----
-
-## Entity Model — Sim
-
-```
-Sim
-├── id, name, color
-├── gx, gz, worldX, worldZ     — grid and interpolated world position
-├── personality : Personality  — 5 trait axes [-1, +1]
-├── needs       : SimNeeds     — 8 axes [0, 100], decay each tick
-├── emotions    : SimEmotions  — transient secondary emotions [0, 1]
-├── mood        : Mood         — composite score + tier (5 levels)
-├── brain       : SimBrain     — AI controller
-└── mesh        : THREE.Group  — body + head + selection ring
-```
-
-### SimNeeds decay rates (base, per second)
-
-| Need | Rate | Personality modifier |
+| Event | Producer | Notes |
 |---|---|---|
-| hunger | 3.0 | –0.1×ambitious |
-| energy | 2.5 | –0.1×ambitious |
-| bladder | 4.0 | — |
-| hygiene | 2.0 | +0.4×neurotic |
-| social | 2.5 | +0.4×neurotic, +0.3×outgoing |
-| fun | 2.2 | +0.4×neurotic, –0.25×playful |
-| comfort | 1.8 | — |
-| room | 0.5 | — |
+| `sim:selected` | `Game` | Selected Sim changed |
+| `simNeeds:update` | `SimNeeds` | Full needs vector for one Sim |
+| `sim:moodChanged` | `Mood` | Mood tier/score changed |
+| `sim:action` | `ActionQueue` | Current action label |
+| `social:update` | `SocialManager` | Pair score/familiarity changed |
+| `social:interaction` | `SocialAction` | Attempt result: success or rejection |
+| `emotion:triggered` | `SimEmotions` | Secondary emotion appeared |
+| `memory:recorded` | `MemorySystem` | Episodic memory stored |
+| `need:crisis` | `MemorySystem` bridge | Need dropped into crisis range |
+| `life:event` | `LifeEventBus` / `GodMode` | Injected narrative event |
+| `god:action` | `GodMode` | Whisper/impose/bless/curse/life event |
+| `relationship:graphChanged` | `RelationshipGraph` | Directed edge changed |
+| `relationship:romance` | systems | Adds romance weight |
+| `relationship:rivalry` | systems | Adds rivalry weight |
+| `daynight:update` | `DayNightCycle` | Clock UI update |
+| `story:entry` | systems | Human-readable story log entry |
 
-### Mood calculation
+`ExperimentLogger` subscribes to the research-relevant events and stores normalized rows for JSON/CSV export.
 
-```
-base  = (avg_needs – 50) × 1.5
-penalty modifiers: ×(1 + neurotic×0.5) if negative, ×(1 + ambitious×0.3) if negative
-emotion_bonus = SimEmotions.moodBonus   clamped ±25
-final = clamp(base + emotion_bonus, –100, +100)
-```
+## Sim Model
 
-Tier thresholds: `ecstatic ≥ 75`, `happy ≥ 35`, `neutral ≥ –10`, `sad ≥ –40`, `miserable < –40`.
+Each `Sim` contains:
 
----
+- grid/render position: `gx`, `gz`, `worldX`, `worldZ`
+- `Personality`
+- `SimNeeds`
+- `SimEmotions`
+- `Mood`
+- `SimBrain`
+- Three.js mesh
 
-## Sprint 1 — Memory System & Secondary Emotions
+`Sim.update(dt)` advances movement, needs, emotions, mood, brain, speech bubbles and selection-ring color.
 
-### MemorySystem (`systems/MemorySystem.js`)
+## Needs
 
-Singleton (`memorySystem`). Stores up to **60 memories per Sim**, sorted by intensity. Memories fade at their `decayRate` (intensity units/second). At intensity = 0 they are pruned.
+Need values are clamped to `[0, 100]`.
 
-**Memory schema:**
-```ts
-{
-  id        : number
-  simId     : string
-  type      : 'social' | 'need_crisis' | 'mood_peak' | 'life_event' | 'god_action'
-  data      : object          // type-specific payload
-  intensity : number          // 0.0–1.0
-  valence   : number          // –1.0 (negative) to +1.0 (positive)
-  gameTime  : number          // clock.hour when recorded
-  decayRate : number          // default 0.002/s ≈ 8min to fade
-}
-```
+| Need | Meaning |
+|---|---|
+| `hunger` | Food drive |
+| `energy` | Sleep/rest drive |
+| `bladder` | Toilet drive |
+| `hygiene` | Cleanliness drive |
+| `social` | Affiliation drive |
+| `fun` | Play/recreation drive |
+| `comfort` | Physical comfort drive |
+| `room` | Environment satisfaction |
+| `autonomy` | Agency/self-directed activity drive |
+| `status` | Approval/prestige drive |
 
-**Auto-recording triggers:**
-- `social:interaction` → memory for both participants (initiator full intensity, receiver ×0.6)
-- `sim:moodChanged` → ecstatic/miserable = 0.9 intensity
-- `sim:need:crisis` (DOM custom event from NeedDrivenPlanner) → intensity = `1 – value/15`
+Personality modifies decay. Outgoing Sims lose `social` faster, playful Sims protect `fun`, nice Sims protect `status`, neurotic Sims are more fragile under social/autonomy pressure, and ambitious Sims decay many needs more slowly while suffering stronger low-need mood penalties.
 
-**Key API:**
+## Personality
+
+`Personality` stores five normalized axes in `[-1, +1]`:
+
+- `outgoing`
+- `neurotic`
+- `playful`
+- `nice`
+- `ambitious`
+
+Traits affect need decay, Utility AI scoring, social action type selection, social acceptance, mood penalties, God Mode whisper acceptance and romance compatibility.
+
+## Utility AI and Smart Objects
+
+The primary AI path is `src/ai/UtilityAIPlanner.js`.
+
+When a Sim is idle, `SimBrain` asks the planner to:
+
+1. collect nearby affordances from furniture and other Sims;
+2. discard unavailable actions;
+3. score each action against the Sim's missing needs and personality weights;
+4. choose randomly among the top candidates;
+5. enqueue concrete actions.
+
+Furniture implements `getAffordancesFor(sim)` in `src/entities/Furniture.js`. Built-in affordances are declared in `src/systems/ObjectRegistry.js`, for example:
+
 ```js
-memorySystem.record(simId, type, data, intensity, valence, decayRate)
-memorySystem.of(simId)              // all memories sorted by intensity
-memorySystem.with(simId, otherId)   // memories involving another Sim
-memorySystem.biasWith(simId, otherId) // [-1,+1] weighted valence toward other
+{ verb: 'read', utility: { autonomy: 25, fun: 12, status: 4 }, duration: 6 }
 ```
 
-### SimEmotions (`entities/SimEmotions.js`)
+Other Sims also broadcast social affordances:
 
-Secondary emotions are **transient** (decay at 0.03/s ≈ 33s at full). The dominant emotion overrides the Mood ring colour on the Sim mesh.
+- `greet`
+- `chat`
+- `compliment`
+- `insult`
 
-**Emotion catalogue:**
+Social affordances use relationship `score` and `familiarity` as requirements and scoring context.
 
-| Type | Emoji | Mood Δ | Triggered by |
-|---|---|---|---|
-| joy | 😄 | +15 | Positive social memory cluster |
-| jealousy | 😒 | –20 | External trigger (Sprint 2: Romance) |
-| grief | 😢 | –25 | Negative social + personality neurotic |
-| pride | 😤 | +10 | Positive mood peak memory |
-| excitement | 🤩 | +20 | External (life events, Sprint 2) |
-| anger | 😠 | –18 | Negative social memory, neurotic |
-| loneliness | 🌧️ | –12 | Need crisis (social type) |
-| hope | 🌱 | +8 | Positive social memory, non-playful |
+`NeedDrivenPlanner` remains as a fallback for legacy critical-need routing.
 
-**Mood bonus:** sum of `(moodDelta × intensity)` for all active emotions, clamped ±25.
+## Actions
 
-### NarrativePlanner (`systems/NarrativePlanner.js`)
+| Action | Responsibility |
+|---|---|
+| `WalkToAction` | Path to a valid, reserved destination cell |
+| `UseObjectAction` | Exclusive use of a furniture object; applies affordance utility over time |
+| `SocialAction` | Approach another Sim, request interaction, resolve acceptance/rejection and emit social events |
+| `IdleAction` | Short wait |
 
-Converts raw bus events into human-readable story entries (`story:entry`). Detects emergent beats:
-- **BFF announcement** (score > 60, hug interaction) — fires once per pair
-- **Rival announcement** (score < –30, insult) — fires once per pair
-- **Loner** (social < 20 for > 60 sim-seconds)
-- **Comeback** (miserable → happy/neutral mood change)
-- **Mood crash** (→ miserable)
-- **Strong emotions** (intensity ≥ 0.6 only)
+`ActionQueue` is a FIFO FSM. It emits `sim:action` when actions begin and releases resources on `clear()`/`exit()`.
 
----
+## Social Engine
 
-## AI Architecture
+There are two relationship layers:
 
-```
-SimBrain.update(dt)
-  ├─ tick override safety timer (30s max)
-  ├─ advance ActionQueue
-  └─ if queue empty & no override:
-       1. NeedDrivenPlanner.plan()   → physical needs
-       2. SocialAction               → social need (if physical OK)
-       3. IdleAction                 → rest
+- `SocialManager`: pair-level scalar relationship state.
+- `RelationshipGraph`: directed typed social edges.
+
+`SocialManager` stores:
+
+```js
+{ score: -100..100, familiarity: 0..100, log: [] }
 ```
 
-### NeedDrivenPlanner (memory-biased)
+Positive and negative interactions change score. Every interaction also increases familiarity. Rejections use `applyOutcome()`.
 
-Per-need thresholds trigger planning. If multiple furniture pieces satisfy the same need, they are scored by `1.0 + memorySystem.biasWith(simId, 'furniture:id')` — Sims prefer furniture with positive (or no) memories.
+`SocialAction` now resolves interaction consent:
 
----
+1. initiator walks near target;
+2. target evaluates acceptance from energy, affinity, familiarity and personality;
+3. success applies advertised utility/payoff and emits `social:interaction` with `accepted: true`;
+4. rejection lowers initiator status/social, restores target autonomy, updates relationship state and emits `accepted: false`.
 
-## Persistence
+The directed graph converts observed interactions into typed edges:
 
-Save/load via `localStorage`. Payload:
-```json
-{
-  "clock":    { "hour": 14.5, "speed": 1, "paused": false },
-  "sims":     [ { "id", "name", "color", "gx", "gz", "needs", "mood", "emotions", "personality" } ],
-  "memories": { "sim_1": [ ...Memory[] ], "sim_2": [ ... ] }
-}
+- friendship;
+- rivalry;
+- romance;
+- kinship/family.
+
+`RomanceSystem` adds romantic attraction from compatible personalities and repeated positive interactions. It can trigger jealousy when a romantic attachment observes a positive interaction with a third Sim.
+
+## Reservation and Collision Rules
+
+`World` owns runtime exclusivity:
+
+- `_cellReservations`: one destination cell per Sim.
+- `furniture.reservedBy`: one intended user per object.
+- `furniture.inUse`: object currently in use.
+
+Rules enforced by planners/actions/build mode:
+
+- Sims cannot reserve the same destination tile.
+- Sims wait before entering an occupied or reserved path tile.
+- Sims cannot stand on top of each other.
+- Furniture cannot be used by two Sims at once.
+- Build Mode rejects occupied or reserved cells.
+
+## Memory, Mood and Narrative
+
+`MemorySystem` records episodic memories from social events, need crises, mood peaks, life events and God Mode actions. Memories have type, valence, intensity, simulated time and event-specific data. They decay over time and bias future planning.
+
+`SimEmotions` tracks secondary emotions with decay. Mood combines average needs, personality penalties and active emotion bonus.
+
+`NarrativePlanner` converts significant state changes into `story:entry` items for the Story Log.
+
+## God Mode
+
+`GodMode` supports:
+
+- `whisper`: suggest an action; the Sim may refuse;
+- `impose`: force an action with autonomy/mood cost;
+- `bless`;
+- `curse`;
+- `life event`: promoted, fired, heartbreak, windfall.
+
+God actions emit events, create memories/emotions and participate in save/load.
+
+## Experiment Logger
+
+`src/systems/ExperimentLogger.js` provides a research data stream.
+
+It records normalized rows with:
+
+- `tick`
+- simulated hour
+- event type
+- event payload fields
+
+Available methods:
+
+```js
+game.experimentLogger.events
+game.experimentLogger.toJSON()
+game.experimentLogger.toCSV()
+game.experimentLogger.downloadJSON()
+game.experimentLogger.downloadCSV()
+game.experimentLogger.clear()
 ```
 
----
+The logger state is persisted in save/load as `experimentLog`.
 
-## Planned — Sprint 2: God Mode
+## Save/Load
 
-- `src/systems/GodMode.js` — Whisper / Impose / Curse / Bless / Life Event
-- `src/ui/GodPanel.js` — floating action panel
-- `src/core/LifeEventBus.js` — narrative event propagation
+`Game.serialise()` stores:
 
-## Planned — Sprint 3: Life Cycle
+- clock and day/night time;
+- Sims;
+- memories;
+- scalar social state;
+- relationship graph;
+- romance state;
+- experiment log.
 
-- `src/systems/AgeSystem.js` — aging, life stages
-- `src/systems/CareerSystem.js` — skills, jobs, salary
-- `src/systems/ScheduleSystem.js` — weekly routine auto-planning
-
-## Planned — Sprint 4: Social Graph
-
-- `src/systems/RelationshipGraph.js` — typed directed graph (friendship/rivalry/love/kin)
-- `src/systems/RomanceSystem.js` — attraction, jealousy triggers
-- `src/ui/GraphPanel.js` — node/edge visualisation
+`Game.restore(state)` restores these systems and re-emits selection state for UI synchronization.

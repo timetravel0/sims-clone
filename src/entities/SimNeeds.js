@@ -2,7 +2,7 @@ import { bus } from '../core/EventBus.js';
 
 export const NEED_KEYS = [
   'hunger', 'energy', 'bladder', 'hygiene',
-  'social', 'fun', 'comfort', 'room',
+  'social', 'fun', 'comfort', 'room', 'autonomy', 'status',
 ];
 
 const BASE_DECAY = {
@@ -14,6 +14,8 @@ const BASE_DECAY = {
   fun:     2.2,
   comfort: 1.8,
   room:    0.5,
+  autonomy: 1.2,
+  status:   1.0,
 };
 
 export class SimNeeds {
@@ -31,8 +33,10 @@ export class SimNeeds {
     for (const k of NEED_KEYS) {
       let mult = 1.0;
       if (p.neurotic  > 0 && ['social','fun','hygiene'].includes(k)) mult += p.neurotic  * 0.4;
+      if (p.neurotic  > 0 && ['autonomy','status'].includes(k)) mult += p.neurotic * 0.25;
       if (p.playful   > 0 && k === 'fun')    mult -= p.playful   * 0.25;
       if (p.outgoing  > 0 && k === 'social') mult += p.outgoing  * 0.3;
+      if (p.nice      > 0 && k === 'status') mult -= p.nice      * 0.2;
       if (p.ambitious > 0) mult -= p.ambitious * 0.1;
       m[k] = Math.max(0.3, BASE_DECAY[k] * mult);
     }

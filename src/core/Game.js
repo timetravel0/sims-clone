@@ -13,8 +13,12 @@ import { SaveLoad }            from '../systems/SaveLoad.js';
 import { socialManager }       from '../systems/SocialManager.js';
 import { ContextMenu }         from '../ui/ContextMenu.js';
 import { GodPanel }            from '../ui/GodPanel.js';
+import { GraphPanel }          from '../ui/GraphPanel.js';
 import { WalkToAction }        from '../ai/Action.js';
 import { GodMode }             from '../systems/GodMode.js';
+import { RelationshipGraph }   from '../systems/RelationshipGraph.js';
+import { RomanceSystem }       from '../systems/RomanceSystem.js';
+import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
 
 const SIM_DEFS = [
   { name: 'Alice', color: 0x4fc3f7, traits: { outgoing: 0.7, playful: 0.5, nice: 0.6 } },
@@ -71,6 +75,9 @@ export class Game {
 
     // Systems — Sprint 1
     this._narrative = new NarrativePlanner(this.sims);
+    this.experimentLogger = new ExperimentLogger(this);
+    this.relationshipGraph = new RelationshipGraph(this.sims);
+    this.romanceSystem = new RomanceSystem(this.sims, this.relationshipGraph);
     this._saveLoad = new SaveLoad(this);
     this.godMode = new GodMode(this);
     this.buildMode = new BuildMode(this.world, this._scene, this._renderer, this._camera);
@@ -82,6 +89,7 @@ export class Game {
     // UI
     this._ui = new UIManager(this.sims, this.selectedSim, bus);
     this._godPanel = new GodPanel(this);
+    this._graphPanel = new GraphPanel(this);
     bus.emit('sim:selected', { sim: this.selectedSim });
 
     // Input
@@ -113,6 +121,7 @@ export class Game {
 
     // Systems
     memorySystem.update(scaled);         // decay memories
+    this.experimentLogger.update(scaled);
     this._narrative.update(scaled);      // story beats
     this.world.update(scaled);
   }
@@ -212,6 +221,9 @@ export class Game {
       sims:    this.sims.map(s => s.serialise()),
       memories: memorySystem.serialise(),
       social:  socialManager.serialise(),
+      relationshipGraph: this.relationshipGraph.serialise(),
+      romance: this.romanceSystem.serialise(),
+      experimentLog: this.experimentLogger.serialise(),
     };
   }
 
@@ -229,6 +241,9 @@ export class Game {
     }
     if (state.memories) memorySystem.restore(state.memories);
     if (state.social) socialManager.restore(state.social);
+    if (state.relationshipGraph) this.relationshipGraph.restore(state.relationshipGraph);
+    if (state.romance) this.romanceSystem.restore(state.romance);
+    if (state.experimentLog) this.experimentLogger.restore(state.experimentLog);
     bus.emit('sim:selected', { sim: this.selectedSim });
   }
 

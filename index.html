@@ -163,6 +163,31 @@
     .god-row { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; }
     .god-target { color:#ffd580; font-size:12px; font-weight:700; }
 
+    /* ── Graph panel ─────────────────────────────────────────── */
+    #graph-panel {
+      display:none; position:fixed; bottom:48px; left:238px; z-index:60;
+      width:260px; background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
+      border:1px solid rgba(255,255,255,0.1); border-radius:10px;
+      padding:12px 14px;
+    }
+    #graph-panel h3 { color:#eee; font-size:11px; margin-bottom:8px;
+      text-transform:uppercase; letter-spacing:.08em; }
+    .graph-svg {
+      width:100%; height:150px; display:block;
+      background:rgba(255,255,255,0.035); border-radius:8px;
+      border:1px solid rgba(255,255,255,0.06);
+    }
+    .graph-svg text { fill:#fff; font-size:8px; font-weight:700; pointer-events:none; }
+    .graph-legend { display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; margin:8px 0; }
+    .graph-legend span { color:#888; font-size:10px; display:flex; align-items:center; gap:5px; }
+    .graph-legend i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+    .graph-list { display:flex; flex-direction:column; gap:4px; max-height:130px; overflow:auto; }
+    .graph-row { display:grid; grid-template-columns:52px 1fr 28px; align-items:center; gap:6px; font-size:10px; }
+    .graph-type { font-weight:700; }
+    .graph-names { color:#bbb; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .graph-score { color:#777; text-align:right; }
+    .graph-empty { color:#666; font-size:11px; }
+
     /* ── Speech bubbles ──────────────────────────────────────── */
     #bubbles { position:fixed; inset:0; pointer-events:none; z-index:30; }
     .bubble {
@@ -225,6 +250,7 @@
 
   <div id="rel-panel"></div>
   <div id="god-panel"></div>
+  <div id="graph-panel"></div>
 
   <div id="build-panel">
     <p>Select an object then click a tile to place it. ✦ = social</p>
@@ -242,6 +268,7 @@
     <div class="tb-sep"></div>
     <button id="btn-story">📖 Story</button>
     <button id="btn-rel">♥ Relations</button>
+    <button id="btn-graph">🕸 Graph</button>
     <button id="btn-god">⚡ God</button>
     <button id="btn-build">🔨 Build</button>
     <button id="btn-save">💾 Save</button>

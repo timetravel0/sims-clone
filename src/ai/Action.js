@@ -45,10 +45,11 @@ export class WalkToAction extends Action {
 }
 
 export class UseObjectAction extends Action {
-  constructor(sim, furniture, duration = 5) {
-    super(`UseObject(${furniture.id})`);
+  constructor(sim, furniture, duration = 5, affordance = null) {
+    super(affordance?.label ? `${affordance.label}(${furniture.id})` : `UseObject(${furniture.id})`);
     this._sim = sim; this._furniture = furniture;
     this._duration = duration; this._elapsed = 0;
+    this._affordance = affordance;
     this._using = false;
   }
   enter() {
@@ -71,7 +72,15 @@ export class UseObjectAction extends Action {
   }
   update(dt) {
     this._elapsed += dt;
-    this._sim.needs.restore(this._furniture.needTarget, this._furniture.restoreRate * dt);
+    if (this._affordance?.utility) {
+      for (const [need, amount] of Object.entries(this._affordance.utility)) {
+        const tickAmount = (amount / Math.max(0.1, this._duration)) * dt;
+        if (tickAmount >= 0) this._sim.needs.restore(need, tickAmount);
+        else this._sim.needs.decay(need, Math.abs(tickAmount));
+      }
+    } else {
+      this._sim.needs.restore(this._furniture.needTarget, this._furniture.restoreRate * dt);
+    }
     this._furniture.onUseTick?.(this._sim, dt);
     if (this._elapsed >= this._duration) this.done = true;
   }
