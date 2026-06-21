@@ -51,7 +51,7 @@
     .need-bar-bg { flex:1; height:5px; background:rgba(255,255,255,0.08); border-radius:999px; overflow:hidden; }
     .need-bar-fill { height:100%; border-radius:999px; transition:width .4s,background .4s; }
 
-    /* ── Sim portraits (top-left, above story log) ───────────── */
+    /* ── Sim portraits (top-left) ───────────────────────────── */
     #sim-selector { position:fixed; top:16px; left:16px; z-index:50; display:flex; gap:8px; }
     .sim-portrait {
       width:38px; height:38px; border-radius:50%; border:2px solid;
@@ -62,7 +62,7 @@
     .sim-portrait:hover { transform:scale(1.12); }
     .sim-mood-dot { font-size:10px; }
 
-    /* ── Story log (left sidebar, always visible) ───────────── */
+    /* ── Story log ──────────────────────────────────────────── */
     #story-panel {
       position:fixed; top:62px; left:16px; z-index:50;
       width:230px;
@@ -101,7 +101,7 @@
     .cat-action   .log-text { color:#80cbc4; }
     .cat-need     .log-text { color:#ffcc80; }
 
-    /* ── Relations panel (bottom-right) ─────────────────────── */
+    /* ── Relations panel ─────────────────────────────────────── */
     #rel-panel {
       display:none; position:fixed; bottom:48px; right:16px; z-index:50;
       background:rgba(14,13,11,0.88); backdrop-filter:blur(8px);
@@ -186,71 +186,6 @@
     .graph-score { color:#777; text-align:right; }
     .graph-empty { color:#666; font-size:11px; }
 
-    /* ── Life Cycle panel ────────────────────────────────────── */
-    #lifecycle-panel {
-      display:none; position:fixed; bottom:48px; right:16px; z-index:60;
-      width:240px; background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
-      border:1px solid rgba(255,255,255,0.1); border-radius:10px;
-      padding:12px 14px;
-    }
-    #lifecycle-panel h3 {
-      color:#eee; font-size:11px; margin-bottom:10px;
-      text-transform:uppercase; letter-spacing:.08em;
-    }
-    .lc-stage-badge {
-      display:inline-flex; align-items:center; gap:6px;
-      background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
-      border-radius:999px; padding:3px 10px; font-size:11px; color:#ffd580;
-      font-weight:700; margin-bottom:10px;
-    }
-    .lc-stage-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-    .lc-career-row {
-      display:flex; align-items:center; justify-content:space-between;
-      margin-bottom:8px;
-    }
-    .lc-career-name { color:#ccc; font-size:11px; font-weight:600; }
-    .lc-career-lv   { color:#80cbc4; font-size:10px; }
-    .lc-simoleons   { color:#ffd54f; font-size:11px; font-weight:700; }
-    .lc-at-work     { font-size:10px; margin-bottom:8px; }
-    .lc-at-work.working { color:#a5d6a7; }
-    .lc-at-work.home    { color:#555; }
-    .lc-section-label {
-      color:#555; font-size:10px; text-transform:uppercase;
-      letter-spacing:.08em; margin:8px 0 5px;
-    }
-    .lc-skill-row { display:flex; align-items:center; gap:7px; margin-bottom:4px; }
-    .lc-skill-name  { color:#999; font-size:10px; width:64px; }
-    .lc-skill-bar-bg {
-      flex:1; height:4px; background:rgba(255,255,255,0.08);
-      border-radius:999px; overflow:hidden;
-    }
-    .lc-skill-bar-fill {
-      height:100%; border-radius:999px;
-      background:#4f98a3; transition:width .4s;
-    }
-    .lc-skill-val { color:#666; font-size:10px; width:22px; text-align:right; }
-    #lc-career-select {
-      width:100%; background:rgba(255,255,255,0.07); color:#ddd;
-      border:1px solid rgba(255,255,255,0.12); border-radius:6px;
-      padding:5px 7px; font-size:11px; margin-top:8px;
-    }
-    .lc-timeline { display:flex; gap:2px; margin-top:8px; height:16px; }
-    .lc-tick {
-      flex:1; border-radius:2px;
-      background:rgba(255,255,255,0.06);
-      transition:background .3s;
-    }
-    .lc-tick.active { background:#01696f; }
-    .lc-tick.past   { background:rgba(255,255,255,0.12); }
-    .lc-tick.sleep  { background:rgba(79,152,163,0.4); }
-    .lc-tick.work   { background:rgba(255,213,79,0.4); }
-    .lc-tick.fun    { background:rgba(206,147,216,0.4); }
-    .lc-tick.eat    { background:rgba(165,214,167,0.4); }
-    .lc-timeline-labels {
-      display:flex; justify-content:space-between;
-      margin-top:2px; color:#444; font-size:9px;
-    }
-
     /* ── Speech bubbles ──────────────────────────────────────── */
     #bubbles { position:fixed; inset:0; pointer-events:none; z-index:30; }
     .bubble {
@@ -284,6 +219,118 @@
     .toast.mood     { background:rgba(255,213,79,0.12);  border-color:rgba(255,213,79,0.3);   color:#ffd54f; }
     @keyframes toastIn  { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
     @keyframes toastOut { to  {opacity:0;transform:translateY(-8px)} }
+
+    /* ── Lifecycle toast (Sprint 3) ──────────────────────────── */
+    /*
+     * #lifecycle-toast  — fixed column on the bottom-left, above toolbar.
+     * Each .lc-toast slides in from the left and fades out.
+     * Categories: lc-stage | lc-promote | lc-fire | lc-skill | lc-schedule
+     */
+    #lifecycle-toast {
+      position:fixed;
+      bottom:52px;        /* just above toolbar */
+      left:16px;
+      z-index:65;
+      display:flex;
+      flex-direction:column-reverse; /* newest on top */
+      gap:5px;
+      pointer-events:none;
+      max-width:320px;
+    }
+
+    .lc-toast {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:7px 13px;
+      border-radius:8px;
+      font-size:12px;
+      line-height:1.4;
+      border:1px solid rgba(255,255,255,0.1);
+      backdrop-filter:blur(8px);
+      /* default: neutral */
+      background:rgba(30,28,25,0.92);
+      color:#ccc;
+      animation: lcToastIn 0.28s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .lc-toast.lc-toast--out {
+      animation: lcToastOut 0.4s ease forwards;
+    }
+
+    /* category colours */
+    .lc-toast.lc-stage   { background:rgba(79,152,163,0.18); border-color:rgba(79,152,163,0.4); color:#80cbc4; }
+    .lc-toast.lc-promote { background:rgba(255,213,79,0.14); border-color:rgba(255,213,79,0.35); color:#ffd54f; }
+    .lc-toast.lc-fire    { background:rgba(239,83,80,0.16);  border-color:rgba(239,83,80,0.38);  color:#ef9a9a; }
+    .lc-toast.lc-skill   { background:rgba(165,214,167,0.14);border-color:rgba(165,214,167,0.35);color:#a5d6a7; }
+    .lc-toast.lc-schedule{ background:rgba(206,147,216,0.13);border-color:rgba(206,147,216,0.3); color:#ce93d8; }
+
+    @keyframes lcToastIn {
+      from { opacity:0; transform:translateX(-18px); }
+      to   { opacity:1; transform:none; }
+    }
+    @keyframes lcToastOut {
+      to   { opacity:0; transform:translateX(-10px); }
+    }
+
+    /* Life Cycle panel ──────────────────────────────────────── */
+    #lifecycle-panel {
+      display:none;
+      position:fixed; bottom:48px; right:220px; z-index:60;
+      width:240px;
+      background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
+      border:1px solid rgba(255,255,255,0.1); border-radius:10px;
+      padding:12px 14px;
+      color:#ccc;
+      font-size:12px;
+    }
+    .lc-stage-badge {
+      display:flex; align-items:center; gap:7px;
+      margin-bottom:10px;
+    }
+    .lc-stage-dot {
+      width:10px; height:10px; border-radius:50%; flex-shrink:0;
+    }
+    .lc-stage-name  { font-weight:700; font-size:13px; color:#eee; }
+    .lc-stage-age   { font-size:10px; color:#666; margin-left:auto; }
+    .lc-career-row  { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+    .lc-career-name { color:#ffd580; font-weight:600; }
+    .lc-career-lvl  { color:#888; font-size:11px; }
+    .lc-simoleons   { color:#a5d6a7; font-size:11px; }
+    .lc-at-work     { font-size:10px; color:#80cbc4; margin-bottom:8px; }
+    .lc-skills      { margin-bottom:10px; }
+    .lc-skill-row   { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+    .lc-skill-lbl   { color:#777; font-size:10px; width:68px; text-align:right; }
+    .lc-skill-bar-bg{ flex:1; height:4px; background:rgba(255,255,255,0.07); border-radius:999px; overflow:hidden; }
+    .lc-skill-bar   { height:100%; border-radius:999px; background:#4f98a3; transition:width .4s; }
+    .lc-skill-val   { color:#555; font-size:10px; width:22px; text-align:right; }
+    .lc-career-select-row { margin-bottom:10px; }
+    .lc-career-select-row label { display:block; color:#555; font-size:10px; margin-bottom:4px; }
+    #lc-career-select {
+      width:100%; background:rgba(255,255,255,0.06); color:#ddd;
+      border:1px solid rgba(255,255,255,0.1); border-radius:6px;
+      padding:4px 7px; font-size:11px;
+    }
+    .lc-req-warn { color:#ef9a9a; font-size:10px; margin-top:3px; }
+    .lc-timeline-wrap { margin-top:4px; }
+    .lc-timeline-wrap label { color:#555; font-size:10px; display:block; margin-bottom:4px; }
+    .lc-timeline {
+      display:flex; gap:1px; height:14px;
+    }
+    .lc-tick {
+      flex:1; border-radius:2px;
+      background:rgba(255,255,255,0.06);
+    }
+    .lc-tick.t-sleep    { background:rgba(79,152,163,0.45); }
+    .lc-tick.t-eat      { background:rgba(255,213,79,0.45); }
+    .lc-tick.t-fun      { background:rgba(206,147,216,0.45); }
+    .lc-tick.t-social   { background:rgba(165,214,167,0.45); }
+    .lc-tick.t-study    { background:rgba(255,183,77,0.45); }
+    .lc-tick.t-work     { background:rgba(239,83,80,0.4); }
+    .lc-tick.t-now      { outline:2px solid #4f98a3; outline-offset:-1px; }
+    .lc-timeline-labels {
+      display:flex; justify-content:space-between;
+      color:#444; font-size:9px; margin-top:2px;
+    }
   </style>
 </head>
 <body>
@@ -291,6 +338,7 @@
   <div id="sim-selector"></div>
   <div id="bubbles"></div>
   <div id="drama-toast"></div>
+  <div id="lifecycle-toast"></div>
 
   <!-- Needs panel -->
   <div id="needs-panel">
@@ -302,7 +350,7 @@
     <div id="needs-bars"></div>
   </div>
 
-  <!-- Story log: left sidebar, always open -->
+  <!-- Story log -->
   <div id="story-panel">
     <div id="story-panel-header">
       <h3>📖 Story</h3>
@@ -314,8 +362,6 @@
   <div id="rel-panel"></div>
   <div id="god-panel"></div>
   <div id="graph-panel"></div>
-
-  <!-- Life Cycle panel (populated by LifeCyclePanel.js) -->
   <div id="lifecycle-panel"></div>
 
   <div id="build-panel">
@@ -336,8 +382,8 @@
     <button id="btn-rel">♥ Relations</button>
     <button id="btn-graph">🕸 Graph</button>
     <button id="btn-god">⚡ God</button>
-    <button id="btn-lifecycle">📋 Life</button>
     <button id="btn-build">🔨 Build</button>
+    <button id="btn-lifecycle">📋 Life</button>
     <button id="btn-save">💾 Save</button>
     <button id="btn-load">📂 Load</button>
     <span id="speed-label" style="color:#555;font-size:12px">Speed: 1×</span>

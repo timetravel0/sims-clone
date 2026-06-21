@@ -1,117 +1,133 @@
 /**
- * AgeSystem — Sprint 3
+ * AgeSystem
+ * ---------
+ * Tracks each Sim's age in simulated days and fires life-stage
+ * transitions via EventBus.
  *
- * Tracks simulated age for every Sim. Age advances with in-game time.
- * Life stages trigger trait modifiers, need-decay changes and story events.
- *
- * Stage durations (in sim-years):
- *   Child       0–7
- *   Teen        7–18
- *   YoungAdult 18–35
- *   Adult      35–60
- *   Elder      60+
- *
- * Sims start as YoungAdult (21 yrs) by default.
+ * Emits:
+ *   lifecycle:stageChanged  { sim, oldStage, newStage, age }
+ *   story:entry             { text, category: 'positive' }
  */
 
 import { bus } from '../core/EventBus.js';
 
-export const LIFE_STAGES = [
-  { id: 'child',      label: 'Child',       minAge: 0,  color: '#64b5f6', needMult: 1.3,  moodMult: 0.9 },
-  { id: 'teen',       label: 'Teen',        minAge: 7,  color: '#81c784', needMult: 1.2,  moodMult: 1.0 },
-  { id: 'youngadult', label: 'Young Adult', minAge: 18, color: '#fff176', needMult: 1.0,  moodMult: 1.0 },
-  { id: 'adult',      label: 'Adult',       minAge: 35, color: '#ffb74d', needMult: 0.95, moodMult: 1.05 },
-  { id: 'elder',      label: 'Elder',       minAge: 60, color: '#ce93d8', needMult: 1.15, moodMult: 1.1 },
+// Simulated seconds per in-game day
+const SECONDS_PER_DAY = 86400;
+
+// Stage thresholds in simulated days (inclusive lower bound)
+const STAGE_THRESHOLDS = [
+  { stage: 'elder',      minDay: 60 },
+  { stage: 'adult',      minDay: 30 },
+  { stage: 'youngAdult', minDay: 18 },
+  { stage: 'teen',       minDay: 13 },
+  { stage: 'child',      minDay:  4 },
+  { stage: 'baby',       minDay:  0 },
 ];
 
-const HOURS_PER_DAY = 24;
+// Per-stage need-decay multiplier written to sim._needMult
+export const STAGE_NEED_MULT = {
+  baby       : 1.4,
+  child      : 1.3,
+  teen       : 1.2,
+  youngAdult : 1.0,
+  adult      : 0.9,
+  elder      : 1.1,
+};
+
+function stageForAge(ageDays) {
+  for (const { stage, minDay } of STAGE_THRESHOLDS) {
+    if (ageDays >= minDay) return stage;
+  }
+  return 'baby';
+}
 
 export class AgeSystem {
-  constructor(game) {
-    this._game = game;
-    this._state = new Map();   // simId → { ageDays, stage, birthdayHour }
-    this._lastHour = game.clock.hour;
+  /**
+   * @param {Sim[]} sims  live Sim array (same reference as Game._sims)
+   */
+  constructor(sims) {
+    this._sims = sims;
 
-    for (const sim of game.sims) {
-      this._state.set(sim.id, {
-        ageDays:     21 * 365,
-        stage:       LIFE_STAGES[2],
-        birthdayHour: 0,
-      });
-      this._applyStageModifiers(sim, LIFE_STAGES[2]);
-    }
+    // Per-sim age accumulators  { simId -> { seconds, days, stage } }
+    this._data = new Map();
+    for (const sim of sims) this._initSim(sim);
   }
 
-  update(_scaledDt) {
-    const currentHour = this._game.clock.hour;
-    let dh = currentHour - this._lastHour;
-    if (dh < 0) dh += HOURS_PER_DAY;
-    if (dh <= 0) return;
-    this._lastHour = currentHour;
+  // ── public ──────────────────────────────────────────────────────
 
-    for (const sim of this._game.sims) {
-      const s = this._state.get(sim.id);
-      if (!s) continue;
-      s.birthdayHour += dh;
-      if (s.birthdayHour >= HOURS_PER_DAY) {
-        s.ageDays += Math.floor(s.birthdayHour / HOURS_PER_DAY);
-        s.birthdayHour %= HOURS_PER_DAY;
-        this._checkStageTransition(sim, s);
+  update(dt) {
+    for (const sim of this._sims) {
+      const d = this._data.get(sim.id);
+      if (!d) continue;
+
+      d.seconds += dt;
+
+      const newDays = Math.floor(d.seconds / SECONDS_PER_DAY);
+      if (newDays <= d.days) continue;
+
+      const oldDays  = d.days;
+      d.days = newDays;
+
+      const newStage = stageForAge(newDays);
+      if (newStage !== d.stage) {
+        const oldStage = d.stage;
+        d.stage = newStage;
+        sim._needMult = STAGE_NEED_MULT[newStage] ?? 1.0;
+
+        bus.emit('lifecycle:stageChanged', {
+          sim,
+          oldStage,
+          newStage,
+          age: newDays,
+        });
+
+        bus.emit('story:entry', {
+          text: `${sim.name} became a ${newStage} on day ${newDays}.`,
+          category: 'positive',
+        });
       }
     }
   }
 
-  _checkStageTransition(sim, s) {
-    const ageYears = s.ageDays / 365;
-    const newStage = [...LIFE_STAGES].reverse().find(st => ageYears >= st.minAge);
-    if (newStage && newStage.id !== s.stage.id) {
-      const old = s.stage;
-      s.stage = newStage;
-      this._applyStageModifiers(sim, newStage);
-      bus.emit('lifecycle:stageChanged', { sim, from: old, to: newStage });
-      bus.emit('story:entry', { text: `🎂 ${sim.name} has become a ${newStage.label}!`, cat: 'life' });
-    }
+  /** Age in simulated days for a given sim. */
+  getAge(sim) {
+    return this._data.get(sim.id)?.days ?? 0;
   }
 
-  _applyStageModifiers(sim, stage) {
-    sim._ageStage = stage;
-    sim._needMult = stage.needMult;
+  /** Life stage string for a given sim. */
+  getStage(sim) {
+    return this._data.get(sim.id)?.stage ?? 'youngAdult';
   }
 
-  getInfo(simId) {
-    const s = this._state.get(simId);
-    if (!s) return null;
-    return { ageDays: s.ageDays, ageYears: Math.floor(s.ageDays / 365), stage: s.stage };
-  }
-
-  setAge(simId, years) {
-    const s = this._state.get(simId);
-    const sim = this._game.sims.find(x => x.id === simId);
-    if (!s || !sim) return;
-    s.ageDays = years * 365;
-    s.birthdayHour = 0;
-    this._checkStageTransition(sim, s);
-  }
+  // ── serialise / restore ─────────────────────────────────────────
 
   serialise() {
     const out = {};
-    for (const [id, s] of this._state) {
-      out[id] = { ageDays: s.ageDays, stageId: s.stage.id, birthdayHour: s.birthdayHour };
+    for (const [id, d] of this._data) {
+      out[id] = { seconds: d.seconds, days: d.days, stage: d.stage };
     }
     return out;
   }
 
-  restore(data) {
-    for (const sim of this._game.sims) {
-      const d = data?.[sim.id];
+  restore(state) {
+    if (!state) return;
+    for (const sim of this._sims) {
+      const saved = state[sim.id];
+      if (!saved) continue;
+      const d = this._data.get(sim.id);
       if (!d) continue;
-      const s = this._state.get(sim.id);
-      if (!s) continue;
-      s.ageDays = d.ageDays ?? s.ageDays;
-      s.birthdayHour = d.birthdayHour ?? 0;
-      const stage = LIFE_STAGES.find(st => st.id === d.stageId) ?? LIFE_STAGES[2];
-      s.stage = stage;
-      this._applyStageModifiers(sim, stage);
+      d.seconds = saved.seconds ?? 0;
+      d.days    = saved.days    ?? 0;
+      d.stage   = saved.stage   ?? 'youngAdult';
+      sim._needMult = STAGE_NEED_MULT[d.stage] ?? 1.0;
     }
+  }
+
+  // ── private ──────────────────────────────────────────────────────
+
+  _initSim(sim) {
+    const stage = 'youngAdult';
+    sim._needMult = STAGE_NEED_MULT[stage];
+    this._data.set(sim.id, { seconds: 0, days: 18, stage });
   }
 }
