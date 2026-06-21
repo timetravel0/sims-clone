@@ -8,6 +8,8 @@ import { PersonalityDrift }   from '../ai/PersonalityDrift.js';
 import { ContextualNoise }    from '../ai/ContextualNoise.js';
 import { GoalSystem }         from '../ai/GoalSystem.js';
 import { SocialLearning }     from '../ai/SocialLearning.js';
+import { MemorySystem }       from './MemorySystem.js';
+import { EmotionEngine }      from './EmotionEngine.js';
 
 export class SimBrain {
   constructor(sim) {
@@ -20,25 +22,34 @@ export class SimBrain {
     this._playerOverride = false;
     this._overrideTimer  = 0;
 
-    // ── Adaptive AI subsystems ──────────────────────────────────────────────
+    // ── Adaptive AI subsystems ───────────────────────────────────────────────
     this.expBias      = new ExperientialBias(sim.id);
     this.drift        = new PersonalityDrift(sim.personality);
     this.ctxNoise     = new ContextualNoise(
       sim.id,
       () => window._game?.clock,
-      () => sim.mood?.tier
+      () => this.emotions?.tier        // live tier from EmotionEngine
     );
     this.goalSystem   = new GoalSystem(sim);
     this.socialLearn  = new SocialLearning(sim, this.expBias);
 
-    // Wire UtilityAIPlanner to use the new subsystems
+    // ── Memory & Emotion ─────────────────────────────────────────────────────
+    this.memory   = new MemorySystem(
+      sim.id,
+      () => window._game?.tick ?? 0
+    );
+    this.emotions = new EmotionEngine(
+      sim,
+      sim.needs,
+      sim.personality
+    );
+
+    // Wire UtilityAIPlanner to use all subsystems
     this._utilityPlanner.setBrain(this);
   }
 
-  /**
-   * Inject player-driven actions.
-   * Sets a safety timer: if the queue is still running after 30s, release override.
-   */
+  // ── Player override ──────────────────────────────────────────────────────
+
   override(actions) {
     this._queue.clear();
     const list = Array.isArray(actions) ? actions : [actions];
@@ -47,8 +58,10 @@ export class SimBrain {
     this._overrideTimer  = 30;
   }
 
+  // ── Main tick ────────────────────────────────────────────────────────────
+
   update(dt) {
-    // Tick override safety timer
+    // Override safety timer
     if (this._playerOverride) {
       this._overrideTimer -= dt;
       if (this._overrideTimer <= 0 || this._queue.isEmpty()) {
@@ -57,32 +70,33 @@ export class SimBrain {
       }
     }
 
-    // Advance current action queue
+    // Tick all subsystems
     this._queue.update(dt);
     if (this._socialCooldown > 0) this._socialCooldown -= dt;
-
-    // Tick adaptive subsystems
     this.expBias.update(dt);
+    this.emotions.update(dt);
+
     const currentDay = window._game?.clock?.day ?? 0;
     this.goalSystem.update(dt, currentDay);
     this.ctxNoise.resetFrame();
 
-    // Neurotic mood crash: only interrupt AI tasks, never player override
+    // Neurotic mood crash — interrupt AI tasks only
     const p = this._sim.personality;
+    const tier = this.emotions.tier;
     if (!this._playerOverride &&
         p.neurotic > 0.4 &&
-        this._sim.mood.tier === 'miserable' &&
+        tier === 'miserable' &&
         this._lastMoodTier !== 'miserable') {
       this._queue.clear();
     }
-    this._lastMoodTier = this._sim.mood?.tier ?? null;
+    this._lastMoodTier = tier;
 
     if (this._playerOverride)   return;
     if (!this._queue.isEmpty())  return;
 
     // ── AI planning ──────────────────────────────────────────────────────────
 
-    // 1. Utility AI (now history-aware + goal-driven + contextual)
+    // 1. Utility AI (history + goals + context + emotion-aware)
     const utilityActions = this._utilityPlanner.plan();
     if (utilityActions.length > 0) {
       this._sim.showBubble(this._utilityPlanner.lastDecision?.label || 'Act');
@@ -90,7 +104,7 @@ export class SimBrain {
       return;
     }
 
-    // 2. Legacy physical / primary needs fallback
+    // 2. Physical needs fallback
     const needActions = this._planner.plan();
     if (needActions.length > 0) {
       this._sim.showBubble(this._planner.lastNeedLabel);
@@ -98,7 +112,7 @@ export class SimBrain {
       return;
     }
 
-    // 3. Legacy social need fallback
+    // 3. Social need fallback
     const socialVal  = this._sim.needs.get('social');
     const threshold  = 40 + p.outgoing * 20;
     if (socialVal < threshold && this._socialCooldown <= 0) {
@@ -110,7 +124,7 @@ export class SimBrain {
       }
     }
 
-    // 4. Idle — short for playful sims, longer for introverts
+    // 4. Idle
     const idleDur = p.playful > 0.3 ? 1.5 : 3.5;
     this._queue.push(new IdleAction(this._sim, idleDur));
   }
@@ -124,13 +138,15 @@ export class SimBrain {
 
   get busy() { return !this._queue.isEmpty(); }
 
-  // ── Serialisation ─────────────────────────────────────────────────────────
+  // ── Serialisation ────────────────────────────────────────────────────────
 
   serialise() {
     return {
-      expBias:    this.expBias.serialise(),
-      drift:      this.drift.serialise(),
-      goalSystem: this.goalSystem.serialise(),
+      expBias    : this.expBias.serialise(),
+      drift      : this.drift.serialise(),
+      goalSystem : this.goalSystem.serialise(),
+      memory     : this.memory.serialise(),
+      emotions   : this.emotions.serialise(),
     };
   }
 
@@ -139,10 +155,13 @@ export class SimBrain {
     if (data.expBias)    this.expBias.restore(data.expBias);
     if (data.drift)      this.drift.restore(data.drift);
     if (data.goalSystem) this.goalSystem.restore(data.goalSystem);
+    if (data.memory)     this.memory.restore(data.memory);
+    if (data.emotions)   this.emotions.restore(data.emotions);
   }
 
   destroy() {
     this.drift.destroy();
     this.socialLearn.destroy();
+    this.emotions.destroy();
   }
 }
