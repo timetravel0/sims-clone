@@ -8,27 +8,35 @@ import { bus } from '../core/EventBus.js';
 
 export const SKILLS = ['cooking', 'logic', 'charisma', 'fitness', 'creativity', 'handiness'];
 
-// Which furniture tag advances which skill
+// Which furniture id (furniture.id, emitted as objectType on sim:objectUsed)
+// advances which skill. Keys MUST match real ObjectRegistry ids.
 export const OBJECT_SKILL_MAP = {
-  stove:      'cooking',
-  bookshelf:  'logic',
-  phone:      'charisma',
-  treadmill:  'fitness',
-  easel:      'creativity',
-  toolbench:  'handiness',
-  sofa:       'charisma',
-  computer:   'logic',
+  bookshelf:    'logic',
+  desk:         'logic',
+  chess:        'logic',
+  treadmill:    'fitness',
+  hot_tub:      'fitness',
+  piano:        'creativity',
+  bar:          'charisma',
+  couch:        'charisma',
+  tv:           'charisma',
+  fire_pit:     'charisma',
+  dining_table: 'charisma',
+  fridge:       'cooking',
 };
 
 const GAIN_PER_USE  = 0.25;   // XP per object interaction tick
 const DECAY_RATE    = 0.001;  // per simulated day
-const TICKS_PER_DAY = 24 * 60; // 1 sim-minute = 1 tick @ 1x
 
 export class SkillSystem {
   constructor() {
     /** @type {Map<string, Record<string, number>>} simId → skills */
     this._data = new Map();
     this._tickAccum = 0;
+    // Using an object grows the matching skill (book/desk/piano/etc as XP vector).
+    bus.on('sim:objectUsed', ({ sim, objectType }) => {
+      if (sim && objectType) this.gainFromObject(sim, objectType);
+    });
   }
 
   /** Call once per Sim on creation */

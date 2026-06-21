@@ -119,6 +119,23 @@ export class CareerSystem {
     bus.on('sim:objectUsed', ({ sim, objectType }) => {
       if (sim && objectType) this.gainSkillFromObject(sim, objectType);
     });
+    // Career boost: a global skill level-up in your career's field raises performance.
+    bus.on('skill:levelUp', ({ sim, skill, level }) => this._onSkillLevelUp(sim, skill, level));
+  }
+
+  _onSkillLevelUp(sim, skill, level) {
+    const state = sim && this._data.get(sim.id);
+    if (!state || state.careerId === 'unemployed') return;
+    const career = this._career(state.careerId);
+    if (!career || !(skill in (career.skillReq ?? {}))) return;
+    state.performance = Math.min(PROMOTION_PERFORMANCE, state.performance + 10);
+    bus.emit('story:entry', {
+      text: `${sim.name}'s ${skill} (Lv.${level}) boosted their ${career.label} performance.`,
+      cat: 'positive', category: 'positive',
+    });
+    if (state.performance >= PROMOTION_PERFORMANCE && state.level < MAX_LEVEL) {
+      this._promote(sim, 'skill');
+    }
   }
 
   update(_dt) {
@@ -171,10 +188,8 @@ export class CareerSystem {
     if (!sim || !career) return false;
     const state = this._data.get(sim.id) ?? this._initSim(sim);
 
-    for (const [skill, min] of Object.entries(career.skillReq ?? {})) {
-      if ((state.skills[skill] ?? 0) < min) return false;
-    }
-
+    // Entry into a career is open (like The Sims). Skill requirements gate
+    // promotions/performance, not joining — see _performanceGain().
     state.careerId = career.id;
     state.level = 1;
     state.performance = 50;

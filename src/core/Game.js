@@ -31,6 +31,7 @@ import { LifecycleNotifier }   from '../ui/LifecycleNotifier.js';
 import { AgeSystem }           from '../systems/AgeSystem.js';
 import { CareerSystem }        from '../systems/CareerSystem.js';
 import { ScheduleSystem }      from '../systems/ScheduleSystem.js';
+import { PartySystem }         from '../systems/PartySystem.js';
 // Sprint 4
 import { skillSystem }         from '../systems/SkillSystem.js';
 import { weatherSystem }       from '../systems/WeatherSystem.js';
@@ -143,6 +144,11 @@ export class Game {
     this.ageSystem       = new AgeSystem(this.sims);
     this.careerSystem    = new CareerSystem(this.sims, this.clock);
     this.scheduleSystem  = new ScheduleSystem(this.sims, this.clock);
+    // Give each Sim a starting career so the career world is alive from launch
+    // (overwritten by save data on load). ponytail: round-robin over real careers.
+    const STARTER_CAREERS = ['scientist', 'chef', 'artist', 'programmer', 'athlete'];
+    this.sims.forEach((s, i) => this.careerSystem.assign(s.id, STARTER_CAREERS[i % STARTER_CAREERS.length]));
+    this.partySystem     = new PartySystem(this);
 
     for (const sim of this.sims) skillSystem.register(sim);
     this._weather       = weatherSystem;
@@ -209,6 +215,7 @@ export class Game {
     this.ageSystem.update(scaled);
     this.careerSystem.update(scaled);
     this.scheduleSystem.update(scaled);
+    this.partySystem.update(scaled);
 
     // Sprint 4 systems
     this._weather.update(scaled);
@@ -347,6 +354,17 @@ export class Game {
     const renderFunds = v => { if (fundsEl) fundsEl.textContent = '§' + Math.round(v).toLocaleString(); };
     renderFunds(this.budgetSystem.funds);
     bus.on('budget:changed', ({ next }) => renderFunds(next));
+
+    // Party: host = selected Sim, guests = everyone else
+    const partyBtn = q('btn-party');
+    partyBtn?.addEventListener('click', () => {
+      if (this.partySystem.active) return;   // one party at a time
+      const host = this.selectedSim;
+      const guests = this.sims.filter(s => s !== host);
+      this.partySystem.start(host, guests);
+    });
+    bus.on('party:started', () => partyBtn?.classList.add('active'));
+    bus.on('party:ended',   () => partyBtn?.classList.remove('active'));
   }
 
   serialise() {
