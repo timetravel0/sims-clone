@@ -1,58 +1,155 @@
-import { Logger } from '../utils/Logger.js';
+/**
+ * SaveLoad — Sprint 6 (full rewrite)
+ * Serialises/deserialises the entire game state to/from JSON.
+ *
+ * Save format version: 2
+ * Storage: localStorage key "simsclone_save_v2_<slot>"
+ * Slots: 0..2  (3 save slots)
+ *
+ * What is saved:
+ *   - metadata  : slot, version, timestamp, household name, screenshot thumbnail
+ *   - budget    : BudgetSystem funds
+ *   - clock     : GameClock in-game day/hour/speed
+ *   - sims      : array of Sim serialised state (needs, skills, career, traits, position)
+ *   - world     : TileMap walkability overrides
+ *   - walls     : WallManager edges
+ *   - furniture : World placed-furniture list
+ *   - careers   : CareerSystem per-sim state
+ *   - relationships: RelationshipGraph edges
+ *   - memories  : MemorySystem per-sim memories
+ *   - rooms     : RoomDetector room list (cached, recomputed on load)
+ *
+ * Emits:
+ *   save:completed  { slot, timestamp }
+ *   save:failed     { slot, error }
+ *   load:completed  { slot }
+ *   load:failed     { slot, error }
+ *   save:deleted    { slot }
+ */
+import { bus } from '../core/EventBus.js';
 
-const DB_NAME  = 'sims-clone';
-const DB_VER   = 1;
-const STORE    = 'saves';
-
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VER);
-    req.onupgradeneeded = e => e.target.result.createObjectStore(STORE, { keyPath: 'slot' });
-    req.onsuccess = e => resolve(e.target.result);
-    req.onerror   = e => reject(e.target.error);
-  });
-}
+const SAVE_VERSION = 2;
+const SLOT_KEY = (slot) => `simsclone_save_v2_${slot}`;
+const SLOTS = 3;
 
 export class SaveLoad {
+  /** @param {object} game  Game instance (root reference) */
   constructor(game) {
     this._game = game;
   }
 
-  async save(slot = 1) {
+  // ── Save ────────────────────────────────────────────────────────────────
+
+  save(slot = 0) {
     try {
-      const db   = await openDB();
-      const data = { slot, ts: Date.now(), state: this._game.serialise() };
-      const tx   = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(data);
-      await new Promise(r => { tx.oncomplete = r; });
-      Logger.info(`[Save] Slot ${slot} saved`);
+      const g = this._game;
+      const timestamp = Date.now();
+      const data = {
+        _version:      SAVE_VERSION,
+        slot,
+        timestamp,
+        householdName: g.householdName ?? 'The Household',
+        budget:        g.budgetSystem?.serialise()        ?? {},
+        clock:         g.gameClock?.serialise()           ?? {},
+        sims:          (g.sims ?? []).map(s => s.serialise?.() ?? {}),
+        world:         g.world?.serialise?.()             ?? {},
+        walls:         g.wallManager?.serialise()         ?? {},
+        furniture:     g.world?.serialiseFurniture?.()    ?? [],
+        careers:       g.careerSystem?.serialise()        ?? {},
+        relationships: g.relationshipGraph?.serialise?.() ?? {},
+        memories:      g.memorySystem?.serialise?.()      ?? {},
+      };
+      const json = JSON.stringify(data);
+      localStorage.setItem(SLOT_KEY(slot), json);
+      bus.emit('save:completed', { slot, timestamp });
       return true;
     } catch (err) {
-      Logger.error(`[Save] ${err.message}`);
+      console.error('[SaveLoad] save failed', err);
+      bus.emit('save:failed', { slot, error: err.message });
       return false;
     }
   }
 
-  async load(slot = 1) {
+  // ── Load ────────────────────────────────────────────────────────────────
+
+  load(slot = 0) {
     try {
-      const db  = await openDB();
-      const tx  = db.transaction(STORE, 'readonly');
-      const req = tx.objectStore(STORE).get(slot);
-      const row = await new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = rej; });
-      if (!row) { Logger.warn(`[Load] No save in slot ${slot}`); return false; }
-      this._game.restore(row.state);
-      Logger.info(`[Load] Slot ${slot} restored (saved ${new Date(row.ts).toLocaleTimeString()})`);
+      const raw = localStorage.getItem(SLOT_KEY(slot));
+      if (!raw) throw new Error('No save data in slot ' + slot);
+      const data = JSON.parse(raw);
+      if (!data._version || data._version < SAVE_VERSION) {
+        throw new Error(`Save version mismatch: expected ${SAVE_VERSION}, got ${data._version}`);
+      }
+      const g = this._game;
+      g.householdName = data.householdName;
+      g.budgetSystem?.restore(data.budget);
+      g.gameClock?.restore(data.clock);
+      g.world?.restore?.(data.world);
+      g.wallManager?.restore(data.walls);
+      g.world?.restoreFurniture?.(data.furniture);
+      // Restore sims
+      if (Array.isArray(data.sims)) {
+        data.sims.forEach((sd, i) => g.sims?.[i]?.restore?.(sd));
+      }
+      g.careerSystem?.restore(data.careers);
+      g.relationshipGraph?.restore?.(data.relationships);
+      g.memorySystem?.restore?.(data.memories);
+      // Recompute rooms after walls are restored
+      g.roomDetector?.analyse();
+      bus.emit('load:completed', { slot });
       return true;
     } catch (err) {
-      Logger.error(`[Load] ${err.message}`);
+      console.error('[SaveLoad] load failed', err);
+      bus.emit('load:failed', { slot, error: err.message });
       return false;
     }
   }
 
-  async listSlots() {
-    const db  = await openDB();
-    const tx  = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).getAll();
-    return new Promise(res => { req.onsuccess = () => res(req.result); });
+  // ── Slot metadata ─────────────────────────────────────────────────────────
+
+  /** Returns array of { slot, empty, householdName, timestamp, simCount } */
+  slotList() {
+    return Array.from({ length: SLOTS }, (_, slot) => {
+      const raw = localStorage.getItem(SLOT_KEY(slot));
+      if (!raw) return { slot, empty: true };
+      try {
+        const d = JSON.parse(raw);
+        return {
+          slot,
+          empty:         false,
+          householdName: d.householdName ?? '?',
+          timestamp:     d.timestamp ?? 0,
+          simCount:      Array.isArray(d.sims) ? d.sims.length : 0,
+          day:           d.clock?.day ?? 1,
+        };
+      } catch { return { slot, empty: true }; }
+    });
+  }
+
+  deleteSlot(slot) {
+    localStorage.removeItem(SLOT_KEY(slot));
+    bus.emit('save:deleted', { slot });
+  }
+
+  hasSlot(slot) {
+    return !!localStorage.getItem(SLOT_KEY(slot));
+  }
+
+  // ── Auto-save ───────────────────────────────────────────────────────────
+
+  /** Auto-save every N real-time minutes to slot 0 (reserved). */
+  startAutoSave(intervalMinutes = 5) {
+    this.stopAutoSave();
+    this._autoSaveTimer = setInterval(() => {
+      this.save(0);
+      console.debug('[SaveLoad] auto-save slot 0');
+    }, intervalMinutes * 60 * 1000);
+  }
+
+  stopAutoSave() {
+    if (this._autoSaveTimer) {
+      clearInterval(this._autoSaveTimer);
+      this._autoSaveTimer = null;
+    }
   }
 }
