@@ -25,9 +25,18 @@ export class SaveLoad {
   constructor(game, adapter = new LocalStorageAdapter(SLOTS)) {
     this._game = game;
     this._adapter = adapter;
+    this._autoSaveTimer = null;
   }
 
   get adapter() { return this._adapter; }
+
+  async backendInfo() {
+    if (typeof this._adapter.diagnostics === 'function') return this._adapter.diagnostics();
+    return {
+      backend: this._adapter.constructor?.name ?? 'unknown',
+      sqlite: false,
+    };
+  }
 
   // ── Save ────────────────────────────────────────────────────────────────
 
@@ -107,8 +116,13 @@ export class SaveLoad {
   // ── Auto-save ───────────────────────────────────────────────────────────
 
   /** Auto-save every N real-time minutes to slot 0 (reserved). */
-  startAutoSave(intervalMinutes = 5) {
+  startAutoSave(intervalMinutes = 5, { immediate = true } = {}) {
     this.stopAutoSave();
+    if (immediate) {
+      void this.save(0).then(ok => {
+        if (ok) console.debug('[SaveLoad] initial auto-save slot 0');
+      });
+    }
     this._autoSaveTimer = setInterval(() => {
       void this.save(0).then(ok => {
         if (ok) console.debug('[SaveLoad] auto-save slot 0');
