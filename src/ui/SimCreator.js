@@ -30,6 +30,7 @@ export class SimCreator {
     this._simDefs     = [this._blankSim()];
     this._editIndex   = 0;
     this._step        = 'household';  // 'household' | 'sims' | 'confirm'
+    this._error       = '';
     this._render();
   }
 
@@ -58,6 +59,7 @@ export class SimCreator {
           <span class="sc-sep">›</span>
           <span class="sc-step${this._step==='confirm'?' active':''}">3 Confirm</span>
         </div>
+        ${this._error ? `<div style="margin:10px 22px 0;padding:8px 10px;border-radius:7px;background:rgba(180,40,40,.18);color:#ffb4b4;font-size:12px">${this._escape(this._error)}</div>` : ''}
         <div class="sc-body">${this._buildBody()}</div>
         <div class="sc-footer">${this._buildFooter()}</div>
       </div>`;
@@ -67,7 +69,7 @@ export class SimCreator {
     if (this._step === 'household') {
       return `
         <label class="sc-label">Household Name</label>
-        <input id="sc-household" class="sc-input" value="${this._household}" maxlength="32"/>
+        <input id="sc-household" class="sc-input" value="${this._escape(this._household)}" maxlength="32"/>
         <p style="color:#7a7974;font-size:12px;margin-top:8px">Name your family or group.</p>`;
     }
     if (this._step === 'sims') {
@@ -82,7 +84,7 @@ export class SimCreator {
       const hairCells = HAIR_COLORS.map(c =>
         `<button class="sc-swatch${sim.hairColor===c?' active':''}" data-type="hair" data-val="${c}" style="background:${c}"></button>`).join('');
       const tabs = this._simDefs.map((s,i) =>
-        `<button class="sc-simtab${i===this._editIndex?' active':''}" data-idx="${i}">${s.name}</button>`).join('');
+        `<button class="sc-simtab${i===this._editIndex?' active':''}" data-idx="${i}">${this._escape(s.name)}</button>`).join('');
 
       return `
         <div class="sc-simtabs">${tabs}
@@ -91,7 +93,7 @@ export class SimCreator {
         </div>
         <div class="sc-form">
           <label class="sc-label">Name</label>
-          <input id="sc-simname" class="sc-input" value="${sim.name}" maxlength="20"/>
+          <input id="sc-simname" class="sc-input" value="${this._escape(sim.name)}" maxlength="20"/>
           <label class="sc-label">Gender</label>
           <div class="sc-radio-row">
             ${GENDERS.map(g => `<button class="sc-radio${sim.gender===g?' active':''}" data-gender="${g}">${g}</button>`).join('')}
@@ -108,12 +110,12 @@ export class SimCreator {
       const cards = this._simDefs.map(s => `
         <div class="sc-confirm-card">
           <div class="sc-avatar" style="background:${s.skintone};border:3px solid ${s.hairColor}"></div>
-          <div><b>${s.name}</b> — ${s.gender.replace(/[^ -]/g,'').trim()}</div>
-          <div style="font-size:11px;color:#7a7974">${s.traits.join(', ') || 'No traits'}</div>
+          <div><b>${this._escape(s.name)}</b> — ${s.gender.replace(/[^ -]/g,'').trim()}</div>
+          <div style="font-size:11px;color:#7a7974">${this._escape(s.traits.join(', ') || 'No traits')}</div>
         </div>`).join('');
       return `
         <div style="text-align:center;margin-bottom:12px">
-          <b style="font-size:16px">${this._household}</b>
+          <b style="font-size:16px">${this._escape(this._household)}</b>
           <p style="color:#7a7974;font-size:12px;margin-top:4px">${this._simDefs.length} Sim${this._simDefs.length>1?'s':''}</p>
         </div>
         <div class="sc-confirm-grid">${cards}</div>`;
@@ -179,20 +181,32 @@ export class SimCreator {
   }
 
   _advance() {
+    this._error = '';
     if (this._step === 'household') this._step = 'sims';
     else if (this._step === 'sims') this._step = 'confirm';
     this._render();
   }
   _back() {
+    this._error = '';
     if (this._step === 'sims') this._step = 'household';
     else if (this._step === 'confirm') this._step = 'sims';
     this._render();
   }
   _finish() {
-    bus.emit('simcreator:done', {
-      householdName: this._household,
-      simDefs: this._simDefs,
-    });
-    this.hide();
+    try {
+      bus.emit('simcreator:done', {
+        householdName: this._household,
+        simDefs: this._simDefs,
+      });
+      this.hide();
+    } catch (err) {
+      console.error('[SimCreator] failed to start game', err);
+      this._error = err?.message ?? String(err);
+      this._render();
+    }
+  }
+
+  _escape(text) {
+    return String(text ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 }
