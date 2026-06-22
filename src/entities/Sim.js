@@ -128,7 +128,7 @@ export class Sim {
   }
 
   showBubble(text, duration = 1.5) {
-    const el = document.getElementById(`bubble-${this.id}`);
+    const el = globalThis.document?.getElementById?.(`bubble-${this.id}`);
     if (!el) return;
     el.textContent = text; el.style.opacity = '1';
     this._bubbleTimer = duration;
@@ -218,7 +218,7 @@ export class Sim {
 
   /** The Sim physically standing on (or essentially on) a cell, if any. */
   _blockerAt(x, z) {
-    const sims = window._game?.sims || [];
+    const sims = (globalThis.window?._game ?? globalThis._game)?.sims || [];
     return sims.find(s =>
       s !== this && !s._atWork && !s._outing &&
       Math.hypot(s.worldX - x, s.worldZ - z) < 0.55
@@ -229,7 +229,7 @@ export class Sim {
     if (this._bubbleTimer <= 0) return;
     this._bubbleTimer -= dt;
     if (this._bubbleTimer <= 0) {
-      const el = document.getElementById(`bubble-${this.id}`);
+      const el = globalThis.document?.getElementById?.(`bubble-${this.id}`);
       if (el) el.style.opacity = '0';
     }
   }
