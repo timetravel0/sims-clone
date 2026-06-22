@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
     "app": "node scripts/launch.mjs",
+    "headless": "node scripts/headless.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

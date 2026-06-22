@@ -82,6 +82,7 @@ export class SaveSlotPanel {
           </div>
         </div>`;
     }).join('');
+    const storage = await this._storageHTML();
 
     this._el.innerHTML = `
       <div class="ss-modal">
@@ -93,7 +94,7 @@ export class SaveSlotPanel {
             <button id="ss-close">✕</button>
           </div>
         </div>
-        <div class="ss-body">${slotCards}</div>
+        <div class="ss-body">${storage}${slotCards}</div>
         <div class="ss-footer" style="color:#5a5957;font-size:11px;padding:8px 16px">Auto-Save runs every 5 minutes to Slot 0.</div>
       </div>`;
 
@@ -134,6 +135,38 @@ export class SaveSlotPanel {
       b.addEventListener('click', async () => { if (confirm('Load this save? Unsaved progress will be lost.')) await this._sl.load(+b.dataset.slot); }));
     this._el.querySelectorAll('.ss-delete').forEach(b =>
       b.addEventListener('click', async () => { if (confirm('Delete this save?')) await this._sl.deleteSlot(+b.dataset.slot); }));
+    this._el.querySelector('#ss-db-open')?.addEventListener('click', async () => {
+      const adapter = this._sl.adapter;
+      if (!confirm('Use an existing SQLite file? Current in-memory slots will be replaced by that file.')) return;
+      await adapter.chooseFilesystemFile();
+      await this._render();
+    });
+    this._el.querySelector('#ss-db-saveas')?.addEventListener('click', async () => {
+      const adapter = this._sl.adapter;
+      await adapter.saveAsFilesystemFile();
+      await this._render();
+    });
+  }
+
+  async _storageHTML() {
+    const adapter = this._sl.adapter;
+    const info = await this._sl.backendInfo?.().catch(() => null);
+    const backend = info?.backend ?? adapter?.constructor?.name ?? 'unknown';
+    const storage = info?.storage ?? (info?.sqlite ? 'SQLite' : 'localStorage');
+    const visible = info?.visibleInProjectFolder ? 'visible filesystem file' : 'browser-private storage';
+    const fileName = info?.fileName ? ` · ${this._escape(info.fileName)}` : '';
+    const canFile = typeof adapter?.canUseFilesystemFile === 'function' && adapter.canUseFilesystemFile();
+    const buttons = canFile ? `
+      <button id="ss-db-open" title="Open an existing .sqlite/.db file and use it as the live database">Use .sqlite file</button>
+      <button id="ss-db-saveas" title="Create/export a visible .sqlite file and keep writing to it">Export/Switch to file</button>
+    ` : '';
+    return `
+      <div class="ss-storage">
+        <div>
+          <b>Database:</b> ${this._escape(backend)} · ${this._escape(storage)} · ${visible}${fileName}
+        </div>
+        <div class="ss-actions">${buttons}</div>
+      </div>`;
   }
 
   _formatDate(ts) {

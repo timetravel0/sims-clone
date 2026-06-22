@@ -1,6 +1,6 @@
 # Sims Clone — Documentazione Funzionale
 
-> Last updated: 2026-06-21
+> Last updated: 2026-06-22
 
 ## Cos'è
 
@@ -27,7 +27,10 @@ Ogni Sim ha **8 bisogni** che decadono nel tempo:
 | Comfort | Comfort fisico | Lento |
 | Room | Qualità dell'ambiente | Molto lento |
 
-Quando un bisogno scende sotto **25%** il planner AI lo considera critico.
+Quando fame, bladder o energia scendono in fascia critica, l'AI interrompe la
+normale pianificazione autonoma e cerca subito un oggetto utile. Gli altri
+comportamenti non essenziali vengono penalizzati finché il bisogno non risale;
+gli eventi di crisi sono loggati con cooldown per evitare spam analitico.
 
 ### Personalità (Big Five semplificato)
 
@@ -98,12 +101,13 @@ Le memorie hanno:
 
 ### Pipeline decisionale
 
-Ogni Sim decide autonomamente cosa fare tramite una pipeline a 4 livelli:
+Ogni Sim decide autonomamente cosa fare tramite una pipeline a 5 livelli:
 
-1. **UtilityAIPlanner** — sceglie l'affordance con punteggio più alto tra tutti gli oggetti e Sim vicini (raggio 8 tile)
-2. **NeedDrivenPlanner** — fallback se nessuna affordance supera la soglia minima: soddisfa direttamente il bisogno più critico
-3. **SocialAction fallback** — se il bisogno Social è molto basso, cerca un Sim vicino
-4. **IdleAction** — se non c'è nulla da fare, aspetta (1.5–3.5s in base a playful)
+1. **Critical need preemption** — fame, bladder o energia critici hanno priorità su tutto il comportamento autonomo
+2. **UtilityAIPlanner** — sceglie l'affordance con punteggio più alto tra tutti gli oggetti e Sim vicini (raggio 8 tile)
+3. **NeedDrivenPlanner** — fallback se nessuna affordance supera la soglia minima: soddisfa direttamente il bisogno più critico
+4. **SocialAction fallback** — se il bisogno Social è molto basso, cerca un Sim vicino
+5. **IdleAction** — se non c'è nulla da fare, aspetta (1.5–3.5s in base a playful)
 
 ### Scorer (UtilityAIPlanner)
 
@@ -114,6 +118,11 @@ Il punteggio di ogni affordance combina 6 fattori:
 4. Bias da esperienza (ExperientialBias — rinforzo appreso)
 5. Boost da obiettivo attivo (GoalSystem)
 6. Rumore contestuale (circadiano + mood, deterministico per Sim)
+
+Se fame, bladder o energia sono critici, le azioni che non aiutano quel bisogno
+ricevono una forte penalità. Questo evita casi osservati nei dati SQLite in cui
+i Sim continuavano a socializzare o vagare mentre fame/energia/bladder erano a
+zero.
 
 ### Obiettivi
 
@@ -171,6 +180,10 @@ completamento dell'azione; poi il Sim riprende l'autonomia.
 Gli oggetti possono essere **riservati** da un solo Sim alla volta
 (`world.reserveFurniture`). Se occupato, l'AI sceglie un'alternativa.
 
+Gli oggetti disponibili, i costi d'acquisto autonomo, gli skill source e la
+dotazione iniziale della casa sono configurati in `src/config/*`, non sparsi nei
+sistemi runtime.
+
 ---
 
 ## Social Simulation Core 2.0
@@ -202,40 +215,34 @@ isolamento, legame più forte, risentimento più alto. Esporta CSV/JSON.
 **Salvataggio.** Le dimensioni relazionali, la memoria e gli obiettivi di ogni
 Sim vengono salvati e ripristinati assieme al resto della partita.
 
+**Analytics persistente.** Gli eventi vengono mantenuti in memoria per la UI e
+appendati nel backend di persistenza. Con SQLite/OPFS il log contiene colonne
+normalizzate interrogabili per run, tick, tipo evento, attore/target e tipo di
+interazione; vengono salvati anche snapshot periodici delle relazioni.
+
+**Simulation Health.** La dashboard include una sezione di salute della
+simulazione che evidenzia crisi dei bisogni, visitatori bloccati, churn degli
+stati off-lot, tasso di accettazione sociale, quota di interazioni negative e
+righe social legacy. Questi indicatori sono pensati per trasformare i dati
+registrati in suggerimenti di tuning.
+
+## Popolazione esterna e visitatori
+
+Gli NPC esterni vivono anche quando non sono sul lotto: hanno uno stato off-lot
+(`home`, `work`, `socializing`, `travelling`, `unavailable`) che dura almeno un
+intervallo minimo prima di cambiare. Questo riduce passaggi troppo frequenti
+casa/lavoro/socialità.
+
+Quando un visitatore arriva, la casa sceglie il membro più adatto a rispondere
+alla porta in base a distanza, energia, personalità e relazione con il
+visitatore. Il visitatore può essere invitato, rifiutato o non ricevere risposta.
+Le visite hanno timeout di sicurezza e al termine l'NPC viene sempre riportato
+off-lot, evitando stati "visiting" permanenti nei salvataggi.
+
+La popolazione iniziale include piccoli seed relazionali: alcuni esterni sono
+già amici/familiari/conoscenti e un coworker parte con una leggera tensione.
+Questo rende più probabili anche confronti, scuse o riparazioni invece di sole
+interazioni positive.
+
 > Per gli esperimenti da console vedi “How to run a social experiment manually”
 > in `docs/TECHNICAL.md`.
-
-## Roadmap
-
-### Implementato ✅
-- **Social Simulation Core 2.0**: relazioni direzionali a 8 dimensioni,
-  10 nuove interazioni con requisiti/rifiuto/cooldown, InteractionContext,
-  ExperimentDashboard, logger con campi standardizzati ✅ NEW
-- Vista isometrica Three.js con ombre
-- Tilemap 16×16 con walkable mask
-- 8 bisogni con decay + barre UI
-- Pathfinding A*
-- Personalità Big Five + PersonalityDrift
-- UtilityAI a 6 layer + ExperientialBias
-- GoalSystem (3 goal max, scadenza, auto-completamento)
-- ContextualNoise (circadiano + mood)
-- SocialLearning (apprendimento osservazionale)
-- **MemorySystem** (40 entries, salience decay, biasWith) ✅ NEW
-- **EmotionEngine** (baseline + spike, 9 tipi) ✅ NEW
-- SimBrain fully wired (serialise/restore completo) ✅ NEW
-
-### Prossimi ⬜
-- GOAP Planner (pianificazione multi-step)
-- DialogueSystem (stati conversazionali)
-- SkillSystem (progressione da uso oggetti)
-- CareerSystem (lavoro, turni, stipendio)
-- SaveLoad JSON completo
-- Routine scheduling (agenda giornaliera)
-- UI emozionale (icone emozione sul Sim, tooltip memoria)
-
-### Piattaforma (docs/PLATFORM_ROADMAP.md)
-Stream tecnologici post-rimozione di Tauri (runtime: web app + Chrome, persistenza SQLite via sql.js/OPFS):
-- ✅ **Stream A — Decomposizione HTML/CSS**: CSS estratto in `src/styles/*.css`, `index.html` ridotto a shell di soli anchor. Nessun cambiamento funzionale.
-- ⬜ Stream B — Estrazione configurazione in `src/config/*`
-- ⬜ Stream C — Pipeline eventi & analytics (export CSV/JSON, confronto run)
-- ⬜ Stream D — Simulazione headless (runner JS senza rendering)

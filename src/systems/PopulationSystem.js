@@ -1,4 +1,5 @@
 import { bus } from '../core/EventBus.js';
+import { DEFAULT_EXTERNALS } from '../config/defaultPopulation.js';
 
 /**
  * PopulationSystem — separates the *people* who exist in the world from the
@@ -19,13 +20,6 @@ import { bus } from '../core/EventBus.js';
  */
 
 let _pid = 0;
-
-const DEFAULT_EXTERNALS = [
-  { name: 'Dana', color: 0xba68c8, role: 'neighbor', traits: { outgoing: 0.6, nice: 0.4 } },
-  { name: 'Eli',  color: 0x4db6ac, role: 'friend',   traits: { playful: 0.7, nice: 0.5 } },
-  { name: 'Mara', color: 0xffb74d, role: 'relative',  traits: { nice: 0.8, neurotic: 0.3 } },
-  { name: 'Vic',  color: 0x90a4ae, role: 'coworker', traits: { ambitious: 0.7, outgoing: -0.2 } },
-];
 
 function nextPersonId() {
   if (globalThis.crypto?.randomUUID) return `p_${globalThis.crypto.randomUUID()}`;
@@ -61,6 +55,8 @@ export class PopulationSystem {
       availability: def.availability ?? { from: 8, to: 22 },
       relationshipSeeds: def.relationshipSeeds ?? null,
       offLotState: def.offLotState ?? 'home',
+      offLotStateUntilTick: def.offLotStateUntilTick ?? 0,
+      lastOffLotTransitionTick: def.lastOffLotTransitionTick ?? 0,
       lastSeenAt: def.lastSeenAt ?? null,
       createdAt: def.createdAt ?? (this._game?.tick ?? 0),
       activeSimId: def.activeSimId ?? null,
@@ -83,12 +79,33 @@ export class PopulationSystem {
 
   _seedExternals() {
     for (const def of DEFAULT_EXTERNALS) this.createExternalPerson(def);
+    this.applyRelationshipSeeds();
   }
 
   // ── Public API ───────────────────────────────────────────────────────────
 
   createPerson(def)         { const r = this._person({ role: 'household', ...def }); bus.emit('population:created', { person: r }); return r; }
   createExternalPerson(def) { const r = this._person({ role: def.role ?? 'neighbor', ...def }); bus.emit('population:created', { person: r }); return r; }
+  applyRelationshipSeeds() {
+    const dyn = this._game?.socialDynamics;
+    if (!dyn?._apply) return;
+    const household = this.householdMembers();
+    for (const person of this.allPeople()) {
+      for (const seed of person.relationshipSeeds ?? []) {
+        const target = seed.personId
+          ? this.getPerson(seed.personId)
+          : household[seed.householdIndex ?? 0];
+        if (!target?.id || target.id === person.id) continue;
+        if (seed.ab && this._seedableRelation(dyn, person.id, target.id)) dyn._apply(person.id, target.id, seed.ab);
+        if (seed.ba && this._seedableRelation(dyn, target.id, person.id)) dyn._apply(target.id, person.id, seed.ba);
+      }
+    }
+  }
+
+  _seedableRelation(dyn, from, to) {
+    const dims = dyn.snapshot?.(from, to) ?? {};
+    return Object.values(dims).reduce((sum, value) => sum + Math.abs(Number(value) || 0), 0) < 1;
+  }
 
   allPeople()        { return [...this._people.values()]; }
   householdMembers() { return this.allPeople().filter(p => p.role === 'household'); }
@@ -109,6 +126,8 @@ export class PopulationSystem {
     if (!sim) return null;
     rec.activeSimId = sim.id;
     rec.offLotState = 'visiting';
+    rec.lastOffLotTransitionTick = this._game?.tick ?? 0;
+    rec.offLotStateUntilTick = (this._game?.tick ?? 0) + 90;
     rec.lastSeenAt = this._game?.tick ?? 0;
     this._active.add(personId);
     bus.emit('population:activated', { personId, simId: sim.id });
@@ -123,6 +142,8 @@ export class PopulationSystem {
     if (sim) this._game._despawnSim?.(sim);
     rec.activeSimId = null;
     rec.offLotState = 'home';
+    rec.lastOffLotTransitionTick = this._game?.tick ?? 0;
+    rec.offLotStateUntilTick = (this._game?.tick ?? 0) + 90;
     rec.lastSeenAt = this._game?.tick ?? 0;
     this._active.delete(personId);
     bus.emit('population:deactivated', { personId });
@@ -143,6 +164,7 @@ export class PopulationSystem {
     this._people.clear();
     this._active.clear();
     for (const p of data.people ?? []) this._person(p);
+    this._backfillDefaultSeeds();
     // Re-activate household members that are present in the live roster.
     for (const sim of this._game?.sims ?? []) {
       const rec = this._people.get(sim.id);
@@ -152,6 +174,15 @@ export class PopulationSystem {
     for (const p of this.allPeople()) {
       if (this._active.has(p.id)) continue;
       if (p.role !== 'household') { p.activeSimId = null; if (p.offLotState === 'visiting') p.offLotState = 'home'; }
+    }
+    this.applyRelationshipSeeds();
+  }
+
+  _backfillDefaultSeeds() {
+    const defaults = new Map(DEFAULT_EXTERNALS.map(d => [d.name, d]));
+    for (const person of this.allPeople()) {
+      if (person.relationshipSeeds || !defaults.has(person.name)) continue;
+      person.relationshipSeeds = defaults.get(person.name).relationshipSeeds ?? null;
     }
   }
 }

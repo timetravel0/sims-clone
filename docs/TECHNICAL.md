@@ -14,15 +14,15 @@ The project is a browser-based Three.js application using vanilla ES modules. Th
 |---|---|---|
 | Isometric rendering | Implemented | Three.js scene, camera, world grid and furniture rendering are active. |
 | Sims and needs | Implemented | Sims have needs, personality, mood, emotions, brain and action queue. |
-| Utility AI | Implemented | `UtilityAIPlanner` scores affordances from objects and from the `SocialDynamicsSystem.INTERACTIONS` catalogue. |
+| Utility AI | Implemented | `SimBrain` preempts critical physical needs before Utility AI; `UtilityAIPlanner` scores object/social affordances and suppresses non-essential actions under hunger/bladder/energy crisis. |
 | Smart Objects | Implemented | Furniture advertises actions through `getAffordancesFor(sim)`. |
 | Object exclusivity | Implemented | Furniture reservation and `inUse` state prevent concurrent use. |
-| Anti-overlap movement | Implemented | Tile reservations and occupancy checks prevent Sims from sharing a destination or occupied path cell. |
+| Anti-overlap movement | Implemented | Tile reservations and occupancy checks prevent Sims from sharing a destination or occupied path cell; blocked walks now reroute briefly and time out instead of freezing forever. |
 | Social interactions | Implemented | Social actions include context, consent, acceptance/rejection payoff and event emission. |
 | Social Dynamics 2.0 | Implemented | Directional 8-dimension relationships drive social affordances and dashboard explanations. |
 | Population model | Implemented | `PopulationSystem` separates household, active Sims, active visitors and off-lot people. |
-| Visitor lifecycle | Implemented | `VisitorSystem` schedules external visitors, doorbell, accept/reject/no-answer, visiting and return-home flow. |
-| Off-lot simulation | Implemented, lightweight | External people change off-lot state, drift relationships and can generate visit intent. |
+| Visitor lifecycle | Implemented | `VisitorSystem` schedules external visitors, doorbell, household responder selection, accept/reject/no-answer, visiting, hard timeout and return-home cleanup. |
+| Off-lot simulation | Implemented, lightweight | External people change off-lot state with minimum state durations, drift relationships and can generate visit intent. |
 | Relationship graph | Implemented | Directed typed edges for friendship, rivalry, romance and kinship/family are active. |
 | Romance/jealousy | Implemented | Positive interactions and compatibility can create romance; jealousy can be triggered. |
 | Episodic memory | Implemented | Global memory and per-Sim autobiographical memory both exist and are persisted. |
@@ -35,11 +35,11 @@ The project is a browser-based Three.js application using vanilla ES modules. Th
 | Weather system | Implemented, limited UI | `WeatherSystem` updates weather state and need deltas; no dedicated weather panel is mounted. |
 | Mood engine | Implemented | `MoodEngine` computes additional mood labels and effects. |
 | Experiment logger | Implemented | Logs social, visitor and off-lot events; CSV/JSON export and dashboard views are active. |
-| Persistence adapter | Implemented | `SaveLoad` uses `LocalStorageAdapter` by default; SQLite is stubbed/documented for a future backend. |
+| Persistence adapter | Implemented | Browser runtime uses `SqlJsAdapter` on OPFS when available and falls back to `LocalStorageAdapter`. |
 | Save/load | Implemented | Multi-slot panel is mounted; full game state is persisted through `Game.serialise()`. |
 | Build mode | Implemented | Furniture, wall/door tools, room overlay and budget are wired into runtime. |
 | Sim creator | Implemented | Mounted at startup when no save is selected. |
-| Headless research mode | Missing | The logic still depends on browser/runtime composition and has no CLI runner. |
+| Headless research mode | Implemented, separate model | `npm run headless` runs a pure JS social simulation without Three.js/DOM and writes SQLite batch output. |
 | Family model | Partial | Household membership exists; deeper family, birth/death and inheritance rules are not implemented. |
 
 ## Main Folders
@@ -54,6 +54,8 @@ The project is a browser-based Three.js application using vanilla ES modules. Th
 | `src/ui` | Runtime panels and dashboards. |
 | `src/styles` | Extracted CSS, one file per concern (see "Frontend shell"). |
 | `src/persistence` | Storage adapter abstraction, sql.js/OPFS backend and localStorage fallback. |
+| `src/config` | Extracted static definitions for scenarios, population, objects, interactions and careers. |
+| `src/headless` | Pure JS headless simulation model used by the CLI batch runner. |
 
 ## Runtime Loop
 
@@ -169,11 +171,15 @@ off_lot → arriving → ringing_doorbell → waiting_response
 
 Visitor decisions consider relationship affinity, trust, affection, resentment, fear, hour, host energy, personality and visit reason. Door/entry points are semantically tied to doors, but because the current map has no real outside strip, visitors spawn and navigate via the nearest walkable porch/inside point and return home virtually after leaving.
 
-`OffLotSimulationSystem` updates external people periodically, changing `offLotState`, applying lightweight relationship drift and emitting `offlot:visitIntent` events that can schedule visits.
+The door responder is selected from available household Sims, not fixed to the initially requested host. The selected responder is logged as `respondingHostId`/`hostId` for the visit. Active visits have a hard timeout and always deactivate the external person on forced end, preventing saved `offLotState: visiting` records from staying active forever. Visitor need decay is slower than household decay while they are guests; low hunger, bladder or energy pushes them to leave instead of producing household-level crisis loops.
+
+`OffLotSimulationSystem` updates external people periodically, changing `offLotState`, applying lightweight relationship drift and emitting `offlot:visitIntent` events that can schedule visits. Each person carries `offLotStateUntilTick` and `lastOffLotTransitionTick`; state transitions are blocked until the minimum duration for the current state expires, reducing home/work/socializing churn.
+
+Default external people can define `relationshipSeeds` in `src/config/defaultPopulation.js`. `PopulationSystem.applyRelationshipSeeds()` applies these only to neutral relations, so new games and old neutral saves receive an initial outside network without compounding values on every load.
 
 ## Persistence
 
-`SaveLoad` delegates storage to a `PersistenceAdapter`. The default backend is `src/persistence/SqlJsAdapter.js` — real SQLite compiled to WebAssembly (sql.js), persisted to an OPFS file. Where OPFS is unavailable it falls back to `src/persistence/LocalStorageAdapter.js`, the only backend that touches `localStorage`. See `docs/PERSISTENCE.md`.
+`SaveLoad` delegates storage to a `PersistenceAdapter`. The app default is `src/persistence/SqlJsAdapter.js` — real SQLite compiled to WebAssembly (sql.js). Under `npm run app`, `scripts/launch.mjs` also starts a local filesystem persistence endpoint that writes `.data/sims-clone.sqlite` automatically. When that endpoint is unavailable, the adapter can persist to browser-private OPFS or a user-selected `.sqlite`/`.db` file via Chrome File System Access API. If sql.js fails entirely it falls back to `src/persistence/LocalStorageAdapter.js`, the only backend that touches `localStorage`.
 
 `Game.serialise()` persists:
 
@@ -192,7 +198,9 @@ Visitor decisions consider relationship affinity, trust, affection, resentment, 
 - age/career/weather/skills;
 - budget and walls.
 
-`ExperimentLogger` keeps the in-memory log and also performs a best-effort append to the active persistence adapter when available. With `LocalStorageAdapter` this creates an append-style browser event log; a future SQLite adapter can map the same calls to `event_log` and `visitor_events`.
+`ExperimentLogger` keeps the in-memory log and also performs a best-effort append to the active persistence adapter when available. `SqlJsAdapter` stores normalized event columns plus the full JSON payload; `LocalStorageAdapter` keeps compatible JSON arrays. Every few simulated minutes, `ExperimentLogger` persists directional relationship snapshots so long runs can be queried without reconstructing every relationship from events.
+
+Legacy social payloads are normalized as `social:legacy`; payload fields named `type` can no longer overwrite the logger's canonical event type. This keeps SQLite `event_type` stable for dashboards and post-run analysis.
 
 ## Experiment Logger and Dashboard
 
@@ -212,6 +220,10 @@ window._game.experimentLogger.relationshipTimeline([a, b])
 window._game.experimentLogger.summaryByVisitor()
 window._game.experimentLogger.summaryByVisitReason()
 window._game.experimentLogger.externalSocialityMetrics()
+window._game.experimentLogger.simulationHealthMetrics()
+await window._game.experimentLogger.queryPersistedEvents({ type: 'social:interaction' })
+await window._game.experimentLogger.persistedRunComparison()
+await window._game.experimentLogger.persistedRelationshipSnapshots()
 window._game.experimentLogger.downloadCSV()
 window._game.experimentLogger.downloadJSON()
 ```
@@ -248,6 +260,23 @@ g.experimentLogger.downloadJSON();
 ```
 
 Tip: save to a manual slot, run an intervention, then load to compare. `socialDynamics`, population, visitor history, brain memory and goals are preserved.
+
+## Headless Batch Runs
+
+`npm run headless` runs the pure JS model in `src/headless/HeadlessSimulation.js`.
+It does not instantiate `Game`, Three.js, DOM UI or pathfinding meshes. It uses
+the same extracted population and interaction configuration, emits social and
+visitor experiment rows, stores periodic relationship snapshots, and writes a
+SQLite file through `sql.js`.
+
+```bash
+npm run headless -- --runs=5 --ticks=5000 --seed=42 --out=headless-runs
+```
+
+Outputs:
+
+- `headless-runs/sims-headless.sqlite`;
+- `headless-runs/latest-summary.json`.
 
 ## Missing Work
 

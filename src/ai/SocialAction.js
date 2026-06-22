@@ -170,6 +170,7 @@ export class SocialAction extends Action {
   /** Base acceptance from energy / familiarity / personality (dynamics layered on top). */
   _baseAcceptance() {
     const rel = socialManager.getRelation(this._simB.id, this._simA.id);
+    const dynRel = window._game?.socialDynamics?.snapshot?.(this._simB.id, this._simA.id) ?? {};
     const p = this._simB.personality;
     const energy = this._simB.needs.get('energy');
     let score = 0;
@@ -178,6 +179,11 @@ export class SocialAction extends Action {
     score += p.nice * 16;
     score += p.outgoing * 10;
     score -= Math.max(0, p.neurotic) * 8;
+    if (energy < 25) score -= 8;
+    if ((dynRel.familiarity ?? rel.familiarity ?? 0) < 15 && ['joke', 'compliment', 'hug'].includes(this._type)) score -= 10;
+    if (this._type === 'flirt') score -= (dynRel.attraction ?? 0) < 15 ? 24 : 8;
+    if (this._type === 'ask_help' && (dynRel.trust ?? 0) < 10) score -= 8;
+    if ((dynRel.resentment ?? 0) > 20 && !['apologize', 'forgive', 'confront', 'avoid'].includes(this._type)) score -= 12;
     return score;
   }
 

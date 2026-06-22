@@ -1,6 +1,11 @@
 import { bus } from '../core/EventBus.js';
 
 const NEGATIVE_TYPES = new Set(['argue', 'insult', 'confront', 'avoid', 'reject_flirt']);
+const SOCIAL_INTERACTION_TYPES = new Set([
+  'chat', 'joke', 'compliment', 'hug', 'argue', 'insult', 'apologize', 'forgive',
+  'confront', 'avoid', 'ask_help', 'offer_help', 'comfort', 'gossip', 'flirt',
+  'reject_flirt',
+]);
 
 const EVENTS = [
   'social:interaction',
@@ -36,6 +41,8 @@ export class ExperimentLogger {
     this._tick = 0;
     this._events = [];
     this._runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    this._relSnapshotTimer = 0;
+    this._relSnapshotInterval = 300;
     this._unsubscribers = EVENTS.map(type =>
       bus.on(type, payload => this.record(type, payload))
     );
@@ -44,6 +51,11 @@ export class ExperimentLogger {
   update(dt) {
     this._tick += 1;
     this._lastDt = dt;
+    this._relSnapshotTimer += dt;
+    if (this._relSnapshotTimer >= this._relSnapshotInterval) {
+      this._relSnapshotTimer = 0;
+      this._persistRelationshipSnapshot();
+    }
   }
 
   record(type, payload = {}) {
@@ -75,6 +87,17 @@ export class ExperimentLogger {
         dominantMotive:     payload.dominantMotive ?? '',
         activeGoal:         payload.activeGoal ?? '',
         delta:              payload.delta ?? 0,
+      };
+    } else if (type === 'social:update') {
+      row = {
+        ...base,
+        type: 'social:legacy',
+        eventId: payload.eventId ?? `sl_${this._tick}_${this._events.length}`,
+        actorId: payload.idA ?? payload.actorId ?? '',
+        targetId: payload.idB ?? payload.targetId ?? '',
+        interactionType: SOCIAL_INTERACTION_TYPES.has(payload.type) ? payload.type : '',
+        score: payload.score ?? '',
+        delta: payload.delta ?? '',
       };
     } else if (type.startsWith('visitor:')) {
       row = {
@@ -134,8 +157,19 @@ export class ExperimentLogger {
         dominant: payload.dominant ?? '',
         mood: payload.self?.mood ?? '',
       };
+    } else if (SOCIAL_INTERACTION_TYPES.has(type) || SOCIAL_INTERACTION_TYPES.has(payload.type)) {
+      row = {
+        ...base,
+        type: 'social:legacy',
+        eventId: payload.eventId ?? `sl_${this._tick}_${this._events.length}`,
+        actorId: payload.idA ?? payload.actorId ?? '',
+        targetId: payload.idB ?? payload.targetId ?? '',
+        interactionType: SOCIAL_INTERACTION_TYPES.has(type) ? type : payload.type,
+        score: payload.score ?? '',
+        delta: payload.delta ?? '',
+      };
     } else {
-      row = { ...base, ...this._sanitize(payload) };
+      row = { ...this._sanitize(payload), ...base };
     }
     this._events.push(row);
     if (this._events.length > 20000) this._events.shift();
@@ -149,12 +183,49 @@ export class ExperimentLogger {
     } catch { /* event persistence is best-effort */ }
   }
 
+  async queryPersistedEvents(filters = {}) {
+    return this._game?._saveLoad?._adapter?.queryEvents?.(this._runId, filters) ?? [];
+  }
+
+  async persistedRunComparison(runIds = null) {
+    const adapter = this._game?._saveLoad?._adapter;
+    if (!adapter?.compareRuns) return [];
+    const ids = runIds ?? await adapter.listRunIds?.() ?? [this._runId];
+    return adapter.compareRuns(ids);
+  }
+
+  async persistedRelationshipSnapshots(filters = {}) {
+    return this._game?._saveLoad?._adapter?.queryRelationshipSnapshots?.(this._runId, filters) ?? [];
+  }
+
+  _persistRelationshipSnapshot() {
+    try {
+      const adapter = this._game?._saveLoad?._adapter;
+      if (!adapter?.saveRelationshipSnapshot || !this._game?.socialDynamics) return;
+      const people = this._game.population?.allPeople?.() ?? this._game.sims ?? [];
+      const rows = [];
+      for (const from of people) {
+        for (const to of people) {
+          if (!from?.id || !to?.id || from.id === to.id) continue;
+          rows.push({
+            fromId: from.id,
+            toId: to.id,
+            affinity: Math.round(this._game.socialDynamics.affinity(from.id, to.id)),
+            dims: this._game.socialDynamics.snapshot(from.id, to.id),
+          });
+        }
+      }
+      if (rows.length) adapter.saveRelationshipSnapshot(this._runId, this._tick, rows);
+    } catch { /* relationship snapshots are best-effort */ }
+  }
+
   // ── Analysis helpers (Social Core 2.0) ──────────────────────────────────────
 
   _socialRows() { return this._events.filter(e => e.type === 'social:interaction'); }
   _visitorRows() { return this._events.filter(e => e.type?.startsWith?.('visitor:')); }
   _offLotRows() { return this._events.filter(e => e.type?.startsWith?.('offlot:')); }
   _wellbeingRows() { return this._events.filter(e => e.type === 'wellbeing:evaluated'); }
+  _needRows() { return this._events.filter(e => e.type === 'need:crisis'); }
 
   /** Per-Sim aggregate: interactions initiated, acceptance rate, motive mix. */
   summaryBySim() {
@@ -266,6 +337,46 @@ export class ExperimentLogger {
     };
   }
 
+  simulationHealthMetrics() {
+    const needs = this._needRows();
+    const byNeed = {};
+    const bySim = {};
+    for (const e of needs) {
+      if (e.need) byNeed[e.need] = (byNeed[e.need] ?? 0) + 1;
+      const key = e.simName || e.simId || 'unknown';
+      bySim[key] = (bySim[key] ?? 0) + 1;
+    }
+    const visits = this.activeVisitorDiagnostics();
+    const offlot = this._offLotRows().filter(e => e.type === 'offlot:stateChanged');
+    const social = this._socialRows();
+    const accepted = social.filter(e => e.accepted).length;
+    const negative = social.filter(e => NEGATIVE_TYPES.has(e.interactionType)).length;
+    return {
+      needCrises: needs.length,
+      needCrisesByNeed: byNeed,
+      topNeedCrisisSim: Object.entries(bySim).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '',
+      activeVisitors: visits.active,
+      stuckVisitors: visits.stuck,
+      offLotTransitions: offlot.length,
+      offLotTransitionsPerPerson: this._game?.population?.offLotPeople?.().length
+        ? +(offlot.length / this._game.population.offLotPeople().length).toFixed(1)
+        : 0,
+      socialAcceptanceRate: social.length ? +(accepted / social.length).toFixed(2) : 0,
+      negativeSocialRate: social.length ? +(negative / social.length).toFixed(2) : 0,
+      legacySocialEvents: this._events.filter(e => e.type === 'social:legacy').length,
+    };
+  }
+
+  activeVisitorDiagnostics() {
+    const active = this._game?.visitorSystem?.activeVisits?.() ?? [];
+    const tick = this._game?.tick ?? 0;
+    const stuck = active.filter(v =>
+      (v.leaveByTick && tick > v.leaveByTick + 120) ||
+      (v.arrivalTick && tick - v.arrivalTick > 540)
+    );
+    return { active: active.length, stuck: stuck.length };
+  }
+
   clear() {
     this._events = [];
   }
@@ -279,6 +390,7 @@ export class ExperimentLogger {
     return {
       tick: this._tick,
       runId: this._runId,
+      relSnapshotTimer: this._relSnapshotTimer,
       events: this._events,
     };
   }
@@ -286,6 +398,7 @@ export class ExperimentLogger {
   restore(data = {}) {
     this._tick = data.tick ?? 0;
     this._runId = data.runId ?? this._runId;
+    this._relSnapshotTimer = data.relSnapshotTimer ?? 0;
     this._events = Array.isArray(data.events) ? data.events.slice(-20000) : [];
   }
 

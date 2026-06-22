@@ -54,6 +54,8 @@ export class ExperimentDashboard {
         </div>
       </div>
       <div class="exp-metrics">${this._metricsHTML()}</div>
+      <div class="exp-section-title">Simulation health</div>
+      <div class="exp-population">${this._healthHTML()}</div>
       <div class="exp-section-title">Population & visitors</div>
       <div class="exp-population">${this._populationHTML()}</div>
       <div class="exp-section-title">Relationship matrix (row → col affinity)</div>
@@ -143,6 +145,25 @@ export class ExperimentDashboard {
       <div class="exp-summary">Last doorbell: ${last ? `${person(last.personId)} for ${person(last.hostId)} · ${last.reason}` : '—'}</div>
       <div class="exp-summary">Active: ${active.length ? active.map(v => `${person(v.personId)} (${v.state})`).join(', ') : '—'}</div>
       <div class="exp-summary">Recent visits: ${history.length ? history.map(v => `${person(v.personId)} → ${v.outcome}`).join(', ') : '—'}</div>`;
+  }
+
+  _healthHTML() {
+    const h = this._game.experimentLogger?.simulationHealthMetrics?.() ?? {};
+    const pct = v => `${Math.round((v ?? 0) * 100)}%`;
+    const needs = Object.entries(h.needCrisesByNeed ?? {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k}: ${v}`).join(', ') || '—';
+    return `
+      <div class="exp-metrics">
+        <div class="exp-metric"><b>${h.needCrises ?? 0}</b><span>need crises</span></div>
+        <div class="exp-metric"><b>${h.stuckVisitors ?? 0}</b><span>stuck visitors</span></div>
+        <div class="exp-metric"><b>${h.offLotTransitionsPerPerson ?? 0}</b><span>off-lot churn / person</span></div>
+        <div class="exp-metric"><b>${pct(h.socialAcceptanceRate)}</b><span>social acceptance</span></div>
+        <div class="exp-metric"><b>${pct(h.negativeSocialRate)}</b><span>negative social</span></div>
+        <div class="exp-metric"><b>${h.legacySocialEvents ?? 0}</b><span>legacy social rows</span></div>
+      </div>
+      <div class="exp-summary">Need mix: ${needs}</div>
+      <div class="exp-summary">Top crisis Sim: ${h.topNeedCrisisSim || '—'}</div>`;
   }
 
   // ── Matrix ──────────────────────────────────────────────────────────────────

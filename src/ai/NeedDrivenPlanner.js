@@ -1,6 +1,7 @@
 import { WalkToAction, UseObjectAction } from './Action.js';
 import { memorySystem }                  from '../systems/MemorySystem.js';
 import { Logger }                        from '../utils/Logger.js';
+import { bus }                           from '../core/EventBus.js';
 
 const NEED_EMOJI = {
   hunger:  '🍔 Hungry',
@@ -25,40 +26,43 @@ const THRESHOLD = {
   room:    20,
 };
 
+const CRISIS_THRESHOLD = 15;
+const CRISIS_COOLDOWN_TICKS = 180;
+
 export class NeedDrivenPlanner {
   constructor(sim) {
     this._sim = sim;
     this.lastNeedLabel = '';
+    this._lastCrisisTickByNeed = new Map();
   }
 
   plan() {
     // Find the most urgent need below its threshold
-    let worstKey = null;
-    let worstVal = Infinity;
-    const vals = this._sim.needs.getAll();
-    for (const [key, threshold] of Object.entries(THRESHOLD)) {
-      const val = vals[key] ?? 100;
-      if (val < threshold && val < worstVal) { worstVal = val; worstKey = key; }
-    }
+    const { key: worstKey, value: worstVal } = this._mostUrgentNeed();
     if (!worstKey) return [];
 
-    // Emit need:crisis when critically low
-    if (worstVal < 15) {
-      this._emitCrisis(worstKey, worstVal);
-    }
+    return this.planFor(worstKey);
+  }
+
+  planFor(needKey, opts = {}) {
+    if (!needKey) return [];
+    const value = this._sim.needs.get(needKey);
+    if (!opts.force && value >= (THRESHOLD[needKey] ?? 100)) return [];
+
+    if (value < CRISIS_THRESHOLD) this._emitCrisis(needKey, value);
 
     // Find furniture — with memory bias:
     // If this Sim has a negative memory associated with a piece of furniture
     // (e.g., broke down there), try alternate furniture for the same need.
-    const furniture = this._chooseFurniture(worstKey);
-    if (!furniture) { Logger.warn(`[Planner] No furniture for: ${worstKey}`); return []; }
+    const furniture = this._chooseFurniture(needKey);
+    if (!furniture) { Logger.warn(`[Planner] No furniture for: ${needKey}`); return []; }
     if (!this._sim._world.reserveFurniture(furniture, this._sim)) {
-      Logger.warn(`[Planner] Furniture busy for: ${worstKey}`);
+      Logger.warn(`[Planner] Furniture busy for: ${needKey}`);
       return [];
     }
 
-    this.lastNeedLabel = NEED_EMOJI[worstKey] || worstKey;
-    Logger.info(`[Planner] "${worstKey}" (${Math.round(worstVal)}) → ${furniture.id}`);
+    this.lastNeedLabel = NEED_EMOJI[needKey] || needKey;
+    Logger.info(`[Planner] "${needKey}" (${Math.round(value)}) → ${furniture.id}`);
 
     const targetGz = furniture.gz + 1 < 16 ? furniture.gz + 1 : furniture.gz - 1;
     return [
@@ -67,10 +71,29 @@ export class NeedDrivenPlanner {
     ];
   }
 
+  _mostUrgentNeed() {
+    let worstKey = null;
+    let worstVal = Infinity;
+    const vals = this._sim.needs.getAll();
+    for (const [key, threshold] of Object.entries(THRESHOLD)) {
+      const val = vals[key] ?? 100;
+      if (val < threshold && val < worstVal) { worstVal = val; worstKey = key; }
+    }
+    return { key: worstKey, value: worstVal };
+  }
+
   _emitCrisis(need, value) {
-    window.dispatchEvent(new CustomEvent('sim:need:crisis', {
-      detail: { simId: this._sim.id, need, value }
-    }));
+    const tick = globalThis.window?._game?.tick ?? 0;
+    const key = `${this._sim.id}:${need}`;
+    const last = this._lastCrisisTickByNeed.get(key) ?? -Infinity;
+    if (tick - last < CRISIS_COOLDOWN_TICKS) return;
+    this._lastCrisisTickByNeed.set(key, tick);
+    bus.emit('need:crisis', {
+      simId: this._sim.id,
+      simName: this._sim.name,
+      need,
+      value,
+    });
   }
 
   /**

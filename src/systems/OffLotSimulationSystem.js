@@ -1,6 +1,13 @@
 import { bus } from '../core/EventBus.js';
 
 const STATES = ['home', 'work', 'socializing', 'travelling', 'unavailable'];
+const MIN_STATE_TICKS = {
+  home: 180,
+  work: 360,
+  socializing: 180,
+  travelling: 90,
+  unavailable: 240,
+};
 
 export class OffLotSimulationSystem {
   constructor(game) {
@@ -29,11 +36,14 @@ export class OffLotSimulationSystem {
     const prev = person.offLotState ?? 'home';
     const hour = this._game.clock?.hour ?? 12;
     let next = prev;
-    if (hour >= 8 && hour <= 17 && ['coworker', 'service'].includes(person.role)) next = 'work';
-    else if (Math.random() < 0.18) next = STATES[Math.floor(Math.random() * STATES.length)];
-    else if (prev === 'work' && (hour < 8 || hour > 18)) next = 'home';
+    const canTransition = this._canTransition(person);
+    if (canTransition && hour >= 8 && hour <= 17 && ['coworker', 'service'].includes(person.role)) next = 'work';
+    else if (canTransition && Math.random() < 0.10) next = STATES[Math.floor(Math.random() * STATES.length)];
+    else if (canTransition && prev === 'work' && (hour < 8 || hour > 18)) next = 'home';
     if (next !== prev) {
       person.offLotState = next;
+      person.lastOffLotTransitionTick = this._game.tick ?? 0;
+      person.offLotStateUntilTick = (this._game.tick ?? 0) + (MIN_STATE_TICKS[next] ?? 180);
       bus.emit('offlot:stateChanged', { personId: person.id, personName: person.name, previous: prev, state: next });
     }
 
@@ -49,6 +59,10 @@ export class OffLotSimulationSystem {
         state: person.offLotState,
       });
     }
+  }
+
+  _canTransition(person) {
+    return (this._game.tick ?? 0) >= (person.offLotStateUntilTick ?? 0);
   }
 
   _relationshipDrift(person) {

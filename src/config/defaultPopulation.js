@@ -23,8 +23,28 @@ export const STARTER_CAREERS = ['scientist', 'chef', 'artist', 'programmer', 'at
 
 // Off-lot people seeded by PopulationSystem (visitor/townie archetypes).
 export const DEFAULT_EXTERNALS = [
-  { name: 'Dana', color: 0xba68c8, role: 'neighbor', traits: { outgoing: 0.6, nice: 0.4 } },
-  { name: 'Eli',  color: 0x4db6ac, role: 'friend',   traits: { playful: 0.7, nice: 0.5 } },
-  { name: 'Mara', color: 0xffb74d, role: 'relative',  traits: { nice: 0.8, neurotic: 0.3 } },
-  { name: 'Vic',  color: 0x90a4ae, role: 'coworker', traits: { ambitious: 0.7, outgoing: -0.2 } },
+  {
+    name: 'Dana', color: 0xba68c8, role: 'neighbor', traits: { outgoing: 0.6, nice: 0.4 },
+    relationshipSeeds: [
+      { householdIndex: 0, ab: { familiarity: 12, affection: 5 }, ba: { familiarity: 10, affection: 4 } },
+    ],
+  },
+  {
+    name: 'Eli', color: 0x4db6ac, role: 'friend', traits: { playful: 0.7, nice: 0.5 },
+    relationshipSeeds: [
+      { householdIndex: 0, ab: { familiarity: 28, affection: 18, trust: 12 }, ba: { familiarity: 24, affection: 16, trust: 10 } },
+    ],
+  },
+  {
+    name: 'Mara', color: 0xffb74d, role: 'relative', traits: { nice: 0.8, neurotic: 0.3 },
+    relationshipSeeds: [
+      { householdIndex: 1, ab: { familiarity: 35, affection: 20, trust: 16 }, ba: { familiarity: 32, affection: 18, trust: 14 } },
+    ],
+  },
+  {
+    name: 'Vic', color: 0x90a4ae, role: 'coworker', traits: { ambitious: 0.7, outgoing: -0.2 },
+    relationshipSeeds: [
+      { householdIndex: 0, ab: { familiarity: 18, respect: 12, resentment: 14 }, ba: { familiarity: 16, respect: 8, resentment: 10 } },
+    ],
+  },
 ];

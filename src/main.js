@@ -6,33 +6,38 @@ import { Game } from './core/Game.js';
 window._THREE = THREE;
 
 // The app runs as a web app (served by Vite, opened in Chrome via `npm run app`).
-// Persistence is real SQLite in the browser through sql.js (WASM) on OPFS;
-// if OPFS is unavailable we fall back to LocalStorageAdapter (see SaveLoad).
+// Persistence is real SQLite through sql.js. Under `npm run app`, a local Node
+// companion writes the DB to .data/sims-clone.sqlite automatically; otherwise
+// SqlJsAdapter falls back to OPFS / File System Access / memory as available.
 async function resolvePersistenceAdapter() {
   if (window.__SIMS_PERSISTENCE_ADAPTER__) return window.__SIMS_PERSISTENCE_ADAPTER__;
   try {
     const { SqlJsAdapter } = await import('./persistence/SqlJsAdapter.js');
-    if (SqlJsAdapter.available()) {
-      const adapter = await new SqlJsAdapter().connect();
-      window.__SIMS_PERSISTENCE_ADAPTER__ = adapter;
-      console.info('[Persistence] SQLite (sql.js + OPFS) enabled. Use await window._simsPersistenceInfo() for diagnostics.');
-      return adapter;
-    }
+    const adapter = await new SqlJsAdapter().connect();
+    window.__SIMS_PERSISTENCE_ADAPTER__ = adapter;
+    console.info('[Persistence] SQLite (sql.js) enabled. Use await window._simsPersistenceInfo() for diagnostics.');
+    return adapter;
   } catch (err) {
     console.error('[Persistence] sql.js init failed; falling back to LocalStorageAdapter.', err);
   }
   return null;
 }
 
-const container = document.getElementById('canvas-container');
-const persistenceAdapter = await resolvePersistenceAdapter();
+async function boot() {
+  const container = document.getElementById('canvas-container');
+  const persistenceAdapter = await resolvePersistenceAdapter();
 
-window._simsPersistence = persistenceAdapter ?? null;
-window._simsPersistenceInfo = async () => {
-  const sl = window._game?._saveLoad;
-  if (sl?.backendInfo) return sl.backendInfo();
-  if (persistenceAdapter?.diagnostics) return persistenceAdapter.diagnostics();
-  return { backend: 'LocalStorageAdapter', sqlite: false };
-};
+  window._simsPersistence = persistenceAdapter ?? null;
+  window._simsPersistenceInfo = async () => {
+    const sl = window._game?._saveLoad;
+    if (sl?.backendInfo) return sl.backendInfo();
+    if (persistenceAdapter?.diagnostics) return persistenceAdapter.diagnostics();
+    return { backend: 'LocalStorageAdapter', sqlite: false };
+  };
 
-window._game = new Game(container, { persistenceAdapter });
+  window._game = new Game(container, { persistenceAdapter });
+}
+
+boot().catch(err => {
+  console.error('[Main] boot failed', err);
+});

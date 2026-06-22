@@ -274,3 +274,15 @@
 .ss-label { color:#eee; font-weight:600; }
 .ss-info  { font-size:11px; }
 .ss-actions { display:flex; gap:6px; }
+.ss-storage {
+  border:1px solid rgba(128,203,196,0.18);
+  border-radius:8px;
+  padding:10px 12px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  background:rgba(1,105,111,0.08);
+  color:#9a9a96;
+  font-size:11px;
+}
+.ss-storage b { color:#80cbc4; }

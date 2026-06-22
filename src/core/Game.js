@@ -44,20 +44,7 @@ import { moodEngine }          from '../systems/MoodEngine.js';
 import { EmoteRenderer }       from '../systems/EmoteRenderer.js';
 import { SkillPanel }          from '../ui/SkillPanel.js';
 import { ExperimentDashboard } from '../ui/ExperimentDashboard.js';
-
-const SIM_DEFS = [
-  { name: 'Alice', color: 0x4fc3f7, traits: { outgoing: 0.7, playful: 0.5, nice: 0.6 } },
-  { name: 'Bob',   color: 0xef9a9a, traits: { neurotic: 0.6, ambitious: 0.8 } },
-  { name: 'Cleo',  color: 0xa5d6a7, traits: { nice: 0.9, outgoing: -0.3 } },
-];
-
-// Map SimCreator string traits onto the 5 personality axes.
-const TRAIT_AXIS = {
-  Outgoing: { outgoing: 0.8 }, Shy: { outgoing: -0.7 }, Bookworm: { outgoing: -0.3 },
-  Playful: { playful: 0.8 }, Active: { playful: 0.5 }, Serious: { playful: -0.5 },
-  Nice: { nice: 0.8 }, Grouchy: { nice: -0.7 }, Romantic: { nice: 0.4 },
-  Lazy: { ambitious: -0.6 }, Creative: { playful: 0.4 }, Logical: { neurotic: -0.3 },
-};
+import { SIM_DEFS, TRAIT_AXIS, STARTER_CAREERS } from '../config/defaultPopulation.js';
 
 function creatorDefToSimDef(def) {
   const traits = {};
@@ -229,8 +216,7 @@ export class Game {
     this.careerSystem    = new CareerSystem(this.sims, this.clock);
     this.scheduleSystem  = new ScheduleSystem(this.sims, this.clock);
     // Give each Sim a starting career so the career world is alive from launch
-    // (overwritten by save data on load). ponytail: round-robin over real careers.
-    const STARTER_CAREERS = ['scientist', 'chef', 'artist', 'programmer', 'athlete'];
+    // (overwritten by save data on load). Config lives in src/config.
     this.sims.forEach((s, i) => this.careerSystem.assign(s.id, STARTER_CAREERS[i % STARTER_CAREERS.length]));
     this.partySystem     = new PartySystem(this);
     this.population      = new PopulationSystem(this, this.sims);   // household + external people

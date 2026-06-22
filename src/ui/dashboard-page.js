@@ -5,8 +5,8 @@
  *
  * No build step / no imports: pure DOM + cross-window read of the running game.
  */
+import { DIMENSIONS } from '../config/interactions.js';
 
-const DIMENSIONS = ['trust', 'affection', 'respect', 'attraction', 'resentment', 'fear', 'familiarity', 'dependency'];
 const COLD = new Set(['resentment', 'fear']);
 const NEG  = new Set(['argue', 'insult', 'confront', 'avoid', 'reject_flirt']);
 const POLL_MS = 900;
@@ -100,6 +100,38 @@ function renderOverview(g) {
     </div>
     <h2>Per-Sim activity</h2>
     ${renderSummaryBySim(g)}`;
+}
+
+function renderHealth(g) {
+  const h = (() => { try { return g.experimentLogger?.simulationHealthMetrics?.() ?? {}; } catch { return {}; } })();
+  const pct = v => `${Math.round((v ?? 0) * 100)}%`;
+  const card = (big, lbl) => `<div class="card"><span class="big">${big}</span><span class="lbl">${lbl}</span></div>`;
+  const needRows = Object.entries(h.needCrisesByNeed ?? {}).sort((a, b) => b[1] - a[1]);
+  const healthNotes = [
+    (h.needCrises ?? 0) > 20 ? 'Need crises are frequent: verify furniture availability, action preemption and route reachability.' : 'Need crises are within the expected observation range.',
+    (h.stuckVisitors ?? 0) > 0 ? 'There are stuck visitors: check visitor lifecycle and exit routing.' : 'No stuck active visitors detected.',
+    (h.negativeSocialRate ?? 0) < 0.05 && (h.socialAcceptanceRate ?? 0) > 0.85 ? 'Sociality is still very positive: consider stronger resentment seeds or acceptance penalties.' : 'Social mix has some rejection/conflict signal.',
+    (h.offLotTransitionsPerPerson ?? 0) > 8 ? 'Off-lot churn is high: increase minimum state durations.' : 'Off-lot state churn is controlled.',
+  ];
+  return `
+    <h2>Simulation health</h2>
+    <div class="grid cards">
+      ${card(h.needCrises ?? 0, 'need crises')}
+      ${card(h.topNeedCrisisSim || '—', 'top crisis Sim')}
+      ${card(h.activeVisitors ?? 0, 'active visitors')}
+      ${card(h.stuckVisitors ?? 0, 'stuck visitors')}
+      ${card(h.offLotTransitions ?? 0, 'off-lot transitions')}
+      ${card(h.offLotTransitionsPerPerson ?? 0, 'transitions / off-lot person')}
+      ${card(pct(h.socialAcceptanceRate), 'social acceptance')}
+      ${card(pct(h.negativeSocialRate), 'negative social rate')}
+      ${card(h.legacySocialEvents ?? 0, 'legacy social events')}
+    </div>
+    <h2>Need crisis mix</h2>
+    ${needRows.length ? `<table><thead><tr><th>Need</th><th>Crises</th></tr></thead><tbody>${
+      needRows.map(([need, count]) => `<tr><td>${esc(need)}</td><td>${count}</td></tr>`).join('')
+    }</tbody></table>` : '<div class="muted">No need crises logged.</div>'}
+    <h2>Suggestions</h2>
+    <div class="summary">${healthNotes.map(n => `<div>${esc(n)}</div>`).join('')}</div>`;
 }
 
 function renderVisitors(g) {
@@ -298,6 +330,7 @@ function render() {
   $('subtitle').textContent = `${g.householdName ?? 'Household'} · Day ${g.clock?.day ?? 0} · ${g.clock?.hour != null ? String(Math.floor(g.clock.hour)).padStart(2, '0') + ':00' : ''} · ${g.sims?.length ?? 0} Sims`;
   try {
     if (activeTab === 'overview') content.innerHTML = renderOverview(g);
+    else if (activeTab === 'health') content.innerHTML = renderHealth(g);
     else if (activeTab === 'sims') content.innerHTML = renderSims(g);
     else if (activeTab === 'visitors') content.innerHTML = renderVisitors(g);
     else if (activeTab === 'rel')  content.innerHTML = renderRel(g);

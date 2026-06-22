@@ -29,6 +29,8 @@ export class Sim {
     this.worldZ    = 1;
     this.isMoving  = false;
     this._path     = [];
+    this._pathTarget = null;
+    this._pathBlockedTime = 0;
     this._selected = false;
 
     this.personality = new Personality(traits);
@@ -113,11 +115,16 @@ export class Sim {
     if (path && path.length > 0) {
       if (!this._world.reserveCell(target.x, target.z, this)) return;
       this._world.doorManager?.resolvePath(path);
-      this.startPath(path);
+      this.startPath(path, { target });
     }
   }
 
-  startPath(path) { this._path = path; this.isMoving = path.length > 0; }
+  startPath(path, meta = {}) {
+    this._path = path;
+    this.isMoving = path.length > 0;
+    this._pathTarget = meta.target ?? null;
+    this._pathBlockedTime = 0;
+  }
 
   showBubble(text, duration = 1.5) {
     const el = document.getElementById(`bubble-${this.id}`);
@@ -128,7 +135,8 @@ export class Sim {
 
   update(dt) {
     this._moveAlongPath(dt);
-    this.needs.update(dt);
+    const needDt = this._isVisitor ? dt * 0.35 : dt;
+    this.needs.update(needDt);
     this.emotions.update(dt);                               // ← Sprint 1
     this.mood.recalculate(this.needs.getAll(), this.personality, this.emotions.moodBonus); // ← bonus
     this.brain.update(dt);
@@ -140,13 +148,43 @@ export class Sim {
   }
 
   _moveAlongPath(dt) {
-    if (this._path.length === 0) { this.isMoving = false; return; }
+    if (this._path.length === 0) {
+      this.isMoving = false;
+      this._pathTarget = null;
+      this._pathBlockedTime = 0;
+      return;
+    }
     const target = this._path[0];
     if (
       this._world.isCellOccupied(target.x, target.z, this.id) ||
       this._world.isCellReserved(target.x, target.z, this.id)
     ) {
-      this.isMoving = true;
+      this._pathBlockedTime += dt;
+      if (this._pathTarget && this._pathBlockedTime >= 0.9) {
+        const detour = this._world.findNearestAvailableCell(this._pathTarget.x, this._pathTarget.z, this, 4);
+        if (detour) {
+          const pf = new Pathfinder(this._world.tilemap, (x, z) =>
+            this._world.isCellOccupied(x, z, this.id) ||
+            this._world.isCellReserved(x, z, this.id),
+            (x1, z1, x2, z2) => this._world.wallManager?.isPassable(x1, z1, x2, z2) ?? true
+          );
+          const rerouted = pf.find(this.gx, this.gz, detour.x, detour.z);
+          if (rerouted && rerouted.length > 0) {
+            this._world.doorManager?.resolvePath(rerouted);
+            this._path = rerouted;
+            this._pathBlockedTime = 0;
+            this._pathTarget = detour;
+          }
+        }
+      }
+      if (this._pathBlockedTime >= 2.5) {
+        this._path = [];
+        this.isMoving = false;
+        this._pathTarget = null;
+        this._pathBlockedTime = 0;
+      } else {
+        this.isMoving = true;
+      }
       return;
     }
     const dx = target.x - this.worldX, dz = target.z - this.worldZ;
@@ -156,6 +194,7 @@ export class Sim {
       this.worldX = target.x; this.worldZ = target.z;
       this.gx = target.x; this.gz = target.z;
       this._path.shift();
+      this._pathBlockedTime = 0;
       bus.emit('sim:arrived', { simId: this.id, gx: this.gx, gz: this.gz });
     } else {
       this.worldX += (dx/dist)*step;
@@ -194,6 +233,8 @@ export class Sim {
     this.isMoving = false;
     this.mesh.position.set(data.gx, 0, data.gz);
     this._world.reserveCell(data.gx, data.gz, this);
+    this._pathTarget = null;
+    this._pathBlockedTime = 0;
     if (data.personality) Object.assign(this.personality, data.personality);
     this.needs.restore_state(data.needs);
     this.mood.restore(data.mood);

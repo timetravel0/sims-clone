@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TileMap, TILE } from './TileMap.js';
 import { Furniture } from '../entities/Furniture.js';
 import { DoorManager } from './DoorManager.js';
+import { DEFAULT_HOUSE_FURNITURE } from '../config/defaultScenario.js';
 
 const FLOOR_COLOR = 0x4a3f35;
 const WALL_COLOR  = 0x2e2620;
@@ -58,21 +59,7 @@ export class World {
   }
 
   _placeFurniture() {
-    const items = [
-      { id: 'bed',    gx: 3,  gz: 3,  color: 0x6b9ac4, needTarget: 'energy',  restoreRate: 30 },
-      { id: 'fridge', gx: 12, gz: 3,  color: 0xd0ece7, needTarget: 'hunger',  restoreRate: 40 },
-      { id: 'toilet', gx: 12, gz: 12, color: 0xf0f0e8, needTarget: 'bladder', restoreRate: 60 },
-      { id: 'couch',  gx: 3,  gz: 12, color: 0xc9a96e, needTarget: 'comfort', restoreRate: 20 },
-      { id: 'tv',     gx: 8,  gz: 5,  color: 0x1a1a2e, needTarget: 'fun',     restoreRate: 20 },
-      { id: 'shower', gx: 8,  gz: 12, color: 0xa8d8ea, needTarget: 'hygiene', restoreRate: 35 },
-      // Skill-building objects so every skill has a source out of the box
-      { id: 'bookshelf', gx: 5, gz: 3,  color: 0x8d6e63, needTarget: 'fun', restoreRate: 12 }, // logic
-      { id: 'desk',      gx: 6, gz: 3,  color: 0xa1887f, needTarget: 'fun', restoreRate: 10 }, // logic
-      { id: 'piano',     gx: 3, gz: 8,  color: 0x212121, needTarget: 'fun', restoreRate: 25 }, // creativity
-      { id: 'treadmill', gx: 12, gz: 8, color: 0xb0bec5, needTarget: 'comfort', restoreRate: 8 }, // fitness
-      { id: 'workbench', gx: 6, gz: 12, color: 0x90a4ae, needTarget: 'fun', restoreRate: 10 }, // handiness
-    ];
-    for (const item of items) this._addFurniture(item);
+    for (const item of DEFAULT_HOUSE_FURNITURE) this._addFurniture(item);
   }
 
   _placeDoors() {

@@ -17,6 +17,7 @@ const VISIT_REASONS = new Set([
   'conflict_visit',
   'service_visit',
 ]);
+const HARD_TIMEOUT_TICKS = 540;
 
 let _visitId = 0;
 
@@ -53,6 +54,8 @@ export class VisitorSystem {
       id: opts.id ?? `visit_${++_visitId}`,
       personId,
       hostId: host.id,
+      preferredHostId: host.id,
+      respondingHostId: null,
       state: 'off_lot',
       reason: VISIT_REASONS.has(reason) ? reason : 'spontaneous_neighbor',
       arrivalTick: null,
@@ -128,8 +131,14 @@ export class VisitorSystem {
 
   _updateVisit(visit) {
     const person = this._game.population?.getPerson?.(visit.personId);
-    const host = this._game.sims.find(s => s.id === visit.hostId) ?? this._chooseHost(visit.personId);
+    const host = this._visitHost(visit);
     if (!person || !host) { this._endVisit(visit, 'no_host'); return; }
+    if (!['leaving', 'rejected', 'no_answer', 'returned_home'].includes(visit.state) &&
+        visit.arrivalTick &&
+        this._game.tick - visit.arrivalTick > HARD_TIMEOUT_TICKS) {
+      this._forceReturn(visit, 'timeout');
+      return;
+    }
 
     if (visit.state === 'off_lot') {
       this._arrive(visit);
@@ -160,7 +169,7 @@ export class VisitorSystem {
     }
 
     if (visit.state === 'waiting_response') {
-      if (this._game.tick >= visit._decisionAt) this._doorDecision(visit, visitor, host);
+      if (this._game.tick >= visit._decisionAt) this._doorDecision(visit, visitor);
       return;
     }
 
@@ -203,6 +212,10 @@ export class VisitorSystem {
   }
 
   _doorDecision(visit, visitor, host) {
+    host = this._chooseDoorResponder(visit, visitor) ?? host ?? this._visitHost(visit);
+    if (!host) { this._endVisit(visit, 'no_host'); return; }
+    visit.respondingHostId = host.id;
+    visit.hostId = host.id;
     const before = this._affinity(host.id, visitor.id);
     const decision = this.decideDoorResponse(host, visitor, { reason: visit.reason, visit });
     visit._relationshipBefore = before;
@@ -260,19 +273,34 @@ export class VisitorSystem {
   }
 
   _endVisit(visit, outcome) {
+    const visitor = this._visitorSim(visit);
+    if (visitor) visitor._visitorMode = null;
     visit.outcome = outcome;
     visit.actualLeftTick = this._game.tick;
     visit.state = 'returned_home';
     this._emit('visitor:visitEnded', visit);
+    this._game.population?.deactivatePerson?.(visit.personId);
     this._history.push(this._plain(visit));
     this._visits.delete(visit.personId);
+  }
+
+  _forceReturn(visit, outcome) {
+    const visitor = this._visitorSim(visit);
+    if (visitor && this._idle(visitor)) {
+      this._startLeaving(visit, visitor);
+      visit.outcome = outcome;
+      return;
+    }
+    this._endVisit(visit, outcome);
   }
 
   _shouldLeave(visit, visitor, host) {
     if (this._game.tick >= visit.leaveByTick) return true;
     const aff = this._game.socialDynamics?.affinity?.(visitor.id, host.id) ?? 0;
     if (aff < -35) return true;
-    if ((visitor.needs?.get?.('energy') ?? 100) < 8) return true;
+    if ((visitor.needs?.get?.('energy') ?? 100) < 12) return true;
+    if ((visitor.needs?.get?.('hunger') ?? 100) < 16) return true;
+    if ((visitor.needs?.get?.('bladder') ?? 100) < 16) return true;
     return false;
   }
 
@@ -320,6 +348,37 @@ export class VisitorSystem {
     if (sims.length === 0) return null;
     const dyn = this._game.socialDynamics;
     return sims.slice().sort((a, b) => (dyn?.affinity?.(b.id, personId) ?? 0) - (dyn?.affinity?.(a.id, personId) ?? 0))[0];
+  }
+
+  _visitHost(visit) {
+    return this._game.sims.find(s => s.id === (visit.respondingHostId ?? visit.hostId))
+      ?? this._game.sims.find(s => s.id === visit.preferredHostId)
+      ?? this._chooseHost(visit.personId);
+  }
+
+  _chooseDoorResponder(visit, visitor) {
+    const sims = this._game.sims.filter(s => !s._isVisitor && !s._atWork);
+    if (sims.length === 0) return null;
+    const dyn = this._game.socialDynamics;
+    const entry = this._entryPoint(visit.entryPointId);
+    return sims.slice().sort((a, b) =>
+      this._responderScore(b, visitor, dyn, entry, visit) - this._responderScore(a, visitor, dyn, entry, visit)
+    )[0];
+  }
+
+  _responderScore(host, visitor, dyn, entry, visit) {
+    const rel = dyn?.snapshot?.(host.id, visitor.id) ?? {};
+    const distance = Math.abs((host.gx ?? host.worldX) - (entry.insideGx ?? entry.gx))
+      + Math.abs((host.gz ?? host.worldZ) - (entry.insideGz ?? entry.gz));
+    const preferred = host.id === visit.preferredHostId ? 8 : 0;
+    return preferred
+      + (dyn?.affinity?.(host.id, visitor.id) ?? 0) * 0.22
+      + (rel.trust ?? 0) * 0.15
+      + (rel.affection ?? 0) * 0.12
+      - (rel.resentment ?? 0) * 0.16
+      + ((host.needs?.get?.('energy') ?? 50) - 35) * 0.25
+      + ((host.personality?.nice ?? 0) + (host.personality?.outgoing ?? 0)) * 10
+      - distance * 1.5;
   }
 
   _visitorSim(visit) {

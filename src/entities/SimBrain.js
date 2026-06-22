@@ -99,7 +99,15 @@ export class SimBrain {
 
     // ── AI planning ──────────────────────────────────────────────────────────
 
-    // 1. Utility AI (history + goals + wellbeing + context + emotion-aware)
+    // 1. Critical physical needs preempt everything autonomous.
+    const criticalNeedActions = this._criticalNeedActions();
+    if (criticalNeedActions.length > 0) {
+      this._sim.showBubble(this._planner.lastNeedLabel);
+      this._queue.push(...criticalNeedActions);
+      return;
+    }
+
+    // 2. Utility AI (history + goals + wellbeing + context + emotion-aware)
     const utilityActions = this._utilityPlanner.plan();
     if (utilityActions.length > 0) {
       this._sim.showBubble(this._utilityPlanner.lastDecision?.label || 'Act');
@@ -107,7 +115,7 @@ export class SimBrain {
       return;
     }
 
-    // 2. Physical needs fallback
+    // 3. Physical needs fallback
     const needActions = this._planner.plan();
     if (needActions.length > 0) {
       this._sim.showBubble(this._planner.lastNeedLabel);
@@ -115,7 +123,7 @@ export class SimBrain {
       return;
     }
 
-    // 3. Social need fallback
+    // 4. Social need fallback
     const socialVal  = this._sim.needs.get('social');
     const threshold  = 40 + p.outgoing * 20;
     if (socialVal < threshold && this._socialCooldown <= 0) {
@@ -127,9 +135,21 @@ export class SimBrain {
       }
     }
 
-    // 4. Idle
+    // 5. Idle
     const idleDur = p.playful > 0.3 ? 1.5 : 3.5;
     this._queue.push(new IdleAction(this._sim, idleDur));
+  }
+
+  _criticalNeedActions() {
+    const needs = this._sim.needs.getAll();
+    const priorities = [
+      ['hunger', 16],
+      ['bladder', 14],
+      ['energy', 12],
+    ].filter(([key, limit]) => (needs[key] ?? 100) < limit)
+      .sort((a, b) => (needs[a[0]] ?? 100) - (needs[b[0]] ?? 100));
+    if (priorities.length === 0) return [];
+    return this._planner.planFor(priorities[0][0], { force: true });
   }
 
   _findSocialTarget() {

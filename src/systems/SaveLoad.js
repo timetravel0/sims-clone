@@ -3,7 +3,7 @@
  *
  * Storage is delegated to a PersistenceAdapter (default LocalStorageAdapter);
  * SaveLoad itself no longer touches localStorage. Swap the adapter to change
- * backend (e.g. SQLite) — see docs/PERSISTENCE.md.
+ * backend (e.g. SQLite) — see docs/TECHNICAL.md.
  *
  * Save format version: 2. Slots: 0..2 (slot 0 reserved for auto-save).
  * Loading reloads the page (pending flag in sessionStorage) so the Sim roster

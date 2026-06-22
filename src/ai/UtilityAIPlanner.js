@@ -179,6 +179,7 @@ export class UtilityAIPlanner {
       const traitWeight = NEED_TRAIT_WEIGHT[need]?.(this._sim) ?? 1;
       score += (pressure / 100) * utility * traitWeight;
     }
+    score += this._criticalNeedAdjustment(affordance, needs);
 
     // ── 2. Social relationship bonus ────────────────────────────────────────
     if (affordance.targetType === 'sim' && affordance.relation) {
@@ -247,6 +248,20 @@ export class UtilityAIPlanner {
       new WalkToAction(this._sim, this._sim._world, furniture.gx, targetGz),
       new UseObjectAction(this._sim, furniture, affordance.duration ?? 5, affordance),
     ];
+  }
+
+  _criticalNeedAdjustment(affordance, needs) {
+    const utility = affordance.utility ?? {};
+    let penalty = 0;
+    if ((needs.hunger ?? 100) < 18 && (utility.hunger ?? 0) <= 0) penalty -= 90;
+    if ((needs.bladder ?? 100) < 16 && (utility.bladder ?? 0) <= 0) penalty -= 95;
+    if ((needs.energy ?? 100) < 14 && (utility.energy ?? 0) <= 0) penalty -= 75;
+    if ((needs.energy ?? 100) < 10 && (utility.energy ?? 0) < 0) penalty -= 35;
+    if (affordance.targetType === 'sim' && penalty < 0) {
+      const allowed = new Set(['ask_help', 'comfort', 'avoid']);
+      if (!allowed.has(affordance.verb)) penalty -= 20;
+    }
+    return penalty;
   }
 
   _distanceTo(target) {
