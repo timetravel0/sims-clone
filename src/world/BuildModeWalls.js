@@ -19,6 +19,7 @@
 import * as THREE  from 'three';
 import { bus }     from '../core/EventBus.js';
 import { budgetSystem } from '../systems/BudgetSystem.js';
+import { ObjectRegistry } from '../systems/ObjectRegistry.js';
 
 const WALL_COST = 250;   // § per wall segment
 const DOOR_COST = 500;   // § per door
@@ -157,14 +158,20 @@ export class BuildModeWalls {
   }
 
   _eraseNear(gx, gz) {
+    // 1. Furniture at the clicked tile
+    const f = this._world.furniture?.find(f => f.gx === gx && f.gz === gz);
+    if (f) {
+      const cost = ObjectRegistry.get(f.id)?.cost ?? 0;
+      this._world.removeFurniture(gx, gz);
+      if (cost > 0) budgetSystem.sellRefund(cost);
+      return;
+    }
+
+    // 2. Wall/door on any adjacent edge
     const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
     for (const [dx, dz] of dirs) {
       const nx = gx + dx, nz = gz + dz;
       if (this._wm.hasWall(gx, gz, nx, nz) || this._wm.hasDoor(gx, gz, nx, nz)) {
-        const entry = this._wm._edges?.get?.(
-          this._wm.removeEdge ? null : null
-        );
-        // Refund 50%
         const wasWall = this._wm.hasWall(gx, gz, nx, nz);
         const removed = this._wm.removeEdge(gx, gz, nx, nz);
         if (removed) budgetSystem.sellRefund(wasWall ? WALL_COST : DOOR_COST);
