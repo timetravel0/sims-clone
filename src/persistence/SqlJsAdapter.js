@@ -9,9 +9,9 @@ import { PersistenceAdapter } from './PersistenceAdapter.js';
  * Slot saves flush immediately; the high-frequency event log flushes throttled
  * (and on the next slot save) so logging stays cheap.
  *
- * ponytail: whole-DB export on flush — fine for snapshot-style saves. A hard
- * crash can lose up to ~2s of event_log rows. Upgrade to an incremental OPFS VFS
- * (official @sqlite.org/sqlite-wasm sahpool) only if that loss window matters.
+ * Important: OPFS is not a normal visible file in the project folder. Chrome
+ * stores it inside the browser profile's Origin Private File System. Use
+ * diagnostics()/exportBytes() when you need proof or export.
  */
 const DB_FILE = 'sims-clone.sqlite';
 const FLUSH_MS = 2000;
@@ -42,12 +42,15 @@ const SCHEMA = `
 export class SqlJsAdapter extends PersistenceAdapter {
   constructor({ fileName = DB_FILE, slots = 3 } = {}) {
     super();
+    this.backend = 'sql.js-opfs';
+    this.sqlite = true;
     this._fileName = fileName;
     this._slots = slots;
     this._db = null;
     this._dir = null;
     this._dirty = false;
     this._flushTimer = null;
+    this._lastFlushAt = null;
   }
 
   /** True only where OPFS is available (Chrome and other Chromium browsers). */
@@ -61,7 +64,7 @@ export class SqlJsAdapter extends PersistenceAdapter {
     const bytes = await this._readFile();
     this._db = bytes ? new SQL.Database(bytes) : new SQL.Database();
     this._db.run(SCHEMA);
-    if (!bytes) await this._flush();   // materialise the file on first run
+    await this._flush();   // always materialise/migrate the OPFS file
     return this;
   }
 
@@ -126,6 +129,35 @@ export class SqlJsAdapter extends PersistenceAdapter {
     try { return JSON.parse(row.state); } catch { return null; }
   }
 
+  async diagnostics() {
+    if (this._dirty) await this._flush();
+    const saves = this._all('SELECT slot, household, timestamp, length(data) AS bytes FROM saves ORDER BY slot');
+    const events = this._one('SELECT COUNT(*) AS count FROM event_log')?.count ?? 0;
+    const snapshots = this._one('SELECT COUNT(*) AS count FROM snapshots')?.count ?? 0;
+    let fileBytes = null;
+    try {
+      const fh = await this._dir.getFileHandle(this._fileName);
+      fileBytes = (await fh.getFile()).size;
+    } catch { /* ignore */ }
+    return {
+      backend: this.backend,
+      sqlite: true,
+      storage: 'OPFS',
+      visibleInProjectFolder: false,
+      fileName: this._fileName,
+      fileBytes,
+      lastFlushAt: this._lastFlushAt,
+      saves,
+      events,
+      snapshots,
+    };
+  }
+
+  async exportBytes() {
+    if (this._dirty) await this._flush();
+    return this._db.export();
+  }
+
   // ── Internals ─────────────────────────────────────────────────────────────
   _one(sql, params = []) {
     const st = this._db.prepare(sql);
@@ -154,7 +186,7 @@ export class SqlJsAdapter extends PersistenceAdapter {
     if (this._flushTimer) return;
     this._flushTimer = setTimeout(() => {
       this._flushTimer = null;
-      if (this._dirty) this._flush().catch(() => { /* best-effort */ });
+      if (this._dirty) this._flush().catch(err => console.error('[SqlJsAdapter] flush failed', err));
     }, FLUSH_MS);
   }
 
@@ -165,5 +197,6 @@ export class SqlJsAdapter extends PersistenceAdapter {
     const w = await fh.createWritable();
     await w.write(data);
     await w.close();
+    this._lastFlushAt = new Date().toISOString();
   }
 }
