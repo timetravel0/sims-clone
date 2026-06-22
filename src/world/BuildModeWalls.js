@@ -49,6 +49,7 @@ export class BuildModeWalls {
     this._anchor  = null;         // { gx, gz } — first click for wall/door
     this._ghost   = null;         // THREE.Mesh ghost preview
     this._hovered = null;         // { gx, gz } — tile under mouse
+    this._moving  = null;         // { furniture, gx, gz } — piece being moved
 
     this._raycaster = new THREE.Raycaster();
     this._mouse     = new THREE.Vector2();
@@ -59,6 +60,11 @@ export class BuildModeWalls {
   // ── Tool selection ────────────────────────────────────────────────────────
 
   setTool(tool) {
+    // Drop any in-progress move by putting the piece back
+    if (this._moving) {
+      this._world.placeFurniture({ ...this._moving.furniture, gx: this._moving.gx, gz: this._moving.gz });
+      this._moving = null;
+    }
     this._tool   = tool;
     this._anchor = null;
     this._removeGhost();
@@ -84,6 +90,8 @@ export class BuildModeWalls {
 
     if (this._tool === 'wall' || this._tool === 'door') {
       this._updateWallGhost(gx, gz);
+    } else if (this._tool === 'move' && this._moving) {
+      this._updateMoveGhost(gx, gz);
     }
   }
 
@@ -106,6 +114,18 @@ export class BuildModeWalls {
     this._scene.add(this._ghost);
   }
 
+  _updateMoveGhost(gx, gz) {
+    this._removeGhost();
+    const f = this._moving.furniture;
+    const available = this._world.isCellAvailable(gx, gz);
+    const color = available ? (f.color ?? 0x88ff88) : GHOST_BAD_COLOR;
+    const geo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
+    const mat = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.55 });
+    this._ghost = new THREE.Mesh(geo, mat);
+    this._ghost.position.set(gx, 0.3, gz);
+    this._scene.add(this._ghost);
+  }
+
   _removeGhost() {
     if (!this._ghost) return;
     this._scene.remove(this._ghost);
@@ -119,6 +139,11 @@ export class BuildModeWalls {
   handleClick(e) {
     if (this._tool === 'furniture') {
       this._bm.handleClick(e);
+      return;
+    }
+
+    if (this._tool === 'move') {
+      this._handleMoveClick(e);
       return;
     }
 
@@ -155,6 +180,35 @@ export class BuildModeWalls {
 
     if (this._tool === 'wall') this._wm.placeWall(ax, az, gx, gz);
     else                       this._wm.placeDoor(ax, az, gx, gz);
+  }
+
+  _handleMoveClick(e) {
+    const rect = this._renderer.domElement.getBoundingClientRect();
+    this._mouse.x = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+    this._mouse.y =-((e.clientY - rect.top)  / rect.height) * 2 + 1;
+    this._raycaster.setFromCamera(this._mouse, this._camera.camera);
+    const hits = this._raycaster.intersectObjects(this._world.groundMeshes);
+    if (!hits.length) return;
+    const gx = Math.round(hits[0].point.x);
+    const gz = Math.round(hits[0].point.z);
+
+    if (!this._moving) {
+      // Pick up: find furniture at this tile
+      const f = this._world.furniture?.find(f => f.gx === gx && f.gz === gz);
+      if (!f) return;
+      this._moving = { furniture: { ...f }, gx: f.gx, gz: f.gz };
+      this._world.removeFurniture(gx, gz);
+      this._updateMoveGhost(gx, gz);
+    } else {
+      // Put down: place at new tile (or return to original if occupied)
+      this._removeGhost();
+      const ok = this._world.placeFurniture({ ...this._moving.furniture, gx, gz });
+      if (!ok) {
+        // Destination blocked — put back at origin
+        this._world.placeFurniture({ ...this._moving.furniture, gx: this._moving.gx, gz: this._moving.gz });
+      }
+      this._moving = null;
+    }
   }
 
   _eraseNear(gx, gz) {

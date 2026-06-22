@@ -240,7 +240,7 @@ export class ExperimentLogger {
     if (SKIP_PERSIST.has(row.type)) return;   // kept in-memory only (see SKIP_PERSIST)
     try {
       const adapter = this._game?._saveLoad?._adapter;
-      adapter?.appendEvent?.(this._runId, row);
+      void adapter?.appendEvent?.(this._runId, row);
     } catch { /* event persistence is best-effort */ }
   }
 
@@ -276,7 +276,7 @@ export class ExperimentLogger {
           });
         }
       }
-      if (rows.length) adapter.saveRelationshipSnapshot(this._runId, this._tick, rows);
+      if (rows.length) void adapter.saveRelationshipSnapshot(this._runId, this._tick, rows);
     } catch { /* relationship snapshots are best-effort */ }
   }
 

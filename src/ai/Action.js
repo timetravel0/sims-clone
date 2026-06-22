@@ -1,6 +1,9 @@
-import { Pathfinder } from './Pathfinder.js';
-import { Logger }    from '../utils/Logger.js';
-import { bus }       from '../core/EventBus.js';
+import { Pathfinder }   from './Pathfinder.js';
+import { Logger }       from '../utils/Logger.js';
+import { bus }          from '../core/EventBus.js';
+import { budgetSystem } from '../systems/BudgetSystem.js';
+
+const MEAL_COST = 15; // § per pasto — qualunque oggetto che ripristina hunger
 
 export class Action {
   constructor(label) { this.label = label; this.done = false; }
@@ -74,6 +77,15 @@ export class UseObjectAction extends Action {
       this.done = true;
       return;
     }
+    // Food costs money — can't eat if broke
+    const isFood = this._furniture.needTarget === 'hunger'
+      || this._affordance?.verb === 'eat'
+      || this._affordance?.verb === 'dine';
+    if (isFood && !budgetSystem.debit(MEAL_COST, 'meal', { simId: this._sim.id, simName: this._sim.name })) {
+      this.done = true;
+      return;
+    }
+
     this._furniture.reservedBy = this._sim.id;
     this._furniture.inUse = true;
     this._using = true;

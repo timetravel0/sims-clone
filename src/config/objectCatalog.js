@@ -1,3 +1,5 @@
+import { bus } from '../core/EventBus.js';
+
 /**
  * objectCatalog.js — data definitions for all placeable objects.
  *
@@ -81,6 +83,12 @@ export const OBJECT_DEFS = [
     onUse: (sim) => sim.needs.restore('social', 10),
   },
   {
+    id: 'phone',    label: 'Telefono',        color: 0x455a64,
+    needTarget: 'social', restoreRate: 0, social: false,
+    affordances: [{ verb: 'call', label: 'Chiama', utility: { social: 8, fun: 4 }, duration: 3 }],
+    onUse: (sim) => bus.emit('phone:used', { sim }),
+  },
+  {
     id: 'fire_pit', label: 'Fire Pit',       color: 0xff6f00,
     needTarget: 'social',  restoreRate: 30, social: true,
     affordances: [{ verb: 'gather', label: 'Gather', utility: { social: 28, fun: 12, comfort: 8 }, duration: 6 }],
@@ -111,6 +119,7 @@ export const SKILL_BY_OBJECT = {
 
 // Purchase prices used by the autonomous shopping system.
 export const OBJECT_COSTS = {
+  phone: 300,
   bed: 900,
   fridge: 1_200,
   toilet: 700,

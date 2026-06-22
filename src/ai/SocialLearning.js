@@ -1,4 +1,5 @@
-import { bus } from '../core/EventBus.js';
+import { bus }         from '../core/EventBus.js';
+import { GameContext } from '../core/GameContext.js';
 
 /**
  * SocialLearning — observational learning between Sims in the same lot.
@@ -52,10 +53,7 @@ export class SocialLearning {
         utility:  { fun: moodDelta > 0 ? 5 : -5 },
       };
       const biasDelta = (moodDelta / 20) * OBS_FACTOR;
-      this._bias._table.set(
-        `use:${furnitureType}`,
-        Math.max(-15, Math.min(15, (this._bias._table.get(`use:${furnitureType}`) ?? 0) + biasDelta))
-      );
+      this._bias.setRaw(`use:${furnitureType}`, biasDelta);
     });
 
     // 2. Social conflict witnessed
@@ -65,9 +63,7 @@ export class SocialLearning {
       if (type !== 'insult' && delta >= -5)             return;
 
       // Bystander effect: lower bias toward instigator
-      const key     = `chat:${idA}`;
-      const current = this._bias._table.get(key) ?? 0;
-      this._bias._table.set(key, Math.max(-15, current - OBS_FACTOR * 2));
+      this._bias.setRaw(`chat:${idA}`, -OBS_FACTOR * 2);
     });
 
     // 3. Social bonding witnessed (hug / kiss)
@@ -78,9 +74,7 @@ export class SocialLearning {
 
       // Curiosity: mild positive bias toward both participants
       for (const otherId of [idA, idB]) {
-        const key     = `chat:${otherId}`;
-        const current = this._bias._table.get(key) ?? 0;
-        this._bias._table.set(key, Math.min(15, current + OBS_FACTOR));
+        this._bias.setRaw(`chat:${otherId}`, OBS_FACTOR);
       }
     });
 
@@ -91,9 +85,7 @@ export class SocialLearning {
 
       // Nearby Sims form an opinion bias toward the affected Sim
       const sentiment = (valence ?? 0) > 0 ? OBS_FACTOR : -OBS_FACTOR * 1.2;
-      const key       = `chat:${simId}`;
-      const current   = this._bias._table.get(key) ?? 0;
-      this._bias._table.set(key, Math.max(-15, Math.min(15, current + sentiment)));
+      this._bias.setRaw(`chat:${simId}`, sentiment);
     });
   }
 
@@ -103,7 +95,7 @@ export class SocialLearning {
   }
 
   _inRange(otherId) {
-    const game   = window._game;
+    const game   = GameContext.game;
     if (!game)   return false;
     const other  = game.sims.find(s => s.id === otherId);
     if (!other)  return false;

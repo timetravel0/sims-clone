@@ -36,6 +36,7 @@ export class LifeCyclePanel {
     bus.on('family:childBorn',   () => this._render());
     bus.on('family:partnerChanged',() => this._render());
     bus.on('career:shiftEnd',    () => this._render());
+    bus.on('goal:completed',     () => this._render());
     bus.on('daynight:update',    () => this._renderSchedule());
   }
 
@@ -130,6 +131,23 @@ export class LifeCyclePanel {
         html += `</div>`;
       }
       html += `</div>`;
+
+      // Active goals with progress
+      const goals = sim.brain?.goalSystem?.activeGoals?.() ?? [];
+      if (goals.length > 0) {
+        html += `<div style="margin-bottom:10px">`;
+        html += `<div style="color:#888;font-size:10px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">Goals</div>`;
+        for (const g of goals) {
+          const pct = Math.round((g.progress ?? 0) * 100);
+          const bar = `<div style="flex:1;height:5px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden"><div style="width:${pct}%;height:100%;background:#ffd580;border-radius:3px;transition:width .3s"></div></div>`;
+          html += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">`;
+          html += `<span style="width:110px;color:#bbb;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.label ?? g.type}</span>`;
+          html += bar;
+          html += `<span style="width:28px;text-align:right;color:#777;font-size:10px">${pct}%</span>`;
+          html += `</div>`;
+        }
+        html += `</div>`;
+      }
 
       // Career picker
       html += `<div style="margin-bottom:10px">`;

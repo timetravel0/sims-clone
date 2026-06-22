@@ -45,8 +45,10 @@ import { moodEngine }          from '../systems/MoodEngine.js';
 import { EmoteRenderer }       from '../systems/EmoteRenderer.js';
 import { SkillPanel }          from '../ui/SkillPanel.js';
 import { ExperimentDashboard } from '../ui/ExperimentDashboard.js';
+import { PhonePanel }          from '../ui/PhonePanel.js';
 import { SIM_DEFS, TRAIT_AXIS, STARTER_CAREERS } from '../config/defaultPopulation.js';
 import { ObjectRegistry }      from '../systems/ObjectRegistry.js';
+import { GameContext }         from './GameContext.js';
 
 function creatorDefToSimDef(def) {
   const traits = {};
@@ -156,6 +158,8 @@ export class Game {
   }
 
   _init(simDefs = SIM_DEFS) {
+    if (this._initialized) return;
+    this._initialized = true;
     // ── Renderer ──────────────────────────────────────────────────────────
     this._renderer = new THREE.WebGLRenderer({ antialias: true });
     this._renderer.setPixelRatio(window.devicePixelRatio);
@@ -247,11 +251,13 @@ export class Game {
 
     // ── Expose globally for UI panels ─────────────────────────────────────
     window._game = this;
+    GameContext.set(this);
 
     // ── UI ────────────────────────────────────────────────────────────────
     this._ui         = new UIManager(this.sims, this.selectedSim, bus);
     this._godPanel   = new GodPanel(this);
     this._graphPanel = new GraphPanel(this);
+    this._phonePanel = new PhonePanel(this);
 
     this._lifecyclePanel    = new LifeCyclePanel(this);
     this._lifecycleNotifier = new LifecycleNotifier('lifecycle-toast');
@@ -456,7 +462,7 @@ export class Game {
     ['1','3','5'].forEach(v => {
       q(`btn-${v}x`)?.addEventListener('click', () => {
         this.setSpeed(+v);
-        ['1','2','5'].forEach(x => q(`btn-${x}x`)?.classList.remove('active'));
+        ['1','3','5'].forEach(x => q(`btn-${x}x`)?.classList.remove('active'));
         q(`btn-${v}x`)?.classList.add('active');
         q('speed-label').textContent = `Speed: ${v}×`;
       });

@@ -14,7 +14,7 @@ The project is a browser-based Three.js application using vanilla ES modules. Th
 |---|---|---|
 | Isometric rendering | Implemented | Three.js scene, camera, world grid and furniture rendering are active. |
 | Sims and needs | Implemented | Sims have needs, personality, mood, emotions, brain and action queue. |
-| Utility AI | Implemented | `SimBrain` preempts critical physical needs before Utility AI; `UtilityAIPlanner` scores object/social affordances and suppresses non-essential actions under hunger/bladder/energy crisis. |
+| Utility AI | Implemented | `SimBrain` preempts critical physical needs before Utility AI; `UtilityAIPlanner` scores object/social affordances and suppresses non-essential actions under hunger/bladder/energy crisis. Social scoring uses `GameContext.game` (set by `Game.js` and `HeadlessRuntime.js`) rather than `window._game`. |
 | Smart Objects | Implemented | Furniture advertises actions through `getAffordancesFor(sim)`. |
 | Object exclusivity | Implemented | Furniture reservation and `inUse` state prevent concurrent use. |
 | Anti-overlap movement | Implemented | Tile reservations and occupancy checks prevent Sims from sharing a destination or occupied path cell; blocked walks reroute briefly and time out instead of freezing. Head-on deadlocks are broken by phase-through: a Sim blocked by another Sim's *body* for >0.6 s steps into the cell anyway (brief overlap), so two Sims meeting head-on swap cells instead of looping. |
@@ -25,7 +25,9 @@ The project is a browser-based Three.js application using vanilla ES modules. Th
 | Off-lot simulation | Implemented, lightweight | External people change off-lot state with minimum state durations, drift relationships and can generate visit intent. Household Sims also take autonomous outings (meal out / trip / visit / other) with a logged reason and possible accidents. |
 | Relationship graph | Implemented | Directed typed edges for friendship, rivalry, romance and kinship/family are active. |
 | Romance/jealousy | Implemented | Positive interactions and compatibility can create romance; committed cohabiting partners trigger jealousy and penalise monogamy breaches. Committed Sims don't pursue flirts (UtilityAIPlanner penalty) and reject outside flirts ~92% of the time (`SocialAction`), the rare acceptance feeding jealousy. |
-| Health/illness | Implemented | `HealthSystem` cycles healthy→ill→recovering→healthy and applies off-lot incident injuries via `reportIncident`. |
+| Health/illness | Implemented | `HealthSystem` cycles healthy→ill→recovering→healthy and applies off-lot incident injuries via `reportIncident`. Starvation path added: hunger < 10 for ≥ 5 health cycles → starvation illness (severity 0.75); ≥ 25 cycles → `_killSim()` (permanent death). |
+| Death | Implemented (starvation only) | `HealthSystem._killSim()`: sets `person.dead`, hides mesh, removes from `game.sims`, calls `population.deactivatePerson()`, emits `sim:died` + `story:entry`. |
+| Food economy | Implemented | `UseObjectAction.enter()` debits `MEAL_COST = §15` for any hunger-restoring object. If budget insufficient, action aborts — Sim cannot eat. |
 | Autonomous objects | Implemented | `AutonomousShoppingSystem` buys/places furniture by need pressure and lets a high-handiness Sim craft custom objects at the workbench. |
 | Episodic memory | Implemented | Global memory and per-Sim autobiographical memory both exist and are persisted. |
 | Narrative log | Implemented | `NarrativePlanner` emits story entries for relevant events. |
@@ -250,7 +252,15 @@ window._game.experimentLogger.downloadCSV()
 window._game.experimentLogger.downloadJSON()
 ```
 
-The 🧪 Lab button opens `dashboard.html`, which displays overview metrics, Sims, Visitors, Relationships and Events. Relationship views include household and off-lot people when they exist in `PopulationSystem`.
+The 🧪 Lab button opens `dashboard.html`, which displays overview metrics, Sims, Visitors, Relationships, Events and an **AI Debug** tab. The AI tab shows the selected Sim's top-5 positive/negative `ExperientialBias` entries, active goals with progress bars, top-5 memories by salience (from `MemorySystem.topN(5)`), last `UtilityAIPlanner` decision and current emotion tier. Relationship views include household and off-lot people when they exist in `PopulationSystem`.
+
+**GameContext.** `src/core/GameContext.js` is a singleton that provides typed accessors (`sims()`, `simById()`, `.hour`, `.day`, `.socialDynamics`, `.relationshipGraph`, `.population`, `.memorySystem`). `Game.js` calls `GameContext.set(this)` immediately after `window._game = this`; `HeadlessRuntime.js` calls it after `ensureHeadlessGlobals` and resets it in `dispose()`. All AI modules (`SocialAction`, `SocialLearning`, `SimBrain`, `GoalSystem`, `UtilityAIPlanner`) use `GameContext.game` instead of `window._game`.
+
+**ContextualNoise.** Constructor now takes 5 params: `simSeed, getClock, getMood, getEmotion, neurotic`. `getEmotion` (a lambda returning the dominant emotion type from `EmotionEngine.emotion`) drives `EMOTION_NOISE_MOD`: `joy/love` amplify social affordances, `fear/anger/sadness` dampen them. `neurotic > 0.4` selects `HOUR_SOCIAL_CURVE_NEUROTIC` (peak at 20:00–21:00 vs. 19:00–20:00, lower morning energy) instead of the default circadian curve.
+
+**ExperientialBias.setRaw(key, delta).** Public method that clamps to `[BIAS_MIN, BIAS_MAX]` — `SocialLearning` uses it instead of accessing `_table` directly.
+
+**LifeCyclePanel goal bars.** Active goals section added between skills and career picker. Reads `sim.brain.goalSystem.activeGoals()`, renders progress bars (gold fill, 0–100%), refreshes on `goal:completed` event.
 
 ## How to run a social experiment manually
 

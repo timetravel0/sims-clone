@@ -49,6 +49,33 @@ eventi ripetuti, con un cap di ±0.30 dal valore iniziale.
 
 ---
 
+## Economia del cibo e morte per fame
+
+**Costo pasto.** Ogni volta che un Sim usa un oggetto che ripristina la fame
+(frigorifero, tavolo da pranzo o qualsiasi oggetto con `needTarget === 'hunger'`),
+il sistema detrae automaticamente **§15** dal budget familiare. Se il budget è
+insufficiente, il Sim non può mangiare (`UseObjectAction` termina subito senza
+ripristinare il bisogno o caricare l'oggetto).
+
+**Scala della fame.** `HealthSystem` controlla la salute ogni ~28 secondi di
+gioco. Se la fame di un Sim scende sotto **10** e ci rimane:
+
+| Cicli di starvation | Conseguenza |
+|---|---|
+| ≥ 5 (~2 minuti) | Il Sim si ammala di **starvation** (severity 0.75) |
+| ≥ 25 (~12 minuti) | Il Sim **muore** — `sim:died` + story entry |
+
+La malattia da fame non guarisce spontaneamente finché il Sim non riesce a
+mangiare: il contatore `_starveCycles` si azzera solo quando la fame risale
+sopra 10 (il Sim ha mangiato). In quel caso la malattia segue il normale
+percorso `ill → recovering → healthy`.
+
+**Morte.** `HealthSystem._killSim()` segna `person.dead = true`, nasconde la
+mesh, rimuove il Sim dall'array `game.sims`, chiama
+`population.deactivatePerson()` e emette `sim:died` + `life:event(death)` +
+`story:entry` drammatica. Non c'è resurrezione: la morte è permanente per quella
+sessione (la persona rimane nel record della popolazione con `dead: true`).
+
 ## Sistema Emozionale
 
 ### Mood baseline
@@ -118,7 +145,7 @@ Il punteggio di ogni affordance combina 6 fattori:
 3. Penalità distanza
 4. Bias da esperienza (ExperientialBias — rinforzo appreso)
 5. Boost da obiettivo attivo (GoalSystem)
-6. Rumore contestuale (circadiano + mood, deterministico per Sim)
+6. Rumore contestuale (circadiano + mood + emozione dominante, deterministico per Sim)
 
 Se fame, bladder o energia sono critici, le azioni che non aiutano quel bisogno
 ricevono una forte penalità. Questo evita casi osservati nei dati SQLite in cui
@@ -138,6 +165,25 @@ Il sistema genera automaticamente fino a **3 obiettivi attivi** per Sim:
 
 Gli obiettivi hanno una scadenza in giorni di gioco e vengono marcati
 completed/failed automaticamente dagli eventi del bus.
+
+Il **pannello LifeCycle** (toolbar) mostra le barre di progresso degli obiettivi
+attivi direttamente nell'interfaccia, con aggiornamento a ogni `goal:completed`.
+
+### Rumore contestuale (ContextualNoise)
+
+Il rumore contestuale modula lo scoring delle azioni con:
+- **Curva circadiana** — i Sim normali sono più sociali 18:00–21:00; i Sim **nevrotici** (neurotic > 0.4) usano una curva spostata (picco 20:00–21:00, mattina più bassa).
+- **Mood tier** — Sims miserable ricevono −60% rumore sociale.
+- **Emozione dominante** — joy/love amplificano le azioni sociali (+30–40%); fear/anger/sadness le attenuano (−25–45%); le azioni su oggetti reagiscono in senso opposto (sadness → +15% oggetti).
+
+### AI Debug overlay (dashboard)
+
+Il tab **🧠 AI Debug** nel dashboard mostra, per il Sim selezionato nel gioco:
+- **Experiential Bias top-5** positivi e negativi (affordance → valore appreso)
+- **Obiettivi attivi** con barra di progresso
+- **Top-5 memorie** per salienza
+- **Ultima decisione Utility AI** (azione, score, need/goal driver)
+- **Emozione corrente** (tier + tipo dominante)
 
 ---
 

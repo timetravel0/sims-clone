@@ -74,10 +74,13 @@ export class OffLotSimulationSystem {
     return (n.hunger ?? 100) >= 25 && (n.energy ?? 100) >= 25 && (n.bladder ?? 100) >= 25;
   }
 
-  _startOuting(sim) {
+  /** Public: start a specific outing for a sim (player-initiated, bypasses random check). */
+  forceOuting(sim, reason) { this._startOuting(sim, reason); }
+
+  _startOuting(sim, forcedReason = null) {
     const reasons = ['meal_out', 'trip', 'other'];
     if ((this._game.population?.offLotPeople?.()?.length ?? 0) > 0) reasons.push('visit_friend');
-    const reason = reasons[Math.floor(Math.random() * reasons.length)];
+    const reason = forcedReason ?? reasons[Math.floor(Math.random() * reasons.length)];
     sim._outing = true;
     sim._outingReason = reason;
     sim._offLotReason = reason;

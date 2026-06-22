@@ -93,6 +93,12 @@ export class ExperientialBias {
       .slice(0, n);
   }
 
+  /** Public API for external writers (SocialLearning, etc.) — no direct _table access needed. */
+  setRaw(key, delta) {
+    const current = this._table.get(key) ?? 0;
+    this._table.set(key, Math.max(BIAS_MIN, Math.min(BIAS_MAX, current + delta)));
+  }
+
   serialise()          { return Object.fromEntries(this._table); }
   restore(data)        { this._table = new Map(Object.entries(data).map(([k, v]) => [k, Number(v)])); }
 

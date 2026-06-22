@@ -310,6 +310,83 @@ function renderEvents(g) {
     }</tbody></table>`;
 }
 
+function renderAI(g) {
+  const sim = g.selectedSim ?? g.sims?.[0];
+  if (!sim) return '<div class="empty">No Sim selected. Click a Sim in the game.</div>';
+  const brain = sim.brain;
+  if (!brain) return '<div class="empty">No brain attached to selected Sim.</div>';
+
+  let html = `<h2>AI Debug — ${esc(sim.name ?? sim.id)}</h2>`;
+  html += `<div class="two-col">`;
+
+  // Bias table (top-5 positive + top-5 negative)
+  const pos = brain.expBias?.topPositive?.(5) ?? [];
+  const neg = brain.expBias?.topNegative?.(5) ?? [];
+  html += `<div>`;
+  html += `<h2>Experiential Bias (top-5)</h2>`;
+  if (pos.length + neg.length === 0) {
+    html += `<div class="muted">No biases recorded yet.</div>`;
+  } else {
+    html += `<table><thead><tr><th>Affordance</th><th>Bias</th></tr></thead><tbody>`;
+    for (const [k, v] of pos)
+      html += `<tr><td>${esc(k)}</td><td class="pos">+${v.toFixed(2)}</td></tr>`;
+    for (const [k, v] of neg)
+      html += `<tr><td>${esc(k)}</td><td class="neg">${v.toFixed(2)}</td></tr>`;
+    html += `</tbody></table>`;
+  }
+
+  // Active goals
+  const goals = brain.goalSystem?.activeGoals?.() ?? [];
+  html += `<h2>Active Goals (${goals.length})</h2>`;
+  if (goals.length === 0) {
+    html += `<div class="muted">No active goals.</div>`;
+  } else {
+    html += `<table><thead><tr><th>Goal</th><th>Progress</th></tr></thead><tbody>`;
+    for (const go of goals) {
+      const pct = Math.round((go.progress ?? 0) * 100);
+      html += `<tr><td>${esc(go.label ?? go.type)}</td>`;
+      html += `<td><div class="bar" style="min-width:80px"><i style="width:${pct}%;background:#ffd580"></i></div></td></tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  html += `</div>`;
+
+  // Memories + last decision + emotion
+  html += `<div>`;
+  const mems = brain.memory?.topN?.(5) ?? [];
+  html += `<h2>Top-5 Memories</h2>`;
+  if (mems.length === 0) {
+    html += `<div class="muted">No memories yet.</div>`;
+  } else {
+    html += `<table><thead><tr><th>Type</th><th>Content</th><th>Sal.</th></tr></thead><tbody>`;
+    for (const m of mems)
+      html += `<tr><td class="muted">${esc(m.type)}</td><td>${esc(m.content ?? m.summary ?? '')}</td><td>${(m.salience ?? 0).toFixed(2)}</td></tr>`;
+    html += `</tbody></table>`;
+  }
+
+  const dec = brain._utilityPlanner?.lastDecision;
+  html += `<h2>Last Utility Decision</h2>`;
+  if (!dec) {
+    html += `<div class="muted">No decision recorded.</div>`;
+  } else {
+    html += `<table><tbody>`;
+    html += `<tr><td>Action</td><td>${esc(dec.label ?? dec.verb ?? dec.action ?? '—')}</td></tr>`;
+    if (dec.score != null) html += `<tr><td>Score</td><td>${(+dec.score).toFixed(2)}</td></tr>`;
+    if (dec.need)  html += `<tr><td>Need</td><td>${esc(dec.need)}</td></tr>`;
+    if (dec.goal)  html += `<tr><td>Goal</td><td>${esc(dec.goal)}</td></tr>`;
+    html += `</tbody></table>`;
+  }
+
+  const emo  = brain.emotions?.emotion ?? null;
+  const tier = brain.emotions?.tier    ?? '—';
+  html += `<h2>Emotion</h2>`;
+  html += `<div class="summary">Tier: <b>${esc(tier)}</b>${emo ? `  ·  Dominant: <b class="tag">${esc(emo)}</b>` : ''}</div>`;
+
+  html += `</div>`;
+  html += `</div>`;
+  return html;
+}
+
 function peopleForRelationships(g) {
   const people = g.population?.allPeople?.();
   if (!people) return g.sims ?? [];
@@ -337,6 +414,7 @@ function render() {
     else if (activeTab === 'visitors') content.innerHTML = renderVisitors(g);
     else if (activeTab === 'rel')  content.innerHTML = renderRel(g);
     else if (activeTab === 'events') content.innerHTML = renderEvents(g);
+    else if (activeTab === 'ai')     content.innerHTML = renderAI(g);
   } catch (err) {
     content.innerHTML = `<div class="empty">Render error: ${esc(err.message)}</div>`;
   }

@@ -11,6 +11,7 @@ import { WellbeingAmbition }  from '../ai/WellbeingAmbition.js';
 import { SocialLearning }     from '../ai/SocialLearning.js';
 import { MemorySystem }       from '../ai/MemorySystem.js';
 import { EmotionEngine }      from './EmotionEngine.js';
+import { GameContext }        from '../core/GameContext.js';
 
 // Household bonding cooldown (game-minutes between deliberate "spend time with a
 // housemate" actions). Measurement showed household social need stays ~86 (well
@@ -38,8 +39,10 @@ export class SimBrain {
     this.drift        = new PersonalityDrift(sim.personality);
     this.ctxNoise     = new ContextualNoise(
       sim.id,
-      () => window._game?.clock,
-      () => this.emotions?.tier        // live tier from EmotionEngine
+      () => GameContext.game?.clock,
+      () => this.emotions?.tier,
+      () => this.emotions?.emotion,
+      sim.personality?.neurotic ?? 0
     );
     this.goalSystem   = new GoalSystem(sim);
     this.wellbeing    = new WellbeingAmbition(sim);
@@ -48,7 +51,7 @@ export class SimBrain {
     // ── Memory & Emotion ─────────────────────────────────────────────────────
     this.memory   = new MemorySystem(
       sim.id,
-      () => window._game?.tick ?? 0
+      () => GameContext.game?.tick ?? 0
     );
     this.emotions = new EmotionEngine(
       sim,
@@ -90,7 +93,7 @@ export class SimBrain {
     this.emotions.update(dt);
     this.wellbeing.update(dt);
 
-    const currentDay = window._game?.clock?.day ?? 0;
+    const currentDay = GameContext.game?.clock?.day ?? 0;
     this.goalSystem.update(dt, currentDay);
     this.ctxNoise.resetFrame();
 
@@ -181,7 +184,7 @@ export class SimBrain {
 
   /** A present, free housemate to bond with — biased toward the most compatible. */
   _findCompanion() {
-    const game = window._game;
+    const game = GameContext.game;
     if (!game) return null;
     const me = this._sim;
     const mates = game.sims.filter(s =>
@@ -202,7 +205,7 @@ export class SimBrain {
   }
 
   _findSocialTarget() {
-    const game = window._game;
+    const game = GameContext.game;
     if (!game) return null;
     const me = this._sim;
     // Only sims actually present on the lot and free (not at work / out / hidden):

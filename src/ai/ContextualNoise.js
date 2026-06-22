@@ -22,6 +22,16 @@ const MOOD_NOISE_MOD = {
   miserable: 0.4,
 };
 
+// Dominant emotion → { social multiplier, object multiplier }
+// fear/anger dampen social drive; joy amplifies it; sadness → slight object comfort-seeking
+const EMOTION_NOISE_MOD = {
+  joy:     { social: 1.3, object: 1.1 },
+  love:    { social: 1.4, object: 1.0 },
+  anger:   { social: 0.75, object: 0.9 },
+  fear:    { social: 0.55, object: 1.0 },
+  sadness: { social: 0.65, object: 1.15 },
+};
+
 // Hour-of-day social energy curve (0–23)
 const HOUR_SOCIAL_CURVE = [
   0.3, 0.2, 0.15, 0.1, 0.1, 0.2,   // 0-5  (night / early morning)
@@ -30,17 +40,29 @@ const HOUR_SOCIAL_CURVE = [
   1.1, 1.15, 1.2, 1.1, 0.8, 0.5,   // 18-23 (evening peak → wind-down)
 ];
 
+// Night-owl shift for neurotic Sims (neurotic > 0.4): peak social 2h later, morning lower
+const HOUR_SOCIAL_CURVE_NEUROTIC = [
+  0.5, 0.35, 0.2, 0.1, 0.1, 0.15,  // 0-5  (still up late, but fading)
+  0.2, 0.35, 0.55, 0.7, 0.8, 0.88, // 6-11 (slow morning rise)
+  0.95, 0.9, 0.88, 0.85, 0.9, 1.0, // 12-17 (afternoon)
+  1.05, 1.15, 1.25, 1.2, 1.0, 0.7, // 18-23 (peak shifted later)
+];
+
 export class ContextualNoise {
   /**
-   * @param {string|number} simSeed  — stable per-Sim identifier
-   * @param {Function}      getClock — () => { hour: number }  (injected, not coupled)
-   * @param {Function}      getMood  — () => string tier
+   * @param {string|number} simSeed    — stable per-Sim identifier
+   * @param {Function}      getClock  — () => { hour: number }
+   * @param {Function}      getMood   — () => string tier
+   * @param {Function}      getEmotion — () => string|null dominant emotion type
+   * @param {number}        neurotic  — personality neurotic trait [-1,+1]
    */
-  constructor(simSeed, getClock, getMood) {
-    this._seed     = this._hashStr(String(simSeed));
-    this._getClock = getClock;
-    this._getMood  = getMood;
-    this._frame    = 0; // increments each call to break intra-frame repetition
+  constructor(simSeed, getClock, getMood, getEmotion = null, neurotic = 0) {
+    this._seed       = this._hashStr(String(simSeed));
+    this._getClock   = getClock;
+    this._getMood    = getMood;
+    this._getEmotion = getEmotion;
+    this._nightOwl   = neurotic > 0.4;
+    this._frame      = 0;
   }
 
   /**
@@ -59,15 +81,20 @@ export class ContextualNoise {
     const affordKey = `${affordance?.verb}:${affordance?.target?.id ?? 'obj'}`;
     const raw       = this._noise(this._seed, this._hashStr(affordKey), this._frame);
 
-    // Circadian modulation
-    const circadian = HOUR_SOCIAL_CURVE[hour] ?? 1.0;
-    // Social affordances are boosted in social hours, object affordances are flat
+    // Circadian modulation — neurotic Sims use a night-owl curve
+    const curve     = this._nightOwl ? HOUR_SOCIAL_CURVE_NEUROTIC : HOUR_SOCIAL_CURVE;
+    const circadian = curve[hour] ?? 1.0;
     const typeBoost = isSocial ? circadian : 1.0;
 
     // Mood modulation
     const moodMod   = MOOD_NOISE_MOD[moodTier] ?? 1.0;
 
-    return raw * noiseMagnitude * typeBoost * moodMod;
+    // Dominant emotion modulation (joy opens up, fear/anger closes down)
+    const emotion   = this._getEmotion?.() ?? null;
+    const emoMods   = EMOTION_NOISE_MOD[emotion] ?? null;
+    const emoMod    = emoMods ? (isSocial ? emoMods.social : emoMods.object) : 1.0;
+
+    return raw * noiseMagnitude * typeBoost * moodMod * emoMod;
   }
 
   /** Deterministic noise: maps (a, b, c) integers → [0, 1]. */

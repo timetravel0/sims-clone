@@ -8,6 +8,11 @@ const ILLNESSES = [
   { id: 'food_poisoning', label: 'food poisoning' },
 ];
 
+// Starvation ladder (in HealthSystem update cycles, each ~28 game-seconds)
+const STARVE_HUNGER_MAX  = 10;   // hunger below this = starving
+const STARVE_ILL_CYCLES  = 5;    // cycles before illness (~2 game-minutes)
+const STARVE_DEATH_CYCLES = 25;  // cycles before death  (~12 game-minutes total)
+
 export class HealthSystem {
   constructor(game, opts = {}) {
     this._game = game;
@@ -77,8 +82,28 @@ export class HealthSystem {
   }
 
   _updatePerson(person) {
+    if (person.dead) return;
     const sim = this._game.sims?.find?.(s => s.id === person.id) ?? null;
     const health = person.health ?? { state: 'healthy', severity: 0 };
+
+    // ── Starvation ladder ────────────────────────────────────────────────────
+    if (sim) {
+      const hunger = sim.needs?.get?.('hunger') ?? 100;
+      if (hunger < STARVE_HUNGER_MAX) {
+        person._starveCycles = (person._starveCycles ?? 0) + 1;
+        const c = person._starveCycles;
+        if (c >= STARVE_DEATH_CYCLES) {
+          this._killSim(person, sim);
+          return;
+        }
+        if (c >= STARVE_ILL_CYCLES && health.state === 'healthy') {
+          this._setIll(person, 'starvation', 0.75, { cause: 'starvation' });
+        }
+      } else {
+        person._starveCycles = 0; // reset when Sim has eaten
+      }
+    }
+
     if (health.state === 'healthy') {
       const chance = this._illnessChance(person, sim);
       if (Math.random() < chance) {
@@ -161,6 +186,24 @@ export class HealthSystem {
         category: 'drama',
       });
     }
+  }
+
+  _killSim(person, sim) {
+    person.dead = true;
+    person._starveCycles = 0;
+    if (sim) {
+      if (sim.mesh) sim.mesh.visible = false;
+      const idx = this._game.sims?.indexOf?.(sim) ?? -1;
+      if (idx >= 0) this._game.sims.splice(idx, 1);
+      this._game.population?.deactivatePerson?.(person.id);
+    }
+    bus.emit('sim:died', { personId: person.id, personName: person.name, cause: 'starvation' });
+    bus.emit('story:entry', {
+      text: `${person.name} è morto/a di fame. 💀`,
+      cat: 'drama',
+      category: 'drama',
+    });
+    bus.emit('life:event', { simId: person.id, type: 'death', valence: -1 });
   }
 
   _illnessChance(person, sim) {

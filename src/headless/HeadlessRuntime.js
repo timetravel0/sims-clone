@@ -26,6 +26,7 @@ import { WallManager } from '../world/WallManager.js';
 import { RoomDetector } from '../world/RoomDetector.js';
 import { SIM_DEFS, STARTER_CAREERS } from '../config/defaultPopulation.js';
 import { ObjectRegistry } from '../systems/ObjectRegistry.js';
+import { GameContext }    from '../core/GameContext.js';
 
 // Fidelity: the browser advances on a fixed 20 Hz timestep (GameLoop TICK_MS),
 // i.e. dt=0.05s per frame. Movement (step = SPEED·dt), path-block timers and the
@@ -71,6 +72,7 @@ export class HeadlessRuntime {
     this.budgetSystem.reset();
     this._unsubscribers = [];
     ensureHeadlessGlobals(this);
+    GameContext.set(this);
 
     this._scene = new THREE.Scene();
     this._scene.background = new THREE.Color(0x1a1814);
@@ -265,6 +267,8 @@ export class HeadlessRuntime {
     }
     if ((globalThis.window?._game) === this) globalThis.window._game = null;
     if (globalThis._game === this) globalThis._game = null;
+    if (GameContext.game === this) GameContext.reset();
+    bus.clear();  // remove all child-system listeners registered during this run
   }
 
   _registerMetricEvents() {

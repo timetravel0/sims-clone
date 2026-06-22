@@ -71,14 +71,11 @@ const summaries = [];
 const originalRandom = Math.random;
 try {
   for (let i = 0; i < runs; i++) {
-    bus.clear();
-
     const runSeed = seed + i;
     Math.random = seededRandom(runSeed);
     const runId = `headless_${Date.now()}_${runSeed}`;
     const sim = new HeadlessRuntime({ seed: runSeed });
     const summary = sim.run({ ticks });
-    summaries.push({ runId, ...summary, busListenersAfterRun: bus.listenerCount() });
 
     db.run('INSERT INTO runs (id, seed, ticks, started_at, summary_json) VALUES (?,?,?,?,?)',
       [runId, runSeed, ticks, new Date().toISOString(), JSON.stringify(summary)]);
@@ -106,6 +103,7 @@ try {
     } finally {
       sim.dispose?.();
     }
+    summaries.push({ runId, ...summary, busListenersAfterRun: bus.listenerCount() });
   }
 } finally {
   Math.random = originalRandom;

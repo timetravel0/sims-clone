@@ -4,6 +4,7 @@ import { skillSystem }         from '../systems/SkillSystem.js';
 import { INTERACTIONS }        from '../systems/SocialDynamicsSystem.js';
 import { Logger }              from '../utils/Logger.js';
 import { bus }                 from '../core/EventBus.js';
+import { GameContext }         from '../core/GameContext.js';
 
 let _eventCounter = 0;
 
@@ -67,7 +68,7 @@ export class SocialAction extends Action {
   // ── Context-aware type selection ────────────────────────────────────────────
 
   _pickType() {
-    const game = window._game;
+    const game = GameContext.game;
     const dyn  = game?.socialDynamics;
     const a = this._simA, b = this._simB, p = a.personality;
     const ctx = this._miniContext();
@@ -116,7 +117,7 @@ export class SocialAction extends Action {
   // ── Resolution ──────────────────────────────────────────────────────────────
 
   _doInteract() {
-    const game = window._game;
+    const game = GameContext.game;
     const dyn  = game?.socialDynamics;
     const a = this._simA, b = this._simB;
     const def = INTERACTIONS[this._type] ?? INTERACTIONS.chat;
@@ -178,7 +179,7 @@ export class SocialAction extends Action {
   /** Base acceptance from energy / familiarity / personality (dynamics layered on top). */
   _baseAcceptance() {
     const rel = socialManager.getRelation(this._simB.id, this._simA.id);
-    const dynRel = window._game?.socialDynamics?.snapshot?.(this._simB.id, this._simA.id) ?? {};
+    const dynRel = GameContext.socialDynamics?.snapshot?.(this._simB.id, this._simA.id) ?? {};
     const p = this._simB.personality;
     const energy = this._simB.needs.get('energy');
     // ponytail: +10 baseline lifts cold-start acceptance from ~47% to ~60-65%.
@@ -222,7 +223,7 @@ export class SocialAction extends Action {
 
   /** Lightweight context used at construction time (requirements + type pick). */
   _miniContext() {
-    const game = window._game;
+    const game = GameContext.game;
     const a = this._simA, b = this._simB;
     const targetMoodLow = this._isMoodLow(b);
     return {
@@ -237,7 +238,7 @@ export class SocialAction extends Action {
 
   /** Full synthetic context published with the interaction event. */
   _buildContext() {
-    const game = window._game;
+    const game = GameContext.game;
     const a = this._simA, b = this._simB;
     const witnesses = (game?.sims ?? [])
       .filter(s => s !== a && s !== b && !s._atWork && !s._outing && this._near(s, b, 4))
@@ -273,7 +274,7 @@ export class SocialAction extends Action {
   }
 
   _locationLabel(sim) {
-    const game = window._game;
+    const game = GameContext.game;
     const furn = (game?.world?.furniture ?? []).find(f => Math.abs(f.gx - sim.gx) <= 1 && Math.abs(f.gz - sim.gz) <= 1);
     if (furn) return furn.id;
     const room = game?.roomDetector?.roomAt?.(sim.gx, sim.gz);
