@@ -1,48 +1,35 @@
-import { bus } from '../core/EventBus.js';
+import { bus }         from '../core/EventBus.js';
+import { GameContext } from '../core/GameContext.js';
 
 /**
- * GoalSystem — medium-term self-generated objectives per Sim.
+ * GoalSystem — obiettivi a medio termine auto-generati per Sim.
  *
- * Goals are generated automatically from:
- *  - Personality traits (ambitious → career goals, outgoing → friendship goals)
- *  - Baseline wellbeing ambition (self happiness + family welfare)
- *  - Recent memory patterns (bad memories → avoidance goals)
- *  - Life events (fired → financial recovery goal)
- *
- * A goal has:
- *  { id, type, label, targetId?, deadline, progress, weight, status }
- *
- * status: 'active' | 'completed' | 'failed' | 'abandoned'
- * weight: 0.0–1.0 how much this goal boosts matching affordances
- *
- * Goals interact with UtilityAIPlanner via boost(affordance):
- * if the affordance serves an active goal, score gets +weight*GOAL_BONUS.
- *
- * Max active goals: 3 (prevents goal spam).
- * Deadline in in-game days; expired goals are marked 'failed'.
+ * Modifiche rispetto alla versione precedente:
+ *  - Usa GameContext al posto di window._game
+ *  - Aggiunto destroy() per cleanup dei listener (fix memory leak)
+ *  - make_friend: target scelto in base a MemorySystem.biasWith() (valenza positiva)
+ *    invece di Math.random(); non rigenera lo stesso goal se fallito di recente
  */
 
-const GOAL_BONUS  = 8;    // score points per unit of goal weight
+const GOAL_BONUS  = 8;
 const MAX_GOALS   = 3;
-const REGEN_COOL  = 120;  // sim-seconds before generating a new goal
+const REGEN_COOL  = 120;
 
-const SELF_CARE_VERBS = new Set(['sleep', 'eat', 'use_toilet', 'shower', 'relax', 'watch_tv', 'read', 'study', 'play_chess', 'play_piano', 'soak', 'dine']);
-const FAMILY_CARE_VERBS = new Set(['comfort', 'offer_help', 'hug', 'chat', 'compliment', 'apologize', 'forgive']);
+const SELF_CARE_VERBS    = new Set(['sleep', 'eat', 'use_toilet', 'shower', 'relax', 'watch_tv', 'read', 'study', 'play_chess', 'play_piano', 'soak', 'dine']);
+const FAMILY_CARE_VERBS  = new Set(['comfort', 'offer_help', 'hug', 'chat', 'compliment', 'apologize', 'forgive']);
 const HARMFUL_FAMILY_VERBS = new Set(['argue', 'insult', 'confront', 'avoid']);
 
 export class GoalSystem {
   constructor(sim) {
     this._sim        = sim;
-    this._goals      = [];  // Goal[]
+    this._goals      = [];
     this._regenTimer = 0;
+    this._listeners  = [];   // per cleanup in destroy()
     this._registerListeners();
   }
 
-  // ── Public API ────────────────────────────────────────────────────────────
+  // ── Public API ─────────────────────────────────────────────────────────────────────
 
-  /**
-   * Returns bonus score for an affordance that serves an active goal.
-   */
   boost(affordance) {
     let total = 0;
     for (const goal of this._goals) {
@@ -52,26 +39,22 @@ export class GoalSystem {
     return total;
   }
 
-  /** Tick: countdown deadlines, generate new goals when needed. */
   update(dt, currentDay) {
-    // Expire overdue goals
     for (const goal of this._goals) {
       if (goal.status !== 'active') continue;
       if (currentDay > goal.deadline) {
         goal.status = 'failed';
         bus.emit('goal:failed', { simId: this._sim.id, goal });
-        bus.emit('story:entry', { text: `${this._sim.name} failed their goal: ${goal.label}`, cat: 'mood' });
+        bus.emit('story:entry', { text: `${this._sim.name} non ha raggiunto l'obiettivo: ${goal.label}`, cat: 'mood' });
       }
     }
 
-    // Prune old non-active goals beyond history of 10
     const finished = this._goals.filter(g => g.status !== 'active');
     if (finished.length > 10) this._goals = [
       ...this._goals.filter(g => g.status === 'active'),
       ...finished.slice(-10),
     ];
 
-    // Try to generate a new goal
     this._regenTimer -= dt;
     if (this._regenTimer <= 0) {
       this._regenTimer = REGEN_COOL;
@@ -79,10 +62,9 @@ export class GoalSystem {
     }
   }
 
-  activeGoals()    { return this._goals.filter(g => g.status === 'active'); }
-  allGoals()       { return [...this._goals]; }
+  activeGoals() { return this._goals.filter(g => g.status === 'active'); }
+  allGoals()    { return [...this._goals]; }
 
-  /** Mark a goal complete (called by CareerSystem, RelationshipGraph, etc.) */
   complete(goalType, targetId) {
     const goal = this._goals.find(g =>
       g.status === 'active' && g.type === goalType &&
@@ -92,13 +74,19 @@ export class GoalSystem {
     goal.status   = 'completed';
     goal.progress = 1;
     bus.emit('goal:completed', { simId: this._sim.id, goal });
-    bus.emit('story:entry', { text: `${this._sim.name} achieved their goal: ${goal.label} 🎯`, cat: 'positive' });
+    bus.emit('story:entry', { text: `${this._sim.name} ha raggiunto il suo obiettivo: ${goal.label} 🎯`, cat: 'positive' });
   }
 
   serialise()  { return this._goals.map(g => ({ ...g })); }
   restore(arr) { this._goals = arr.map(g => ({ ...g })); }
 
-  // ── Goal generation ───────────────────────────────────────────────────────
+  /** Rimuove tutti i listener dell'EventBus (fix memory leak). */
+  destroy() {
+    for (const { event, handler } of this._listeners) bus.off(event, handler);
+    this._listeners = [];
+  }
+
+  // ── Goal generation ───────────────────────────────────────────────────────────
 
   _tryGenerate(currentDay) {
     const active = this.activeGoals();
@@ -107,15 +95,13 @@ export class GoalSystem {
     const candidates = this._buildCandidates(currentDay);
     if (candidates.length === 0) return;
 
-    // Don't repeat an already-active type
     const filtered = candidates.filter(c => !active.some(a => a.type === c.type));
     if (filtered.length === 0) return;
 
-    // Weighted random pick
     const goal = this._weightedPick(filtered);
     this._goals.push(goal);
     bus.emit('goal:created', { simId: this._sim.id, goal });
-    bus.emit('story:entry', { text: `${this._sim.name} sets a new goal: ${goal.label}`, cat: 'neutral' });
+    bus.emit('story:entry', { text: `${this._sim.name} si pone un nuovo obiettivo: ${goal.label}`, cat: 'neutral' });
   }
 
   _buildCandidates(currentDay) {
@@ -124,24 +110,22 @@ export class GoalSystem {
     const day = currentDay ?? 0;
     const wellbeing = this._sim.brain?.wellbeing?.evaluate?.();
 
-    // Universal ambition: every Sim wants to be satisfied and happy.
     out.push({
       id:       this._uid(),
       type:     'be_happy',
-      label:    'Feel satisfied and happy',
+      label:    'Sentirsi soddisfatto e felice',
       deadline: day + 2,
       progress: 0,
       weight:   Math.min(1, 0.45 + (wellbeing?.ownDrive ?? 0.35) * 0.55 + Math.max(0, p.neurotic ?? 0) * 0.15),
       status:   'active',
     });
 
-    // If not alone, family-minded Sims generate household wellbeing goals.
     const familyMembers = this._householdOthers();
     if (familyMembers.length > 0) {
       out.push({
         id:       this._uid(),
         type:     'support_family',
-        label:    'Help the household feel better',
+        label:    'Aiutare la famiglia a stare meglio',
         deadline: day + 3,
         progress: 0,
         weight:   Math.min(1, 0.35 + (wellbeing?.familyDrive ?? 0.25) * 0.65 + Math.max(0, p.nice ?? 0) * 0.2),
@@ -149,12 +133,11 @@ export class GoalSystem {
       });
     }
 
-    // Career advancement (ambitious Sims generate more often)
     if (p.ambitious > 0) {
       out.push({
         id:       this._uid(),
         type:     'career_advance',
-        label:    'Get a promotion',
+        label:    'Ottenere una promozione',
         deadline: day + 5,
         progress: 0,
         weight:   0.6 + p.ambitious * 0.4,
@@ -162,16 +145,16 @@ export class GoalSystem {
       });
     }
 
-    // Make a friend (outgoing Sims)
+    // make_friend: target scelto tramite MemorySystem (valenza positiva)
+    // Non rigenera lo stesso target se fallito recentemente
     if (p.outgoing > -0.2) {
-      const others = window._game?.sims?.filter(s => s.id !== this._sim.id) ?? [];
-      if (others.length > 0) {
-        const target = others[Math.floor(Math.random() * others.length)];
+      const friendTarget = this._pickFriendTarget();
+      if (friendTarget) {
         out.push({
           id:       this._uid(),
           type:     'make_friend',
-          label:    `Befriend ${target.name}`,
-          targetId: target.id,
+          label:    `Fare amicizia con ${friendTarget.name}`,
+          targetId: friendTarget.id,
           deadline: day + 4,
           progress: 0,
           weight:   0.5 + p.outgoing * 0.4,
@@ -180,24 +163,22 @@ export class GoalSystem {
       }
     }
 
-    // Improve a skill
     out.push({
       id:       this._uid(),
       type:     'skill_up',
-      label:    'Improve a skill',
+      label:    'Migliorare una competenza',
       deadline: day + 3,
       progress: 0,
       weight:   0.4 + Math.abs(p.ambitious) * 0.3,
       status:   'active',
     });
 
-    // Relaxation goal (neurotic or tired Sims)
     const energy = this._sim.needs?.get('energy') ?? 80;
     if (p.neurotic > 0.2 || energy < 40) {
       out.push({
         id:       this._uid(),
         type:     'rest',
-        label:    'Get proper rest',
+        label:    'Riposarsi adeguatamente',
         deadline: day + 2,
         progress: 0,
         weight:   0.5 + p.neurotic * 0.3,
@@ -205,24 +186,23 @@ export class GoalSystem {
       });
     }
 
-    // Avoidance goal (recent negative memories with a specific Sim)
-    const memSys = window._game?.memorySystem;
+    const memSys = GameContext.memorySystem;
     if (memSys) {
-      const others = window._game?.sims?.filter(s => s.id !== this._sim.id) ?? [];
+      const others = GameContext.sims(this._sim.id);
       for (const other of others) {
         const bias = memSys.biasWith(this._sim.id, other.id);
         if (bias < -0.4) {
           out.push({
             id:       this._uid(),
             type:     'avoid_sim',
-            label:    `Avoid ${other.name}`,
+            label:    `Evitare ${other.name}`,
             targetId: other.id,
             deadline: day + 7,
             progress: 0,
             weight:   Math.abs(bias) * 0.8,
             status:   'active',
           });
-          break; // only one avoidance goal at a time
+          break;
         }
       }
     }
@@ -230,7 +210,41 @@ export class GoalSystem {
     return out;
   }
 
-  // ── Affordance matching ───────────────────────────────────────────────────
+  /**
+   * Sceglie il target più adatto per un goal make_friend:
+   *  1. Preferisce Sim con valenza positiva nel MemorySystem
+   *  2. Esclude Sim per cui un goal make_friend è già fallito di recente
+   *  3. Fallback: Sim casuale se la memoria è assente
+   */
+  _pickFriendTarget() {
+    const others = GameContext.sims(this._sim.id).filter(s => !s._isVisitor && !s._atWork);
+    if (others.length === 0) return null;
+
+    // Escludi target di goal falliti negli ultimi 5 goal conclusi
+    const recentlyFailed = new Set(
+      this._goals
+        .filter(g => g.status === 'failed' && g.type === 'make_friend')
+        .slice(-5)
+        .map(g => g.targetId)
+    );
+
+    const candidates = others.filter(s => !recentlyFailed.has(s.id));
+    if (candidates.length === 0) return others[Math.floor(Math.random() * others.length)];
+
+    // Ordina per valenza positiva nel MemorySystem (se disponibile)
+    const memSys = this._sim.brain?.memory;
+    if (memSys) {
+      const scored = candidates.map(s => ({ sim: s, bias: memSys.biasWith(s.id) }));
+      scored.sort((a, b) => b.bias - a.bias);
+      // Scegli tra i top-3 con un po' di casualità
+      const pool = scored.slice(0, Math.min(3, scored.length));
+      return pool[Math.floor(Math.random() * pool.length)].sim;
+    }
+
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  // ── Affordance matching ────────────────────────────────────────────────────────
 
   _matchScore(goal, affordance) {
     switch (goal.type) {
@@ -245,7 +259,6 @@ export class GoalSystem {
         if (HARMFUL_FAMILY_VERBS.has(affordance.verb)) return -1.3;
         return 0.2;
       case 'career_advance':
-        // Boost skill-building objects and work-related actions
         return affordance.skillGain ? 0.8 : 0;
       case 'make_friend':
         if (affordance.targetType !== 'sim') return 0;
@@ -256,7 +269,6 @@ export class GoalSystem {
       case 'rest':
         return (affordance.verb === 'sleep' || affordance.verb === 'sit' || affordance.verb === 'relax') ? 0.7 : 0;
       case 'avoid_sim':
-        // Negative score: penalises interactions with the avoided Sim
         if (affordance.targetType === 'sim' && affordance.target?.id === goal.targetId) return -1.2;
         return 0;
       default:
@@ -264,26 +276,31 @@ export class GoalSystem {
     }
   }
 
-  // ── Listeners ─────────────────────────────────────────────────────────────
+  // ── Listeners ─────────────────────────────────────────────────────────────────────
+
+  _on(event, handler) {
+    bus.on(event, handler);
+    this._listeners.push({ event, handler });
+  }
 
   _registerListeners() {
-    bus.on('career:levelUp', ({ simId }) => {
+    this._on('career:levelUp', ({ simId }) => {
       if (simId !== this._sim.id) return;
       this.complete('career_advance');
     });
 
-    bus.on('social:interaction', ({ idA, idB, score, accepted, type }) => {
+    this._on('social:interaction', ({ idA, idB, score, accepted, type }) => {
       if (idA !== this._sim.id) return;
       if (score > 50) this.complete('make_friend', idB);
       if (accepted && FAMILY_CARE_VERBS.has(type) && this._isHouseholdMember(idB)) this.complete('support_family');
     });
 
-    bus.on('skill:levelUp', ({ simId }) => {
+    this._on('skill:levelUp', ({ simId }) => {
       if (simId !== this._sim.id) return;
       this.complete('skill_up');
     });
 
-    bus.on('sim:moodChanged', ({ simId, to }) => {
+    this._on('sim:moodChanged', ({ simId, to }) => {
       if (simId !== this._sim.id) return;
       if (to === 'happy' || to === 'ecstatic') {
         this.complete('rest');
@@ -293,17 +310,16 @@ export class GoalSystem {
   }
 
   _householdOthers() {
-    const game = window._game;
-    return (game?.sims ?? []).filter(s => s.id !== this._sim.id && !s._isVisitor && (game?.population?.isHouseholdMember?.(s.id) ?? true));
+    return GameContext.sims(this._sim.id)
+      .filter(s => !s._isVisitor && (GameContext.population?.isHouseholdMember?.(s.id) ?? true));
   }
 
   _isHouseholdMember(id) {
     if (!id) return false;
-    const game = window._game;
-    return !!game?.population?.isHouseholdMember?.(id);
+    return !!GameContext.population?.isHouseholdMember?.(id);
   }
 
-  _uid()          { return `g_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`; }
+  _uid()         { return `g_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`; }
   _weightedPick(arr) {
     const total = arr.reduce((s, c) => s + c.weight, 0);
     let r = Math.random() * total;

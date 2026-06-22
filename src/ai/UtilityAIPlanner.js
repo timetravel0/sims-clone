@@ -2,12 +2,12 @@ import { WalkToAction, UseObjectAction } from './Action.js';
 import { SocialAction }                  from './SocialAction.js';
 import { socialManager }                 from '../systems/SocialManager.js';
 import { INTERACTIONS }                  from '../systems/SocialDynamicsSystem.js';
+import { GameContext }                   from '../core/GameContext.js';
 
 const VIEW_RADIUS = 8;
-const TOP_K       = 5;   // wider pick pool: history can rescue lower-ranked affordances
+const TOP_K       = 5;
 const SOCIAL_ENERGY_MIN = 12;
 
-// Need-pressure utility per interaction type (drives base scoring).
 const SOCIAL_UTILITY = {
   chat:        { social: 24, energy: -5 },
   joke:        { social: 20, fun: 10, energy: -4 },
@@ -28,10 +28,6 @@ const SOCIAL_UTILITY = {
 const POSITIVE_SOCIAL = new Set(['chat', 'joke', 'compliment', 'hug', 'apologize', 'forgive', 'comfort', 'offer_help', 'ask_help', 'gossip', 'flirt']);
 const NEGATIVE_SOCIAL = new Set(['argue', 'insult', 'confront', 'avoid']);
 
-/**
- * NEED_TRAIT_WEIGHT — personality modulation on utility.
- * Now reads from the (potentially drifted) personality live.
- */
 const NEED_TRAIT_WEIGHT = {
   social:   sim => 1 + sim.personality.outgoing  * 0.45,
   status:   sim => 1 + sim.personality.ambitious * 0.25 + sim.personality.nice * 0.15,
@@ -48,11 +44,10 @@ const NEED_TRAIT_WEIGHT = {
 export class UtilityAIPlanner {
   constructor(sim) {
     this._sim   = sim;
-    this._brain = null;   // injected by SimBrain.setBrain()
+    this._brain = null;
     this.lastDecision = null;
   }
 
-  /** Called by SimBrain after construction to avoid circular dependency. */
   setBrain(brain) { this._brain = brain; }
 
   plan() {
@@ -64,12 +59,9 @@ export class UtilityAIPlanner {
 
     if (affordances.length === 0) return [];
 
-    // ── Softmax-style weighted pick from TOP_K ─────────────────────────────
-    // Replaces flat random: high-scored affordances are more likely,
-    // but lower ones still have a chance (non-determinism preserved).
     const pool    = affordances.slice(0, TOP_K);
     const minS    = pool[pool.length - 1].score;
-    const weights = pool.map(a => Math.exp(a.score - minS)); // exp-normalised
+    const weights = pool.map(a => Math.exp(a.score - minS));
     const total   = weights.reduce((s, w) => s + w, 0);
     let   r       = Math.random() * total;
     let   chosen  = pool[pool.length - 1];
@@ -89,26 +81,19 @@ export class UtilityAIPlanner {
       if (this._distanceTo(furniture) > VIEW_RADIUS) continue;
       out.push(...furniture.getAffordancesFor(this._sim));
     }
-    for (const other of globalThis.window?._game?.sims || []) {
-      if (other.id === this._sim.id) continue;
+    // Usa GameContext invece di window._game
+    for (const other of GameContext.sims(this._sim.id)) {
       if (this._distanceTo(other) > VIEW_RADIUS) continue;
       out.push(...this._socialAffordances(other));
     }
     return out;
   }
 
-  /**
-   * Social affordances are generated from the SocialDynamicsSystem INTERACTIONS
-   * catalogue when available (so the new relational model actually drives
-   * behaviour), filtered by cooldown, requirements, energy and target presence.
-   * Falls back to a small legacy list only when socialDynamics is absent.
-   */
   _socialAffordances(target) {
-    const game = globalThis.window?._game;
-    const dyn  = game?.socialDynamics;
+    const dyn   = GameContext.socialDynamics;
     const actor = this._sim;
-    if (target._atWork) return [];                              // not on the lot
-    if (actor.needs.get('energy') < SOCIAL_ENERGY_MIN) return []; // too tired
+    if (target._atWork) return [];
+    if (actor.needs.get('energy') < SOCIAL_ENERGY_MIN) return [];
     if (!dyn) return this._legacySocialAffordances(target);
 
     const ctx = this._socialContext(target);
@@ -116,8 +101,8 @@ export class UtilityAIPlanner {
     const rel = socialManager.getRelation(actor.id, target.id);
     const out = [];
     for (const [type, def] of Object.entries(INTERACTIONS)) {
-      if (type === 'reject_flirt') continue;                   // response-only
-      if (dyn.onCooldown(actor.id, target.id, type)) continue; // no spam
+      if (type === 'reject_flirt') continue;
+      if (dyn.onCooldown(actor.id, target.id, type)) continue;
       if (!dyn.meetsRequirements(actor.id, target.id, type, ctx)) continue;
       out.push({
         targetType: 'sim', target, verb: type,
@@ -133,7 +118,6 @@ export class UtilityAIPlanner {
     return out;
   }
 
-  /** Legacy hardcoded social affordances — only used if socialDynamics absent. */
   _legacySocialAffordances(target) {
     const rel = socialManager.getRelation(this._sim.id, target.id);
     return [
@@ -144,15 +128,14 @@ export class UtilityAIPlanner {
     ].map(a => ({ ...a, relation: rel }));
   }
 
-  /** Lightweight context for INTERACTIONS.requires(). */
   _socialContext(target) {
-    const a = this._sim, b = target, game = globalThis.window?._game;
+    const a = this._sim, b = target;
     const label = (b._moodLabel ?? '').toLowerCase();
     return {
       actorNeedLow:  a.needs.get('social') < 30 || a.needs.get('fun') < 22,
       targetNeedLow: b.needs.get('social') < 30 || b.needs.get('comfort') < 25,
       targetMoodLow: /miser|sad|low|down/.test(label) || b.needs.get('comfort') < 25 || b.needs.get('fun') < 20,
-      compatible:    (game?.relationshipGraph?.compatibility?.(a.id, b.id) ?? 0) >= 0.5,
+      compatible:    (GameContext.relationshipGraph?.compatibility?.(a.id, b.id) ?? 0) >= 0.5,
     };
   }
 
@@ -172,7 +155,6 @@ export class UtilityAIPlanner {
     const needs = this._sim.needs.getAll();
     let score   = 0;
 
-    // ── 1. Base utility × need pressure × personality trait weight ─────────
     for (const [need, utility] of Object.entries(affordance.utility || {})) {
       const current     = needs[need] ?? 50;
       const pressure    = utility >= 0 ? 100 - current : current;
@@ -181,69 +163,59 @@ export class UtilityAIPlanner {
     }
     score += this._criticalNeedAdjustment(affordance, needs);
 
-    // ── 2. Social relationship bonus ────────────────────────────────────────
     if (affordance.targetType === 'sim' && affordance.relation) {
       score += affordance.relation.familiarity * 0.05;
       score += affordance.relation.score       * 0.03;
     }
 
-    // ── 2b. Social Core 2.0 — directional dimensions drive the choice ───────
     if (affordance.targetType === 'sim' && affordance.verb) {
-      const dyn = globalThis.window?._game?.socialDynamics;
+      const dyn = GameContext.socialDynamics;
       if (dyn) {
-        const ab = affordance.dyn ?? dyn.snapshot(this._sim.id, affordance.target.id);
-        const ba = dyn.snapshot(affordance.target.id, this._sim.id);
+        const ab      = affordance.dyn ?? dyn.snapshot(this._sim.id, affordance.target.id);
+        const ba      = dyn.snapshot(affordance.target.id, this._sim.id);
         const affinity = dyn.affinity(this._sim.id, affordance.target.id);
-        const verb = affordance.verb;
+        const verb    = affordance.verb;
         if (POSITIVE_SOCIAL.has(verb)) score += affinity * 0.06 + ab.affection * 0.08 + ab.trust * 0.05;
         if (NEGATIVE_SOCIAL.has(verb)) score += ab.resentment * 0.16 - ab.affection * 0.04;
         if (verb === 'flirt') {
           score += ab.attraction * 0.25 + ab.affection * 0.05;
-          // A committed Sim doesn't go looking to flirt with others.
-          const partner = globalThis.window?._game?.population?.getPartner?.(this._sim.id);
+          const partner = GameContext.population?.getPartner?.(this._sim.id);
           if (partner && partner.id !== affordance.target.id) score -= 40;
         }
-        if (verb === 'apologize') score += ba.resentment * 0.18;   // they resent me → I apologise
-        if (verb === 'forgive')   score += ab.resentment * 0.16;   // I resent them → I forgive
+        if (verb === 'apologize') score += ba.resentment * 0.18;
+        if (verb === 'forgive')   score += ab.resentment * 0.16;
         if (verb === 'confront')  score += ab.resentment * 0.12;
         if (verb === 'comfort')   score += ab.affection  * 0.08;
         if (verb === 'avoid')     score += (ab.resentment + ab.fear) * 0.10;
-        score -= ab.fear * 0.04;                                   // fear suppresses approach
+        score -= ab.fear * 0.04;
       }
     }
 
-    // ── 3. WellbeingAmbition — personal happiness + family welfare ──────────
     if (this._brain?.wellbeing) {
       score += this._brain.wellbeing.boost(affordance);
     }
 
-    // ── 4. Distance penalty ─────────────────────────────────────────────────
     score -= this._distanceTo(affordance.target) * 0.35;
 
-    // ── 5. ExperientialBias — learned from history ──────────────────────────
     if (this._brain?.expBias) {
       score += this._brain.expBias.get(affordance) * 1.8;
     }
 
-    // ── 6. GoalSystem boost — medium-term objectives ────────────────────────
     if (this._brain?.goalSystem) {
       score += this._brain.goalSystem.boost(affordance);
     }
 
-    // ── 7. ContextualNoise — circadian + mood-modulated variance ────────────
     if (this._brain?.ctxNoise) {
       score += this._brain.ctxNoise.sample(affordance, 4.0);
     } else {
-      score += Math.random() * 2.5; // fallback if brain not yet wired
+      score += Math.random() * 2.5;
     }
 
-    // ── 8. Night-time — Sims should mostly sleep (22:00–07:00) ──────────────
-    // Critical hunger/bladder/energy still preempt this (see
-    // _criticalNeedAdjustment), so a starving Sim eats before going to bed.
-    const hour = globalThis.window?._game?.clock?.hour ?? 12;
+    // Orario notturno: usa GameContext.hour invece di window._game
+    const hour = GameContext.hour;
     if (hour >= 22 || hour < 7) {
       if (affordance.verb === 'sleep') score += 80;
-      else if ((affordance.utility?.energy ?? 0) < 0) score -= 30; // discourage active/social actions at night
+      else if ((affordance.utility?.energy ?? 0) < 0) score -= 30;
     }
 
     return score;
