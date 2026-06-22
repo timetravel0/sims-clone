@@ -27,6 +27,15 @@ import { RoomDetector } from '../world/RoomDetector.js';
 import { SIM_DEFS, STARTER_CAREERS } from '../config/defaultPopulation.js';
 import { ObjectRegistry } from '../systems/ObjectRegistry.js';
 
+const HEADLESS_METRIC_EVENTS = [
+  'skill:levelUp',
+  'career:promoted',
+  'career:salary',
+  'career:shiftEnd',
+  'story:entry',
+  'household:crafted',
+];
+
 function ensureHeadlessGlobals(game) {
   globalThis.window ??= {};
   globalThis.window._game = game;
@@ -45,6 +54,7 @@ export class HeadlessRuntime {
     this.buildMode = { active: false };
     this.objectRegistry = ObjectRegistry;
     this.budgetSystem = budgetSystem;
+    this._unsubscribers = [];
     ensureHeadlessGlobals(this);
 
     this._scene = new THREE.Scene();
@@ -67,6 +77,7 @@ export class HeadlessRuntime {
 
     this._narrative = new NarrativePlanner(this.sims);
     this.experimentLogger = new ExperimentLogger(this);
+    this._registerMetricEvents();
     this.memorySystem = memorySystem;
     this.relationshipGraph = new RelationshipGraph(this.sims);
     this.socialDynamics = new SocialDynamicsSystem(this.sims);
@@ -199,6 +210,9 @@ export class HeadlessRuntime {
     const negativeRelationshipRate = affinities.length ? +(affinities.filter(v => v < -50).length / affinities.length).toFixed(3) : 0;
     const activeCareers = household.filter(p => this.careerSystem.getState(p.id)?.careerId !== 'unemployed').length;
     const romanceEdges = this.relationshipGraph.strongest('romance', 25).length;
+    const promotionEvents = events.filter(e => e.type === 'career:promoted').length;
+    const levelUpEvents = events.filter(e => e.type === 'skill:levelUp').length;
+    const sparkEvents = events.filter(e => e.type === 'story:entry' && /romantic spark/i.test(String(e.text ?? ''))).length;
     return {
       seed: this.seed,
       ticks: this.tick,
@@ -209,14 +223,33 @@ export class HeadlessRuntime {
       negativeRelationshipRate,
       totalVisits: visits.length,
       visitAcceptanceRate: visits.length ? +(acceptedVisits / visits.length).toFixed(3) : 0,
-      promotions: events.filter(e => e.type === 'career:promoted').length,
+      promotions: promotionEvents,
       careerActiveRate: household.length ? +(activeCareers / household.length).toFixed(3) : 0,
-      skillLevelUps: events.filter(e => e.type === 'skill:levelUp').length,
+      skillLevelUps: levelUpEvents,
       avgSkillTotal,
-      romanceSparks: events.filter(e => e.type === 'story:entry' && /romantic spark/i.test(String(e.text ?? ''))).length,
+      romanceSparks: sparkEvents,
       romanceActivationRate: social.length ? +(romanceEdges / social.length).toFixed(4) : 0,
       relationshipSnapshots: this.relationshipSnapshots.length,
     };
+  }
+
+  dispose() {
+    for (const off of this._unsubscribers) off?.();
+    this._unsubscribers = [];
+    this.experimentLogger?.dispose?.();
+    for (const sim of this.sims) {
+      sim.brain?.destroy?.();
+      this.world?.releaseCellFor?.(sim.id);
+      this._scene?.remove?.(sim.mesh);
+    }
+    if ((globalThis.window?._game) === this) globalThis.window._game = null;
+    if (globalThis._game === this) globalThis._game = null;
+  }
+
+  _registerMetricEvents() {
+    this._unsubscribers.push(...HEADLESS_METRIC_EVENTS.map(type =>
+      bus.on(type, payload => this.experimentLogger.record(type, payload))
+    ));
   }
 
   get events() { return this.experimentLogger.events ?? []; }
