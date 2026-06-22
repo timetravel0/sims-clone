@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { bus } from '../core/EventBus.js';
 
-// One in-game day = 240 real seconds (4 minutes)
-const DAY_DURATION = 240;
+// One in-game day = 1440 real seconds at 1× (1 in-game minute per real second).
+// Game.setSpeed feeds `scaled` in in-game minutes/sec, so day-fraction advances
+// by minutes/1440 per real second. 1×→1min/s, 3×→1h/3s, 5×→1h/0.5s.
+const DAY_DURATION = 1440;
 
 const SKY_COLORS = [
   { t: 0.00, sky: new THREE.Color(0x0a0a1a), amb: 0.15 }, // midnight

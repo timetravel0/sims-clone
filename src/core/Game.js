@@ -37,6 +37,7 @@ import { AgeSystem }           from '../systems/AgeSystem.js';
 import { CareerSystem }        from '../systems/CareerSystem.js';
 import { ScheduleSystem }      from '../systems/ScheduleSystem.js';
 import { PartySystem }         from '../systems/PartySystem.js';
+import { HealthSystem }        from '../systems/HealthSystem.js';
 // Sprint 4
 import { skillSystem }         from '../systems/SkillSystem.js';
 import { weatherSystem }       from '../systems/WeatherSystem.js';
@@ -45,12 +46,13 @@ import { EmoteRenderer }       from '../systems/EmoteRenderer.js';
 import { SkillPanel }          from '../ui/SkillPanel.js';
 import { ExperimentDashboard } from '../ui/ExperimentDashboard.js';
 import { SIM_DEFS, TRAIT_AXIS, STARTER_CAREERS } from '../config/defaultPopulation.js';
+import { ObjectRegistry }      from '../systems/ObjectRegistry.js';
 
 function creatorDefToSimDef(def) {
   const traits = {};
   for (const t of def.traits ?? []) Object.assign(traits, TRAIT_AXIS[t] ?? {});
   const color = def.skintone ? parseInt(def.skintone.slice(1), 16) : 0x4fc3f7;
-  return { name: def.name || 'Sim', color, traits };
+  return { name: def.name || 'Sim', color, traits, gender: def.gender ?? null };
 }
 
 export class Game {
@@ -68,6 +70,10 @@ export class Game {
     return this._persistenceAdapter
       ? new SaveLoad(this, this._persistenceAdapter)
       : new SaveLoad(this);
+  }
+
+  createCustomObject(def) {
+    return this.objectRegistry?.registerCustom?.(def);
   }
 
   /**
@@ -181,7 +187,7 @@ export class Game {
 
     // ── Sims ──────────────────────────────────────────────────────────────
     for (const def of simDefs) {
-      const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {}, def.id ?? null);
+      const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {}, def.id ?? null, def.gender ?? null);
       const pos = this.world.randomAvailableCell(sim);
       if (pos) sim.setPosition(pos.x, pos.z);
       this.sims.push(sim);
@@ -196,10 +202,10 @@ export class Game {
     // Distinct from each Sim's autobiographical brain.memory (src/ai/MemorySystem.js),
     // which is persisted via Sim.serialise(). See docs/TECHNICAL.md.
     this.memorySystem    = memorySystem;
+    this.objectRegistry  = ObjectRegistry;
     this.socialManager   = socialManager;   // exposed for console experiments
     this.relationshipGraph = new RelationshipGraph(this.sims);
     this.socialDynamics  = new SocialDynamicsSystem(this.sims);   // Social Core 2.0
-    this.romanceSystem   = new RomanceSystem(this.sims, this.relationshipGraph);
     this._saveLoad       = this._makeSaveLoad();
     this._saveSlotPanel  = new SaveSlotPanel(this._saveLoad, this.clock);
     this._saveLoad.startAutoSave(5);   // auto-save slot 0 every 5 min
@@ -213,13 +219,17 @@ export class Game {
     this._buildWalls     = new BuildModeWalls(this.buildMode, this.wallManager, this._scene, this._renderer, this._camera, this.world);
     this._contextMenu    = new ContextMenu(this, this._renderer);
     this.ageSystem       = new AgeSystem(this.sims);
-    this.careerSystem    = new CareerSystem(this.sims, this.clock);
+    this.careerSystem    = new CareerSystem(this.sims, this.clock, this);
     this.scheduleSystem  = new ScheduleSystem(this.sims, this.clock);
     // Give each Sim a starting career so the career world is alive from launch
     // (overwritten by save data on load). Config lives in src/config.
     this.sims.forEach((s, i) => this.careerSystem.assign(s.id, STARTER_CAREERS[i % STARTER_CAREERS.length]));
     this.partySystem     = new PartySystem(this);
     this.population      = new PopulationSystem(this, this.sims);   // household + external people
+    this.romanceSystem   = new RomanceSystem(this.sims, this.relationshipGraph, this.population);
+    this.relationshipGraph.setPopulation?.(this.population);
+    this.careerSystem._game = this;
+    this.healthSystem    = new HealthSystem(this);
     this.visitorSystem   = new VisitorSystem(this);
     this.offLotSimulation = new OffLotSimulationSystem(this);
     this.autonomousShopping = new AutonomousShoppingSystem(this);
@@ -281,9 +291,9 @@ export class Game {
     this.clock.day = Math.floor(this.dayNight.totalDays ?? 0);
     this.tick += 1;
 
-    // Sims — those at work are hidden and frozen (off the lot)
+    // Sims — those at work or out (outing) are hidden and frozen (off the lot)
     for (const sim of this.sims) {
-      if (sim._atWork) {
+      if (sim._atWork || sim._outing) {
         if (sim.mesh.visible) this._sendToWork(sim);
         continue;
       }
@@ -297,10 +307,12 @@ export class Game {
     this._narrative.update(scaled);      // story beats
     this.world.update(scaled);
     this.ageSystem.update(scaled);
+    this.healthSystem?.update?.(scaled);
     this.careerSystem.update(scaled);
     this.scheduleSystem.update(scaled);
     this.partySystem.update(scaled);
     this.socialDynamics.update(scaled);
+    this.population.update?.(scaled);
     this.offLotSimulation.update(scaled);
     this.visitorSystem.update(scaled);
     this.autonomousShopping.update(scaled);
@@ -310,7 +322,7 @@ export class Game {
     // Apply weather mood deltas to each sim
     const deltas = this._weather.getMoodDeltas();
     for (const sim of this.sims) {
-      if (sim._atWork) continue;   // away at work — don't simulate needs/mood
+      if (sim._atWork || sim._outing) continue;   // away (work/outing) — don't simulate needs/mood
       for (const [need, delta] of Object.entries(deltas)) {
         sim.needs?.delta?.(need, delta * scaled);
       }
@@ -345,8 +357,8 @@ export class Game {
         -(e.clientY / window.innerHeight) * 2 + 1,
       );
       raycaster.setFromCamera(mouse, this._camera.camera);
-      // Sim selection (Sims at work are hidden and not selectable)
-      const simMeshes = this.sims.filter(s => !s._atWork).map(s => s.mesh);
+      // Sim selection (Sims away at work/outing are hidden and not selectable)
+      const simMeshes = this.sims.filter(s => !s._atWork && !s._outing).map(s => s.mesh);
       const simHits   = raycaster.intersectObjects(simMeshes, true);
       if (simHits.length > 0) {
         const hit = simHits[0].object;
@@ -374,7 +386,7 @@ export class Game {
 
   /** Spawn a Sim on the lot (used for visitors via PopulationSystem). */
   _spawnSim(def, gx, gz) {
-    const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {}, def.id ?? null);
+    const sim = new Sim(this._scene, this.world, bus, def.name, def.color, def.traits || {}, def.id ?? null, def.gender ?? null);
     sim._isVisitor = !!def.visitor;
     const pos = (gx != null && gz != null) ? { x: gx, z: gz } : this.world.randomAvailableCell(sim);
     if (pos) sim.setPosition(pos.x, pos.z);
@@ -423,8 +435,12 @@ export class Game {
     return this.clock.paused;
   }
 
-  setSpeed(speed) {
-    this.clock.speed = speed;
+  setSpeed(label) {
+    // Button label (1/3/5) → in-game minutes elapsed per real second.
+    // 1× = 1 min/s, 3× = 1 hour/3s (20 min/s), 5× = 1 hour/0.5s (120 min/s).
+    const RATES = { 1: 1, 3: 20, 5: 120 };
+    this.clock.speed = RATES[label] ?? label;
+    this.clock.speedLabel = label;
   }
 
   start() {
@@ -437,7 +453,7 @@ export class Game {
       const paused = this.togglePause();
       q('btn-pause').textContent = paused ? '▶ Resume' : '⏸ Pause';
     });
-    ['1','2','5'].forEach(v => {
+    ['1','3','5'].forEach(v => {
       q(`btn-${v}x`)?.addEventListener('click', () => {
         this.setSpeed(+v);
         ['1','2','5'].forEach(x => q(`btn-${x}x`)?.classList.remove('active'));
@@ -532,6 +548,8 @@ export class Game {
       experimentLog: this.experimentLogger.serialise(),
       age: this.ageSystem.serialise(),
       career: this.careerSystem.serialise(),
+      health: this.healthSystem?.serialise?.() ?? null,
+      customObjects: this.objectRegistry?.serialiseCustom?.() ?? [],
       // Sprint 4
       weather:  this._weather.serialise(),
       skills:   skillSystem.serialise(),
@@ -552,6 +570,7 @@ export class Game {
       this.clock.day = Math.floor(this.dayNight.totalDays);
       this.clock.weekday = this.clock.day % 7;
     }
+    if (state.customObjects)      this.objectRegistry?.restoreCustom?.(state.customObjects);
     if (state.furniture) this.world.restoreFurniture(state.furniture);
     // Roster was rebuilt from state.sims in _startFromSave, so match by index
     // and adopt the saved id (subsystems below are keyed by Sim id).
@@ -571,6 +590,7 @@ export class Game {
     if (state.experimentLog)      this.experimentLogger.restore(state.experimentLog);
     if (state.age)                this.ageSystem.restore(state.age);
     if (state.career)             this.careerSystem.restore(state.career);
+    if (state.health)             this.healthSystem?.restore?.(state.health);
     // Sprint 4
     if (state.weather)            this._weather.restore(state.weather);
     if (state.skills)             skillSystem.restore(state.skills);

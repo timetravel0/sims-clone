@@ -135,6 +135,10 @@ export class ExperimentDashboard {
     const history = visitors?.history?.().slice(-5).reverse() ?? [];
     const last = visitors?.lastDoorbell?.();
     const person = id => pop.getPerson?.(id)?.name ?? id;
+    const familyBits = p => {
+      const partner = pop.getPerson?.(p.partnerId)?.name ?? '—';
+      return `${p.health?.state ?? 'healthy'} · partner ${partner} · kids ${(p.childIds ?? []).length}`;
+    };
     return `
       <div class="exp-metrics">
         <div class="exp-metric"><b>${pop.householdMembers().length}</b><span>household</span></div>
@@ -144,7 +148,8 @@ export class ExperimentDashboard {
       </div>
       <div class="exp-summary">Last doorbell: ${last ? `${person(last.personId)} for ${person(last.hostId)} · ${last.reason}` : '—'}</div>
       <div class="exp-summary">Active: ${active.length ? active.map(v => `${person(v.personId)} (${v.state})`).join(', ') : '—'}</div>
-      <div class="exp-summary">Recent visits: ${history.length ? history.map(v => `${person(v.personId)} → ${v.outcome}`).join(', ') : '—'}</div>`;
+      <div class="exp-summary">Recent visits: ${history.length ? history.map(v => `${person(v.personId)} → ${v.outcome}`).join(', ') : '—'}</div>
+      <div class="exp-summary">Household: ${pop.householdMembers().map(p => `${p.name} [${familyBits(p)}]`).join(' · ') || '—'}</div>`;
   }
 
   _healthHTML() {
@@ -208,7 +213,7 @@ export class ExperimentDashboard {
 
   _timelineHTML() {
     const rows = (this._game.experimentLogger?.events ?? [])
-      .filter(e => e.type === 'social:interaction' || e.type?.startsWith?.('visitor:') || e.type?.startsWith?.('offlot:'))
+      .filter(e => e.type === 'social:interaction' || e.type?.startsWith?.('visitor:') || e.type?.startsWith?.('offlot:') || e.type?.startsWith?.('health:') || e.type?.startsWith?.('family:') || e.type?.startsWith?.('career:'))
       .slice(-18).reverse();
     if (rows.length === 0) return '<div class="exp-empty">No events yet.</div>';
     return rows.map(e => {
@@ -222,7 +227,25 @@ export class ExperimentDashboard {
         return `<div class="exp-evt exp-neu">
           <span class="exp-day">D${e.simDay}</span>
           <span><b>${e.type}</b> ${e.personName || e.personId}</span>
-          <span class="exp-motive">${e.state || e.reason || ''}</span></div>`;
+          <span class="exp-motive">${e.state || e.reason || e.cause || ''}</span></div>`;
+      }
+      if (e.type?.startsWith?.('health:')) {
+        return `<div class="exp-evt exp-neu">
+          <span class="exp-day">D${e.simDay}</span>
+          <span><b>${e.type}</b> ${e.personName || e.personId}</span>
+          <span class="exp-motive">${e.state || e.illness || ''}</span></div>`;
+      }
+      if (e.type?.startsWith?.('family:')) {
+        return `<div class="exp-evt exp-neu">
+          <span class="exp-day">D${e.simDay}</span>
+          <span><b>${e.type}</b> ${e.personName || e.childName || e.personId}</span>
+          <span class="exp-motive">${e.partnerId || e.childId || e.householdId || ''}</span></div>`;
+      }
+      if (e.type?.startsWith?.('career:')) {
+        return `<div class="exp-evt exp-neu">
+          <span class="exp-day">D${e.simDay}</span>
+          <span><b>${e.type}</b> ${e.simName || e.simId}</span>
+          <span class="exp-motive">${e.career || e.mode || e.illness || ''}</span></div>`;
       }
       const cls = NEG.has(e.interactionType) ? 'neg' : (e.accepted ? 'pos' : 'rej');
       const ok = e.accepted ? '✓' : '✗';

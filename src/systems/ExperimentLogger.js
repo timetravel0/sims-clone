@@ -1,6 +1,12 @@
 import { bus } from '../core/EventBus.js';
 
 const NEGATIVE_TYPES = new Set(['argue', 'insult', 'confront', 'avoid', 'reject_flirt']);
+
+// High-churn AI/debug events. They stay in the in-memory `_events` buffer (which
+// powers the live dashboard) but are NOT written to SQLite: in real saves they
+// were ~87% of all rows and ~80% of the event-log bytes, with little analytical
+// value, bloating the DB and every whole-file flush.
+const SKIP_PERSIST = new Set(['sim:action', 'relationship:graphChanged', 'wellbeing:evaluated']);
 const SOCIAL_INTERACTION_TYPES = new Set([
   'chat', 'joke', 'compliment', 'hug', 'argue', 'insult', 'apologize', 'forgive',
   'confront', 'avoid', 'ask_help', 'offer_help', 'comfort', 'gossip', 'flirt',
@@ -23,6 +29,16 @@ const EVENTS = [
   'offlot:stateChanged',
   'offlot:visitIntent',
   'offlot:relationshipDrift',
+  'offlot:incident',
+  'health:ill',
+  'health:recover',
+  'health:stateChanged',
+  'family:childBorn',
+  'family:partnerChanged',
+  'career:assigned',
+  'career:switched',
+  'career:quit',
+  'career:callInSick',
   'household:purchase',
   'household:purchaseFailed',
   'wellbeing:evaluated',
@@ -129,6 +145,50 @@ export class ExperimentLogger {
         previous: payload.previous ?? '',
         reason: payload.reason ?? '',
         delta: payload.delta ?? '',
+        severity: payload.severity ?? '',
+        cause: payload.cause ?? '',
+        illness: payload.illness ?? '',
+      };
+    } else if (type.startsWith('health:')) {
+      row = {
+        ...base,
+        eventId: payload.eventId ?? `hl_${this._tick}_${this._events.length}`,
+        personId: payload.personId ?? '',
+        personName: payload.personName ?? '',
+        previous: payload.previous ?? '',
+        state: payload.state ?? '',
+        illness: payload.illness ?? '',
+        severity: payload.severity ?? '',
+        cause: payload.cause ?? '',
+        location: payload.location ?? '',
+      };
+    } else if (type.startsWith('family:')) {
+      row = {
+        ...base,
+        eventId: payload.eventId ?? `f_${this._tick}_${this._events.length}`,
+        personId: payload.personId ?? payload.childId ?? '',
+        personName: payload.personName ?? payload.childName ?? '',
+        partnerId: payload.partnerId ?? '',
+        childId: payload.childId ?? '',
+        parentAId: payload.parentAId ?? '',
+        parentBId: payload.parentBId ?? '',
+        householdId: payload.householdId ?? '',
+        oldPartnerId: payload.oldPartnerId ?? payload.oldPartnerIdA ?? '',
+      };
+    } else if (type.startsWith('career:')) {
+      row = {
+        ...base,
+        eventId: payload.eventId ?? `c_${this._tick}_${this._events.length}`,
+        simId: payload.simId ?? payload.sim?.id ?? '',
+        simName: payload.sim?.name ?? payload.simName ?? '',
+        careerId: payload.careerId ?? payload.career?.id ?? '',
+        career: payload.career?.label ?? payload.career ?? '',
+        previousCareerId: payload.previousCareerId ?? payload.previousCareer?.id ?? '',
+        fromCareer: payload.fromCareer?.label ?? payload.fromCareer ?? '',
+        toCareer: payload.toCareer?.label ?? payload.toCareer ?? '',
+        mode: payload.mode ?? '',
+        amount: payload.amount ?? '',
+        illness: payload.illness ?? '',
       };
     } else if (type.startsWith('household:purchase')) {
       row = {
@@ -177,6 +237,7 @@ export class ExperimentLogger {
   }
 
   _appendPersistent(row) {
+    if (SKIP_PERSIST.has(row.type)) return;   // kept in-memory only (see SKIP_PERSIST)
     try {
       const adapter = this._game?._saveLoad?._adapter;
       adapter?.appendEvent?.(this._runId, row);

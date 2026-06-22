@@ -1,5 +1,10 @@
 const UPDATE_RATE = 20;
 const TICK_MS = 1000 / UPDATE_RATE;
+// Cap the catch-up per frame. When the tab is backgrounded (screen locked) rAF
+// pauses, so on resume `now - lastTime` is the whole gap — replaying it would run
+// thousands of fixed steps in one frame and hang the browser (spiral of death).
+// We can't simulate a paused tab anyway, so skip the gap and resume.
+const MAX_FRAME_MS = 250;
 
 export class GameLoop {
   constructor({ onUpdate, onRender }) {
@@ -36,7 +41,7 @@ export class GameLoop {
   _tick(now) {
     if (!this._running) return;
     this._rafId = requestAnimationFrame(this._tick.bind(this));
-    const wall = now - this._lastTime;
+    const wall = Math.min(now - this._lastTime, MAX_FRAME_MS);
     this._lastTime = now;
     if (!this._paused) {
       this._accumulator += wall * this._speed;

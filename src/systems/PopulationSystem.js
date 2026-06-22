@@ -31,11 +31,32 @@ function syncCounterFromPersonId(id) {
   if (m) _pid = Math.max(_pid, Number(m[1]));
 }
 
+function uniqueIds(list = []) {
+  return [...new Set((Array.isArray(list) ? list : []).filter(Boolean))];
+}
+
+const BABY_NAMES_M = ['Leo', 'Max', 'Noah', 'Theo', 'Eli', 'Sam', 'Kai'];
+const BABY_NAMES_F = ['Mia', 'Nora', 'Ivy', 'Zoe', 'Ada', 'Lia', 'Rae'];
+function babyName(gender) {
+  const pool = String(gender ?? '').toLowerCase().match(/female|♀/) ? BABY_NAMES_F : BABY_NAMES_M;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// ponytail: child growth time is decoupled from AgeSystem (whose 86400 s/day
+// scale makes aging effectively never fire in a session). Upgrade path: tie to
+// AgeSystem once its day-scale is reconciled with DayNightCycle.
+const CHILD_GROW_SECONDS = 600;   // scaled-time before a newborn appears as a teen
+const BIRTH_CHECK_SECONDS = 60;   // how often reproduction is evaluated
+const MAX_HOUSEHOLD = 8;
+const BIRTH_COOLDOWN_SECONDS = 1200;
+
 export class PopulationSystem {
   constructor(game, initialHousehold = []) {
     this._game = game;
     this._people = new Map();   // personId → record
     this._active = new Set();   // personIds currently rendered on the lot
+    this._birthTimer = 0;
+    this._birthCooldown = new Map(); // "aId:bId" → scaled-seconds remaining
 
     for (const sim of initialHousehold) this._registerHouseholdSim(sim);
     if (this.offLotPeople().length === 0) this._seedExternals();
@@ -44,22 +65,43 @@ export class PopulationSystem {
   // ── Construction helpers ─────────────────────────────────────────────────
 
   _person(def) {
+    const householdId = def.householdId ?? (def.role === 'household' ? 'home' : null);
     const rec = {
       id: def.id ?? nextPersonId(),
       name: def.name ?? 'Person',
       color: def.color ?? 0xcccccc,
       traits: { ...(def.traits ?? {}) },
+      gender: def.gender ?? def.sex ?? null,
+      health: {
+        state: def.health?.state ?? def.healthState ?? 'healthy',
+        illness: def.health?.illness ?? def.illness ?? null,
+        severity: def.health?.severity ?? def.severity ?? 0,
+        startedAtTick: def.health?.startedAtTick ?? def.illnessStartedTick ?? null,
+        recoverAtTick: def.health?.recoverAtTick ?? def.recoverAtTick ?? null,
+        incidentAtTick: def.health?.incidentAtTick ?? def.incidentAtTick ?? null,
+      },
       role: def.role ?? 'stranger',
-      householdId: def.householdId ?? null,
+      householdId,
       homeLotId: def.homeLotId ?? null,
       availability: def.availability ?? { from: 8, to: 22 },
       relationshipSeeds: def.relationshipSeeds ?? null,
       offLotState: def.offLotState ?? 'home',
+      offLotReason: def.offLotReason ?? null,
+      offLotDestination: def.offLotDestination ?? null,
       offLotStateUntilTick: def.offLotStateUntilTick ?? 0,
       lastOffLotTransitionTick: def.lastOffLotTransitionTick ?? 0,
       lastSeenAt: def.lastSeenAt ?? null,
+      partnerId: def.partnerId ?? null,
+      parentIds: uniqueIds(def.parentIds),
+      childIds: uniqueIds(def.childIds),
+      familyId: def.familyId ?? null,
+      monogamous: def.monogamous ?? true,
       createdAt: def.createdAt ?? (this._game?.tick ?? 0),
       activeSimId: def.activeSimId ?? null,
+      // Unborn children exist as data only (embodied:false) and grow until they
+      // appear on the lot as a teen. Everyone else is embodied from the start.
+      embodied: def.embodied ?? true,
+      ageSeconds: def.ageSeconds ?? 0,
     };
     syncCounterFromPersonId(rec.id);
     this._people.set(rec.id, rec);
@@ -67,14 +109,13 @@ export class PopulationSystem {
   }
 
   _registerHouseholdSim(sim) {
-    const rec = this._person({
-      id: sim.id, name: sim.name, color: sim.color,
+    return this.adoptHouseholdSim(sim, {
+      id: sim.id,
+      name: sim.name,
+      color: sim.color,
       traits: sim.personality?.serialise?.() ?? {},
-      role: 'household', householdId: 'home', homeLotId: 'home', offLotState: 'home',
+      gender: sim.gender ?? null,
     });
-    rec.activeSimId = sim.id;
-    this._active.add(rec.id);
-    return rec;
   }
 
   _seedExternals() {
@@ -86,6 +127,307 @@ export class PopulationSystem {
 
   createPerson(def)         { const r = this._person({ role: 'household', ...def }); bus.emit('population:created', { person: r }); return r; }
   createExternalPerson(def) { const r = this._person({ role: def.role ?? 'neighbor', ...def }); bus.emit('population:created', { person: r }); return r; }
+
+  adoptHouseholdSim(sim, def = {}) {
+    const rec = this._people.get(sim.id) ?? this._person({
+      id: sim.id,
+      name: sim.name,
+      color: sim.color,
+      traits: sim.personality?.serialise?.() ?? {},
+      gender: sim.gender ?? def.gender ?? null,
+      role: 'household',
+      householdId: def.householdId ?? 'home',
+      homeLotId: def.homeLotId ?? 'home',
+      offLotState: def.offLotState ?? 'home',
+      partnerId: def.partnerId ?? null,
+      parentIds: def.parentIds ?? [],
+      childIds: def.childIds ?? [],
+      familyId: def.familyId ?? null,
+    });
+    rec.name = def.name ?? sim.name ?? rec.name;
+    rec.color = def.color ?? sim.color ?? rec.color;
+    rec.traits = { ...(def.traits ?? sim.personality?.serialise?.() ?? rec.traits) };
+    rec.gender = def.gender ?? sim.gender ?? rec.gender ?? null;
+    rec.role = 'household';
+    rec.householdId = def.householdId ?? rec.householdId ?? 'home';
+    rec.homeLotId = def.homeLotId ?? rec.homeLotId ?? 'home';
+    rec.familyId = def.familyId ?? rec.familyId ?? null;
+    rec.activeSimId = sim.id;
+    this._active.add(rec.id);
+    bus.emit('population:created', { person: rec });
+    return rec;
+  }
+
+  createChild(parentAId, parentBId, def = {}) {
+    const parentA = this.getPerson(parentAId);
+    const parentB = this.getPerson(parentBId);
+    if (!this.canHaveChild(parentAId, parentBId)) return null;
+    const householdId = parentA?.householdId ?? parentB?.householdId ?? 'home';
+    const gender = def.gender ?? (Math.random() < 0.5 ? '♂ Male' : '♀ Female');
+    const child = this._person({
+      ...def,
+      name: def.name ?? babyName(gender),
+      role: 'household',
+      householdId,
+      homeLotId: householdId,
+      familyId: def.familyId ?? parentA?.familyId ?? parentB?.familyId ?? null,
+      parentIds: [parentAId, parentBId],
+      childIds: [],
+      partnerId: null,
+      monogamous: true,
+      offLotState: 'home',
+      gender,
+    });
+
+    if (parentA) parentA.childIds = uniqueIds([...(parentA.childIds ?? []), child.id]);
+    if (parentB) parentB.childIds = uniqueIds([...(parentB.childIds ?? []), child.id]);
+
+    // Born as data only — no Sim is spawned. The child grows in the background
+    // (PopulationSystem.update) and is embodied on the lot once it reaches teen.
+    child.embodied = false;
+    child.ageSeconds = 0;
+    child.color = def.color ?? parentA?.color ?? parentB?.color ?? child.color;
+    child.traits = { ...(def.traits ?? child.traits ?? {}) };
+
+    bus.emit('family:childBorn', {
+      childId: child.id,
+      childName: child.name,
+      parentAId,
+      parentBId,
+      householdId,
+      gender: child.gender,
+    });
+    bus.emit('story:entry', {
+      text: `${child.name} was born to ${parentA?.name ?? parentAId} and ${parentB?.name ?? parentBId}.`,
+      cat: 'family',
+      category: 'family',
+    });
+    return child;
+  }
+
+  // ── Family lifecycle tick ─────────────────────────────────────────────────
+
+  /** Grows unborn children and lets committed couples conceive autonomously. */
+  update(dt) {
+    if (!(dt > 0)) return;
+    this._growChildren(dt);
+    for (const [k, left] of this._birthCooldown) {
+      const next = left - dt;
+      if (next <= 0) this._birthCooldown.delete(k); else this._birthCooldown.set(k, next);
+    }
+    this._birthTimer += dt;
+    if (this._birthTimer < BIRTH_CHECK_SECONDS) return;
+    this._birthTimer = 0;
+    this._considerBirths();
+  }
+
+  _growChildren(dt) {
+    for (const person of this.allPeople()) {
+      if (person.embodied !== false) continue;
+      person.ageSeconds = (person.ageSeconds ?? 0) + dt;
+      if (person.ageSeconds >= CHILD_GROW_SECONDS) this._embodyChild(person);
+    }
+  }
+
+  _embodyChild(person) {
+    person.embodied = true;
+    const parentSim = this._game?.sims?.find(s => person.parentIds?.includes(s.id) && !s._atWork && !s._outing);
+    const gx = parentSim ? parentSim.gx + 1 : null;
+    const gz = parentSim ? parentSim.gz : null;
+    const sim = this._game?._spawnSim?.({
+      id: person.id, name: person.name, color: person.color, traits: person.traits, gender: person.gender,
+    }, gx, gz);
+    if (!sim) return;
+    this.adoptHouseholdSim(sim, {
+      id: person.id, name: person.name, color: person.color, traits: person.traits, gender: person.gender,
+      householdId: person.householdId, homeLotId: person.homeLotId, familyId: person.familyId,
+      parentIds: person.parentIds,
+    });
+    this._game?.ageSystem?.registerAt?.(sim, 13); // appears as a teen, ages onward
+    bus.emit('story:entry', {
+      text: `${person.name} grew up and joined the household as a teen.`,
+      cat: 'family', category: 'family',
+    });
+  }
+
+  _considerBirths() {
+    if (this.householdMembers().length >= MAX_HOUSEHOLD) return;
+    for (const [aId, bId] of this._committedHouseholdCouples()) {
+      const key = [aId, bId].sort().join(':');
+      if (this._birthCooldown.has(key)) continue;
+      if (!this.canHaveChild(aId, bId)) continue;
+      if (Math.random() < 0.18) {
+        this.createChild(aId, bId);
+        this._birthCooldown.set(key, BIRTH_COOLDOWN_SECONDS);
+        if (this.householdMembers().length >= MAX_HOUSEHOLD) return;
+      }
+    }
+  }
+
+  _committedHouseholdCouples() {
+    const seen = new Set();
+    const out = [];
+    for (const p of this.householdMembers()) {
+      const q = p.partnerId;
+      if (!q) continue;
+      const key = [p.id, q].sort().join(':');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push([p.id, q]);
+    }
+    return out;
+  }
+
+  setPartner(personId, partnerId) {
+    const a = this.getPerson(personId);
+    const b = this.getPerson(partnerId);
+    if (!a || !b || a.id === b.id) return false;
+    if (a.partnerId === b.id && b.partnerId === a.id) return true;
+    const oldA = a.partnerId ?? null;
+    const oldB = b.partnerId ?? null;
+    if (oldA && this.getPerson(oldA)?.partnerId === a.id) this.getPerson(oldA).partnerId = null;
+    if (oldB && this.getPerson(oldB)?.partnerId === b.id) this.getPerson(oldB).partnerId = null;
+    a.partnerId = b.id;
+    b.partnerId = a.id;
+    a.monogamous = b.monogamous = true;
+    bus.emit('family:partnerChanged', {
+      personId: a.id,
+      partnerId: b.id,
+      oldPartnerIdA: oldA,
+      oldPartnerIdB: oldB,
+    });
+    return true;
+  }
+
+  clearPartner(personId) {
+    const person = this.getPerson(personId);
+    if (!person) return false;
+    const partner = this.getPerson(person.partnerId);
+    const oldPartnerId = person.partnerId ?? null;
+    person.partnerId = null;
+    if (partner?.partnerId === person.id) partner.partnerId = null;
+    bus.emit('family:partnerChanged', { personId: person.id, partnerId: null, oldPartnerId });
+    return true;
+  }
+
+  getPartner(personId) {
+    return this.getPerson(this.getPerson(personId)?.partnerId ?? null);
+  }
+
+  sameHousehold(aId, bId) {
+    const a = this.getPerson(aId);
+    const b = this.getPerson(bId);
+    return !!a && !!b && !!a.householdId && a.householdId === b.householdId;
+  }
+
+  isFamily(aId, bId) {
+    const a = this.getPerson(aId);
+    const b = this.getPerson(bId);
+    if (!a || !b || a.id === b.id) return false;
+    if (a.parentIds.includes(b.id) || b.parentIds.includes(a.id)) return true;
+    if (a.parentIds.some(id => b.parentIds.includes(id))) return true;
+    return a.familyId != null && a.familyId === b.familyId;
+  }
+
+  canHaveChild(parentAId, parentBId) {
+    const a = this.getPerson(parentAId);
+    const b = this.getPerson(parentBId);
+    if (!a || !b || a.id === b.id) return false;
+    if (!this.sameHousehold(a.id, b.id)) return false;
+    if (!a.partnerId || a.partnerId !== b.id || b.partnerId !== a.id) return false;
+    if (!this._romanceStrongEnough(a.id, b.id)) return false;
+    if (this.isFamily(a.id, b.id)) return false;
+    if (!this._compatibleAgesForChild(a.id, b.id)) return false;
+    if (!this._compatibleSexForChild(a, b)) return false;
+    return true;
+  }
+
+  _compatibleSexForChild(a, b) {
+    const sa = this._sexOf(a);
+    const sb = this._sexOf(b);
+    if (!sa || !sb) return true;
+    return sa !== sb;
+  }
+
+  _sexOf(person) {
+    const gender = String(person?.gender ?? '').toLowerCase();
+    if (gender.includes('female') || gender.includes('♀')) return 'female';
+    if (gender.includes('male') || gender.includes('♂')) return 'male';
+    return null;
+  }
+
+  _compatibleAgesForChild(aId, bId) {
+    const age = this._game?.ageSystem;
+    if (!age?.getInfo) return true;
+    const a = age.getInfo(aId);
+    const b = age.getInfo(bId);
+    const allowed = info => ['adult', 'young adult'].includes(String(info?.stage?.id ?? info?.stage?.label ?? '').toLowerCase());
+    return !!a && !!b && allowed(a) && allowed(b);
+  }
+
+  _romanceStrongEnough(aId, bId) {
+    const graph = this._game?.relationshipGraph;
+    if (!graph?.score) return true;
+    return Math.max(graph.score(aId, bId, 'romance'), graph.score(bId, aId, 'romance')) >= 35;
+  }
+
+  setOuting(personId, { state = 'outing', reason = 'outing', destination = null, untilTick = null } = {}) {
+    const person = this.getPerson(personId);
+    if (!person) return null;
+    const prev = person.offLotState ?? 'home';
+    person.offLotState = state;
+    person.offLotReason = reason;
+    person.offLotDestination = destination;
+    person.offLotStateUntilTick = untilTick ?? person.offLotStateUntilTick ?? 0;
+    person.lastOffLotTransitionTick = this._game?.tick ?? 0;
+    person.lastSeenAt = this._game?.tick ?? 0;
+    bus.emit('offlot:stateChanged', {
+      personId: person.id,
+      personName: person.name,
+      previous: prev,
+      state,
+      reason,
+      destination,
+    });
+    return person;
+  }
+
+  setHealthState(personId, nextState, meta = {}) {
+    const person = this.getPerson(personId);
+    if (!person) return null;
+    const prev = person.health?.state ?? 'healthy';
+    person.health = {
+      ...(person.health ?? {}),
+      state: nextState,
+      illness: meta.illness ?? person.health?.illness ?? null,
+      severity: meta.severity ?? person.health?.severity ?? 0,
+      startedAtTick: meta.startedAtTick ?? person.health?.startedAtTick ?? null,
+      recoverAtTick: meta.recoverAtTick ?? person.health?.recoverAtTick ?? null,
+      incidentAtTick: meta.incidentAtTick ?? person.health?.incidentAtTick ?? null,
+    };
+    if (prev !== nextState) {
+      const eventType = nextState === 'healthy' ? 'health:recover' : 'health:ill';
+      bus.emit(eventType, {
+        personId: person.id,
+        personName: person.name,
+        previous: prev,
+        state: nextState,
+        illness: person.health.illness,
+        severity: person.health.severity,
+        ...meta,
+      });
+      bus.emit('health:stateChanged', {
+        personId: person.id,
+        personName: person.name,
+        previous: prev,
+        state: nextState,
+        illness: person.health.illness,
+        severity: person.health.severity,
+        ...meta,
+      });
+    }
+    return person.health;
+  }
   applyRelationshipSeeds() {
     const dyn = this._game?.socialDynamics;
     if (!dyn?._apply) return;
@@ -120,7 +462,7 @@ export class PopulationSystem {
     const rec = this._people.get(personId);
     if (!rec || this._active.has(personId)) return null;
     const sim = this._game._spawnSim?.(
-      { id: rec.id, name: rec.name, color: rec.color, traits: rec.traits, visitor: rec.role !== 'household' },
+      { id: rec.id, name: rec.name, color: rec.color, traits: rec.traits, gender: rec.gender, visitor: rec.role !== 'household' },
       spawnPoint?.gx, spawnPoint?.gz,
     );
     if (!sim) return null;

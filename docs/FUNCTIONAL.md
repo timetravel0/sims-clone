@@ -159,7 +159,7 @@ crea una memoria episodica e può scatenare spike emozionali.
 - **Click su oggetto** → UseObject override
 - **Click su altro Sim** → SocialAction override
 - **Pausa** → `Space`
-- **Velocità** → `1` / `2` / `5` (1x, 2x, 5x)
+- **Velocità** → `1` / `3` / `5` — 1× = 1 minuto di gioco al secondo reale; 3× = 1 ora ogni 3 secondi; 5× = 1 ora ogni mezzo secondo
 
 Gli override del giocatore sospendono l'AI per max **30 secondi** o fino al
 completamento dell'azione; poi il Sim riprende l'autonomia.
@@ -185,6 +185,56 @@ dotazione iniziale della casa sono configurati in `src/config/*`, non sparsi nei
 sistemi runtime.
 
 ---
+
+## Lavoro, salute, famiglia e uscite
+
+**Cambio lavoro.** Ogni Sim può cambiare carriera dal pannello Lifecycle/Career
+(`switchCareer`): lascia quella attuale e ne inizia un'altra, ripartendo dal
+livello base.
+
+**Orario di lavoro.** Tutte le carriere lavorano **dal lunedì al venerdì
+(giorni 0–4), 08:00–17:00**; nel weekend (giorni 5–6) i Sim sono a casa. Durante
+il turno il Sim è fuori dal lotto (nascosto) e rientra a fine giornata.
+
+**Malattia e guarigione.** I Sim possono ammalarsi (raffreddore, influenza,
+spossatezza, intossicazione) con probabilità legata a igiene, energia, fame e
+meteo. Una malattia passa da `ill` a `recovering` e infine a `healthy`, con un
+costo temporaneo su energia, divertimento e socialità. Gli incidenti fuori casa
+provocano un infortunio.
+
+**Uscite dal lotto (con motivo chiaro).** Oltre al lavoro, i Sim della famiglia
+escono autonomamente per un **pranzo/cena fuori**, una **gita**, una **visita a
+un altro Sim** o per **altro**. Quando un Sim lascia il lotto il motivo è sempre
+esplicitato nello story log (es. *"Alice è uscita per un pranzo fuori"*,
+*"Bob è andato al lavoro come Chef"*) e il Sim viene nascosto finché non rientra.
+Al rientro recupera i bisogni in base al tipo di uscita. Non escono se hanno un
+bisogno critico (fame/energia/bisogno fisiologico): in quel caso restano a casa.
+
+**Incidenti fuori casa.** Mentre sono fuori (uscita o lavoro) i Sim possono avere
+un incidente, che li fa rientrare/risultare infortunati (vedi Salute).
+
+**Figli.** Una coppia può avere figli solo se: vivono nella **stessa famiglia
+(household)**, hanno una **relazione amorosa reciproca** abbastanza forte, sono
+**maschio e femmina** e **non sono consanguinei**. Il figlio nasce come **membro
+della famiglia a livello di dati** (non un Sim sul lotto); cresce sullo sfondo e
+**compare come Sim adolescente** quando è abbastanza grande, dopodiché continua a
+invecchiare normalmente. Esiste un tetto alla dimensione del nucleo e un cooldown
+tra una nascita e l'altra.
+
+**Creazione di oggetti.** Un Sim con **skill handiness** sufficiente, usando il
+**workbench**, può fabbricare autonomamente un **nuovo oggetto** le cui
+caratteristiche (bisogno soddisfatto, restore rate, utilità) **scalano con il
+livello di handiness**. L'oggetto creato viene piazzato sul lotto e salvato con
+la partita.
+
+**Gelosia e monogamia.** Se due Sim conviventi hanno una relazione amorosa,
+tendono a non stringere altri legami romantici. Un Sim impegnato **non cerca**
+di flirtare con altri (l'AI scarta quell'azione) e, se viene corteggiato da un
+terzo, **respinge il flirt** quasi sempre — a prescindere dall'attrazione
+accumulata — salvo una piccola probabilità che una scintilla intensa passi
+comunque. Quando questo accade, il partner di famiglia diventa **geloso** (spike
+emozionale, memoria negativa, aumento della rivalità verso il rivale) e il legame
+impegnato viene penalizzato.
 
 ## Social Simulation Core 2.0
 
@@ -238,6 +288,15 @@ alla porta in base a distanza, energia, personalità e relazione con il
 visitatore. Il visitatore può essere invitato, rifiutato o non ricevere risposta.
 Le visite hanno timeout di sicurezza e al termine l'NPC viene sempre riportato
 off-lot, evitando stati "visiting" permanenti nei salvataggi.
+
+**Orari delle visite e coprifuoco notturno.** Gli ospiti arrivano solo in fasce
+orarie sensate: nel **fine settimana** (di giorno e di sera) oppure, **in
+settimana, solo la sera** (fuori dagli orari di lavoro). Non arrivano mai di
+notte. Dalle **23:00** gli ospiti presenti vengono mandati a casa e **tra le
+00:00 e le 06:00 non c'è nessun ospite sul lotto**. Nelle stesse ore notturne i
+Sim della famiglia non escono per gite/visite e l'AI li spinge a **dormire**
+(le emergenze fame/bisogno/energia restano comunque prioritarie, così un Sim
+affamato mangia prima di andare a letto).
 
 La popolazione iniziale include piccoli seed relazionali: alcuni esterni sono
 già amici/familiari/conoscenti e un coworker parte con una leggera tensione.

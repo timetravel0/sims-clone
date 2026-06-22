@@ -197,7 +197,12 @@ export class UtilityAIPlanner {
         const verb = affordance.verb;
         if (POSITIVE_SOCIAL.has(verb)) score += affinity * 0.06 + ab.affection * 0.08 + ab.trust * 0.05;
         if (NEGATIVE_SOCIAL.has(verb)) score += ab.resentment * 0.16 - ab.affection * 0.04;
-        if (verb === 'flirt')     score += ab.attraction * 0.25 + ab.affection * 0.05;
+        if (verb === 'flirt') {
+          score += ab.attraction * 0.25 + ab.affection * 0.05;
+          // A committed Sim doesn't go looking to flirt with others.
+          const partner = globalThis.window?._game?.population?.getPartner?.(this._sim.id);
+          if (partner && partner.id !== affordance.target.id) score -= 40;
+        }
         if (verb === 'apologize') score += ba.resentment * 0.18;   // they resent me → I apologise
         if (verb === 'forgive')   score += ab.resentment * 0.16;   // I resent them → I forgive
         if (verb === 'confront')  score += ab.resentment * 0.12;
@@ -230,6 +235,15 @@ export class UtilityAIPlanner {
       score += this._brain.ctxNoise.sample(affordance, 4.0);
     } else {
       score += Math.random() * 2.5; // fallback if brain not yet wired
+    }
+
+    // ── 8. Night-time — Sims should mostly sleep (22:00–07:00) ──────────────
+    // Critical hunger/bladder/energy still preempt this (see
+    // _criticalNeedAdjustment), so a starving Sim eats before going to bed.
+    const hour = globalThis.window?._game?.clock?.hour ?? 12;
+    if (hour >= 22 || hour < 7) {
+      if (affordance.verb === 'sleep') score += 80;
+      else if ((affordance.utility?.energy ?? 0) < 0) score -= 30; // discourage active/social actions at night
     }
 
     return score;

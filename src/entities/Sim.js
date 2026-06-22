@@ -16,11 +16,12 @@ function syncCounterFromId(id) {
 }
 
 export class Sim {
-  constructor(scene, world, _bus, name = 'Sim', color = 0x4fc3f7, traits = {}, id = null) {
+  constructor(scene, world, _bus, name = 'Sim', color = 0x4fc3f7, traits = {}, id = null, gender = null) {
     this._id       = null;
     this.id        = id ?? `sim_${++_idCounter}`;
     this.name      = name;
     this.color     = color;
+    this.gender    = gender;
     this._scene    = scene;
     this._world    = world;
     this.gx        = 1;
@@ -160,6 +161,15 @@ export class Sim {
       this._world.isCellReserved(target.x, target.z, this.id)
     ) {
       this._pathBlockedTime += dt;
+
+      // Deadlock breaker: if another Sim's *body* is blocking the next cell and
+      // we've waited briefly, step into it anyway (a moment of overlap) instead
+      // of freezing. Two head-on Sims both do this and simply swap cells, which
+      // resolves the loop without any priority/topology assumptions. Pure
+      // reservation blocks (no Sim present) still wait/reroute below.
+      const blocker = this._blockerAt(target.x, target.z);
+      if (!(blocker && this._pathBlockedTime >= 0.6)) {
+
       if (this._pathTarget && this._pathBlockedTime >= 0.9) {
         const detour = this._world.findNearestAvailableCell(this._pathTarget.x, this._pathTarget.z, this, 4);
         if (detour) {
@@ -186,6 +196,8 @@ export class Sim {
         this.isMoving = true;
       }
       return;
+      }
+      // else: another Sim's body is blocking — phase through it (fall to movement).
     }
     const dx = target.x - this.worldX, dz = target.z - this.worldZ;
     const dist = Math.sqrt(dx*dx + dz*dz);
@@ -204,6 +216,15 @@ export class Sim {
     this.isMoving = this._path.length > 0;
   }
 
+  /** The Sim physically standing on (or essentially on) a cell, if any. */
+  _blockerAt(x, z) {
+    const sims = window._game?.sims || [];
+    return sims.find(s =>
+      s !== this && !s._atWork && !s._outing &&
+      Math.hypot(s.worldX - x, s.worldZ - z) < 0.55
+    ) || null;
+  }
+
   _updateBubble(dt) {
     if (this._bubbleTimer <= 0) return;
     this._bubbleTimer -= dt;
@@ -215,7 +236,7 @@ export class Sim {
 
   serialise() {
     return {
-      id: this.id, name: this.name, color: this.color,
+      id: this.id, name: this.name, color: this.color, gender: this.gender,
       gx: this.gx, gz: this.gz,
       needs:       this.needs.serialise(),
       mood:        this.mood.serialise(),
@@ -227,6 +248,7 @@ export class Sim {
 
   restore(data) {
     if (data.id && data.id !== this.id) this.id = data.id;
+    this.gender = data.gender ?? this.gender ?? null;
     this.gx = data.gx; this.gz = data.gz;
     this.worldX = data.gx; this.worldZ = data.gz;
     this._path = [];

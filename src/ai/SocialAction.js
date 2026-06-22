@@ -131,6 +131,14 @@ export class SocialAction extends Action {
       const base = this._baseAcceptance();
       const mod  = dyn?.acceptanceModifier(b.id, a.id, this._type, ctx) ?? 0;
       accepted = (base + mod) >= 0;
+      // Monogamy: a committed Sim rebuffs flirts from anyone but their partner,
+      // regardless of built-up attraction. Not absolute — a small chance an
+      // intense spark slips through, which then trips jealousy (drama, not
+      // cheating-by-default). ponytail: 0.08 escape rate is a tuning knob.
+      if (accepted && this._type === 'flirt') {
+        const partner = game?.population?.getPartner?.(b.id);
+        if (partner && partner.id !== a.id && Math.random() > 0.08) accepted = false;
+      }
     }
 
     let score, delta;
@@ -229,7 +237,7 @@ export class SocialAction extends Action {
     const game = window._game;
     const a = this._simA, b = this._simB;
     const witnesses = (game?.sims ?? [])
-      .filter(s => s !== a && s !== b && !s._atWork && this._near(s, b, 4))
+      .filter(s => s !== a && s !== b && !s._atWork && !s._outing && this._near(s, b, 4))
       .map(s => s.id);
     const recent = (game?.memorySystem?.with?.(a.id, b.id) ?? [])
       .slice(0, 3).map(m => m.type ?? m.data?.type ?? 'memory');

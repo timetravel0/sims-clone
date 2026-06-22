@@ -120,7 +120,7 @@ export class WellbeingAmbition {
   }
 
   _familyScore() {
-    const members = this._familyMembers().filter(s => s.id !== this._sim.id && !s._atWork);
+    const members = this._familyMembers().filter(s => s.id !== this._sim.id && !s._atWork && !s._outing);
     if (members.length === 0) return { available: false, score: 100, needPressures: {} };
     const scores = members.map(s => this._selfScore(s));
     const needPressures = {};

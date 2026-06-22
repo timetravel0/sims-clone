@@ -13,9 +13,10 @@ const PROMOTION_PERFORMANCE = 100;
 // Object→skill mapping lives in ObjectRegistry (single source of truth).
 
 export class CareerSystem {
-  constructor(sims = [], clock = null) {
+  constructor(sims = [], clock = null, game = null) {
     this._sims = sims;
     this._clock = clock;
+    this._game = game;
     this._data = new Map();
 
     for (const sim of sims) this._initSim(sim);
@@ -56,6 +57,15 @@ export class CareerSystem {
         continue;
       }
 
+      if (!state.atWork && this._shouldCallInSick(sim)) {
+        const health = this._healthState(sim);
+        if (state._sickNotifiedAt !== health?.startedAtTick) {
+          state._sickNotifiedAt = health?.startedAtTick ?? (this._clock?.day ?? 0);
+          bus.emit('career:callInSick', { sim, career, illness: health?.illness ?? null });
+        }
+        continue;
+      }
+
       const inShift = this._isInShift(career, weekday, hour);
       if (inShift && !state.atWork) this._startShift(sim, state, career);
       if (!inShift && state.atWork) this._endShift(sim, state, career);
@@ -70,6 +80,12 @@ export class CareerSystem {
 
   joinCareer(simId, careerId) {
     return this.assign(simId, careerId);
+  }
+
+  switchCareer(simId, careerId) {
+    const sim = this._findSim(simId);
+    if (!sim) return false;
+    return this._setCareer(sim, careerId, { mode: 'switch' });
   }
 
   quit(simId) {
@@ -89,9 +105,15 @@ export class CareerSystem {
   }
 
   setCareer(sim, careerId) {
+    return this._setCareer(sim, careerId, { mode: 'assign' });
+  }
+
+  _setCareer(sim, careerId, { mode = 'assign' } = {}) {
     const career = this._career(careerId);
     if (!sim || !career) return false;
     const state = this._data.get(sim.id) ?? this._initSim(sim);
+    const previousCareer = this._career(state.careerId) ?? this._career('unemployed');
+    const wasUnemployed = state.careerId === 'unemployed';
 
     // Entry into a career is open (like The Sims). Skill requirements gate
     // promotions/performance, not joining — see _performanceGain().
@@ -101,8 +123,17 @@ export class CareerSystem {
     state.daysWorked = 0;
     state.atWork = false;
     sim._atWork = false;
-    bus.emit('career:assigned', { simId: sim.id, sim, careerId: career.id });
-    bus.emit('career:changed', { sim, career });
+    if (wasUnemployed || mode === 'assign') {
+      bus.emit('career:assigned', { simId: sim.id, sim, careerId: career.id, previousCareerId: previousCareer?.id ?? null });
+    } else {
+      bus.emit('career:switched', { simId: sim.id, sim, fromCareer: previousCareer, toCareer: career });
+    }
+    bus.emit('career:changed', {
+      sim,
+      career,
+      previousCareer,
+      mode: wasUnemployed ? 'assigned' : mode === 'switch' ? 'switched' : 'changed',
+    });
     return true;
   }
 
@@ -173,6 +204,7 @@ export class CareerSystem {
         simoleons: saved.simoleons ?? 0,
         atWork: saved.atWork ?? false,
         _shiftStarted: saved._shiftStarted ?? false,
+        _sickNotifiedAt: saved._sickNotifiedAt ?? null,
         skills: this._defaultSkills(saved.skills),
       };
       this._data.set(id, state);
@@ -195,6 +227,7 @@ export class CareerSystem {
       simoleons: 0,
       atWork: false,
       _shiftStarted: false,
+      _sickNotifiedAt: null,
       skills: this._defaultSkills(),
     };
     this._data.set(sim.id, state);
@@ -231,15 +264,22 @@ export class CareerSystem {
   }
 
   _startShift(sim, state) {
+    if (this._shouldCallInSick(sim)) return;
     state.atWork = true;
     state._shiftStarted = true;
     sim._atWork = true;
+    sim._offLotReason = 'work';
     bus.emit('career:atWork', { simId: sim.id, sim, careerId: state.careerId });
+    bus.emit('story:entry', {
+      text: `${sim.name} left for work as ${this._career(state.careerId)?.label ?? 'worker'}.`,
+      cat: 'family', category: 'family',
+    });
   }
 
   _endShift(sim, state, career) {
     state.atWork = false;
     sim._atWork = false;
+    sim._offLotReason = null;
     if (!state._shiftStarted) return;
     state._shiftStarted = false;
 
@@ -321,6 +361,17 @@ export class CareerSystem {
     if (!sim) return;
     if (payload.type === 'promoted') this._promote(sim, 'life_event');
     if (payload.type === 'fired') this._fire(sim);
+  }
+
+  _healthState(sim) {
+    return this._game?.population?.getPerson?.(sim?.id)?.health ?? null;
+  }
+
+  _shouldCallInSick(sim) {
+    const health = this._healthState(sim);
+    if (!health) return false;
+    if (health.state === 'healthy') return false;
+    return health.severity >= 0.35 || health.state === 'ill';
   }
 }
 

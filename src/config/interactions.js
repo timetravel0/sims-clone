@@ -57,7 +57,7 @@ export const INTERACTIONS = {
                  accept: { ab: { affection: 4 }, ba: { trust: 7, affection: 6, fear: -4, resentment: -4 } } },
   gossip:      { label: 'Gossip',      emoji: '🗣️', duration: 4, valence:  1, needsConsent: false, cooldown: 18,
                  accept: { ab: { familiarity: 4, affection: 3, trust: 2 }, ba: { familiarity: 4, affection: 3, trust: 2 } } },
-  flirt:       { label: 'Flirt',       emoji: '😉', duration: 4, valence:  1, needsConsent: true,  cooldown: 20,
+  flirt:       { label: 'Flirt',       emoji: '😉', duration: 4, valence:  1, needsConsent: true,  cooldown: 45,
                  requires: (s, c) => c.compatible && s.ab.attraction >= 4 || s.ab.affection >= 15,
                  accept: { ab: { attraction: 7, affection: 3 }, ba: { attraction: 6, affection: 3 } },
                  reject: { ab: { attraction: -5, resentment: 6, affection: -4 }, ba: { fear: 1 } } },

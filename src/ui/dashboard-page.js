@@ -182,7 +182,7 @@ function renderSims(g) {
   if (sims.length === 0) return '<div class="empty">No Sims.</div>';
   return `<h2>Sims (${sims.length})</h2>
   <table><thead><tr>
-    <th>Name</th><th>Stage</th><th>Career</th><th>§</th><th>Mood</th><th>Lowest needs</th><th>Active goal</th><th>Emotion</th><th>Mem</th>
+    <th>Name</th><th>Stage</th><th>Career</th><th>§</th><th>Mood</th><th>Lowest needs</th><th>Active goal</th><th>Emotion</th><th>Mem</th><th>Health</th>
   </tr></thead><tbody>${
     sims.map(sim => {
       const { age, career } = info(g, sim);
@@ -194,6 +194,7 @@ function renderSims(g) {
       const emo = sim.brain?.emotions?.tier ?? sim._moodLabel ?? '—';
       const memN = sim.brain?.memory?.count ?? 0;
       const atWork = career?.atWork ? ' <span class="pill" style="background:rgba(129,199,132,.25);color:#a5d6a7">at work</span>' : '';
+      const health = g.population?.getPerson?.(sim.id)?.health?.state ?? 'healthy';
       return `<tr>
         <td><b>${esc(sim.name)}</b></td>
         <td>${esc(age?.stage?.label ?? '—')} <span class="muted">${age ? Math.round(age.ageYears) : ''}</span></td>
@@ -204,6 +205,7 @@ function renderSims(g) {
         <td>${goal ? esc(goal.label) : '<span class="muted">—</span>'}</td>
         <td>${esc(emo)}</td>
         <td>${memN}</td>
+        <td>${esc(health)}</td>
       </tr>`;
     }).join('')
   }</tbody></table>`;

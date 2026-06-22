@@ -16,7 +16,17 @@ import { PersistenceAdapter } from './PersistenceAdapter.js';
  * visible .sqlite file.
  */
 const DB_FILE = 'sims-clone.sqlite';
-const FLUSH_MS = 2000;
+// Throttled flush window. Each flush serializes the WHOLE DB and rewrites the
+// OPFS/file. Slot saves still flush immediately (durability); only the hot,
+// best-effort event/snapshot log uses this window, so a longer one slashes
+// flush overhead. A crash loses at most this much analytics, never a slot save.
+const FLUSH_MS = 30000;
+// Bound the event log so the file (and every flush) cannot grow without limit.
+// Matches the in-memory dashboard buffer cap; SQLite reuses freed pages, so the
+// file plateaus instead of growing forever.
+const EVENT_LOG_CAP = 20000;
+const REL_SNAPSHOT_CAP = 20000;
+const PRUNE_EVERY = 2000;   // run retention every N appended events
 const HANDLE_DB = 'sims-clone-file-handles';
 const HANDLE_STORE = 'handles';
 const SQLITE_HANDLE_KEY = 'sqlite-file';
@@ -82,6 +92,7 @@ export class SqlJsAdapter extends PersistenceAdapter {
     this._dirty = false;
     this._flushTimer = null;
     this._lastFlushAt = null;
+    this._eventsSincePrune = 0;
   }
 
   /** True when SQLite can persist to OPFS or to a user-selected filesystem file. */
@@ -114,8 +125,7 @@ export class SqlJsAdapter extends PersistenceAdapter {
       this._db = new SQL.Database();
       this.backend = 'sql.js-memory';
     }
-    this._db.run(SCHEMA);
-    this._migrateEventLog();
+    this._initSchema();
     if (this._dir) await this._flush();   // materialise/migrate OPFS when available
     return this;
   }
@@ -211,6 +221,10 @@ export class SqlJsAdapter extends PersistenceAdapter {
         event.relationshipAfter === '' ? null : event.relationshipAfter ?? null,
         JSON.stringify(event),
       ]);
+    if (++this._eventsSincePrune >= PRUNE_EVERY) {
+      this._eventsSincePrune = 0;
+      this._enforceRetention(false);
+    }
     this._scheduleFlush();   // throttled — appendEvent is hot
     return true;
   }
@@ -376,8 +390,7 @@ export class SqlJsAdapter extends PersistenceAdapter {
       this._serverUrl = url;
       this._serverFilePath = info.path ?? 'sims-clone.sqlite';
       this.backend = 'sql.js-filesystem-server';
-      this._db.run(SCHEMA);
-      this._migrateEventLog();
+      this._initSchema();
       await this._flush();
       return true;
     } catch {
@@ -404,8 +417,7 @@ export class SqlJsAdapter extends PersistenceAdapter {
     this._fileHandle = handle;
     this._dir = null;
     this.backend = 'sql.js-file';
-    this._db.run(SCHEMA);
-    this._migrateEventLog();
+    this._initSchema();
   }
 
   async _tryConnectRememberedFile(SQL) {
@@ -418,8 +430,7 @@ export class SqlJsAdapter extends PersistenceAdapter {
     this._db = bytes ? new SQL.Database(bytes) : new SQL.Database();
     this._fileHandle = handle;
     this.backend = 'sql.js-file';
-    this._db.run(SCHEMA);
-    this._migrateEventLog();
+    this._initSchema();
     await this._flush();
     return true;
   }
@@ -469,6 +480,19 @@ export class SqlJsAdapter extends PersistenceAdapter {
     } finally {
       db.close();
     }
+  }
+
+  _initSchema() {
+    this._db.run(SCHEMA);
+    this._migrateEventLog();
+    this._enforceRetention(true);   // prune + reclaim once on connect (cleans old bloat)
+  }
+
+  /** Bound the event log / relationship snapshots to their caps. */
+  _enforceRetention(vacuum = false) {
+    this._db.run('DELETE FROM event_log WHERE id <= (SELECT MAX(id) FROM event_log) - ?', [EVENT_LOG_CAP]);
+    this._db.run('DELETE FROM relationship_snapshots WHERE id <= (SELECT MAX(id) FROM relationship_snapshots) - ?', [REL_SNAPSHOT_CAP]);
+    if (vacuum) { try { this._db.run('VACUUM'); } catch { /* best-effort reclaim */ } }
   }
 
   _migrateEventLog() {

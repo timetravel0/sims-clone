@@ -77,7 +77,7 @@ export class CareerPanel {
           <div class="cp-card-name">${c.label}</div>
           <div class="cp-card-sal">§${salMin.toLocaleString()}–§${salMax.toLocaleString()}/day</div>
           <div class="cp-card-hours">${firstShift ? `${firstShift.start}:00-${firstShift.end}:00` : 'No shifts'}</div>
-          ${active ? '<div class="cp-badge">Current</div>' : `<button class="cp-join-btn" data-career="${c.id}">Join</button>`}
+          ${active ? '<div class="cp-badge">Current</div>' : `<button class="cp-join-btn" data-career="${c.id}">${state?.careerId === 'unemployed' ? 'Join' : 'Switch'}</button>`}
         </div>`;
     }).join('');
 
@@ -102,7 +102,8 @@ export class CareerPanel {
     });
     this._el.querySelectorAll('.cp-join-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        system?.assign(sim.id, btn.dataset.career);
+        if (state?.careerId && state.careerId !== 'unemployed') system?.switchCareer(sim.id, btn.dataset.career);
+        else system?.assign(sim.id, btn.dataset.career);
         this._render();
       });
     });

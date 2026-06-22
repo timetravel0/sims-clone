@@ -4,11 +4,16 @@ import { memorySystem } from './MemorySystem.js';
 const POSITIVE = new Set(['chat', 'joke', 'compliment', 'hug']);
 
 export class RomanceSystem {
-  constructor(sims, graph) {
+  constructor(sims, graph, population = null) {
     this._sims = sims;
     this._graph = graph;
+    this._population = population;
     this._announced = new Set();
     this._register();
+  }
+
+  setPopulation(population) {
+    this._population = population;
   }
 
   _register() {
@@ -29,8 +34,12 @@ export class RomanceSystem {
       this._graph.adjust(idA, idB, 'romance', amount);
       this._graph.adjust(idB, idA, 'romance', amount * 0.8);
       this._announceRomance(idA, idB, nameA, nameB);
+      this._maybeCommitPair(idA, idB);
     }
 
+    if (this._monogamyBreach(idA, idB, type)) {
+      this._penaliseBreach(idA, idB, type);
+    }
     this._triggerJealousy(event);
   }
 
@@ -45,8 +54,31 @@ export class RomanceSystem {
   }
 
   _triggerJealousy({ idA, idB, nameA, nameB, type }) {
+    const directWatchers = new Set();
+    const partnerA = this._population?.getPartner?.(idA);
+    const partnerB = this._population?.getPartner?.(idB);
+    if (partnerA?.id && partnerA.id !== idB) directWatchers.add(partnerA.id);
+    if (partnerB?.id && partnerB.id !== idA) directWatchers.add(partnerB.id);
+
+    for (const watcherId of directWatchers) {
+      const watcher = this._sims.find(s => s.id === watcherId) ?? this._gameSim(watcherId);
+      if (!watcher) continue;
+      const targetId = watcherId === partnerA?.id ? idA : idB;
+      const targetName = watcherId === partnerA?.id ? nameA : nameB;
+      const jealousy = Math.min(1, 0.55 + Math.max(0, watcher.personality?.neurotic ?? 0) * 0.25);
+      watcher.emotions.trigger('jealousy', jealousy);
+      memorySystem.record(watcher.id, 'social', {
+        otherId: targetId,
+        otherName: targetName,
+        type: `jealous_${type}`,
+      }, jealousy, -0.7, 0.002);
+      this._graph.adjust(watcher.id, targetId, 'rivalry', 8 + jealousy * 10);
+      bus.emit('story:entry', { text: `${watcher.name} grows jealous of ${targetName}`, cat: 'gossip' });
+    }
+
     for (const watcher of this._sims) {
       if (watcher.id === idA || watcher.id === idB) continue;
+      if (directWatchers.has(watcher.id)) continue;
       const towardA = this._graph.score(watcher.id, idA, 'romance');
       const towardB = this._graph.score(watcher.id, idB, 'romance');
       const targetId = towardA >= towardB ? idA : idB;
@@ -64,6 +96,45 @@ export class RomanceSystem {
       bus.emit('story:entry', { text: `${watcher.name} grows jealous of ${targetName}`, cat: 'gossip' });
       break;
     }
+  }
+
+  _monogamyBreach(idA, idB, type) {
+    if (type !== 'flirt') return false;
+    const aPartner = this._population?.getPerson?.(idA)?.partnerId ?? null;
+    const bPartner = this._population?.getPerson?.(idB)?.partnerId ?? null;
+    return (aPartner && aPartner !== idB) || (bPartner && bPartner !== idA);
+  }
+
+  _penaliseBreach(idA, idB, type) {
+    const penalty = type === 'flirt' ? 8 : 4;
+    this._graph.adjust(idA, idB, 'romance', -penalty);
+    this._graph.adjust(idB, idA, 'romance', -penalty * 0.8);
+    this._graph.adjust(idA, idB, 'rivalry', penalty * 0.7);
+    this._graph.adjust(idB, idA, 'rivalry', penalty * 0.7);
+    bus.emit('story:entry', {
+      text: `${this._name(idA)} and ${this._name(idB)} strain a committed bond.`,
+      cat: 'drama',
+      category: 'drama',
+    });
+  }
+
+  _maybeCommitPair(idA, idB) {
+    if (!this._population?.sameHousehold?.(idA, idB)) return;
+    if (this._population.getPerson?.(idA)?.partnerId && this._population.getPerson?.(idA)?.partnerId !== idB) return;
+    if (this._population.getPerson?.(idB)?.partnerId && this._population.getPerson?.(idB)?.partnerId !== idA) return;
+    const a = this._graph.score(idA, idB, 'romance');
+    const b = this._graph.score(idB, idA, 'romance');
+    if (a >= 35 && b >= 35) this._population.setPartner?.(idA, idB);
+  }
+
+  _gameSim(id) {
+    return globalThis.window?._game?.sims?.find?.(s => s.id === id) ?? null;
+  }
+
+  _name(id) {
+    return this._sims.find(s => s.id === id)?.name
+      ?? globalThis.window?._game?.population?.getPerson?.(id)?.name
+      ?? id;
   }
 
   serialise() {

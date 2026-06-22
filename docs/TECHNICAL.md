@@ -17,19 +17,21 @@ The project is a browser-based Three.js application using vanilla ES modules. Th
 | Utility AI | Implemented | `SimBrain` preempts critical physical needs before Utility AI; `UtilityAIPlanner` scores object/social affordances and suppresses non-essential actions under hunger/bladder/energy crisis. |
 | Smart Objects | Implemented | Furniture advertises actions through `getAffordancesFor(sim)`. |
 | Object exclusivity | Implemented | Furniture reservation and `inUse` state prevent concurrent use. |
-| Anti-overlap movement | Implemented | Tile reservations and occupancy checks prevent Sims from sharing a destination or occupied path cell; blocked walks now reroute briefly and time out instead of freezing forever. |
+| Anti-overlap movement | Implemented | Tile reservations and occupancy checks prevent Sims from sharing a destination or occupied path cell; blocked walks reroute briefly and time out instead of freezing. Head-on deadlocks are broken by phase-through: a Sim blocked by another Sim's *body* for >0.6 s steps into the cell anyway (brief overlap), so two Sims meeting head-on swap cells instead of looping. |
 | Social interactions | Implemented | Social actions include context, consent, acceptance/rejection payoff and event emission. |
 | Social Dynamics 2.0 | Implemented | Directional 8-dimension relationships drive social affordances and dashboard explanations. |
 | Population model | Implemented | `PopulationSystem` separates household, active Sims, active visitors and off-lot people. |
 | Visitor lifecycle | Implemented | `VisitorSystem` schedules external visitors, doorbell, household responder selection, accept/reject/no-answer, visiting, hard timeout and return-home cleanup. |
-| Off-lot simulation | Implemented, lightweight | External people change off-lot state with minimum state durations, drift relationships and can generate visit intent. |
+| Off-lot simulation | Implemented, lightweight | External people change off-lot state with minimum state durations, drift relationships and can generate visit intent. Household Sims also take autonomous outings (meal out / trip / visit / other) with a logged reason and possible accidents. |
 | Relationship graph | Implemented | Directed typed edges for friendship, rivalry, romance and kinship/family are active. |
-| Romance/jealousy | Implemented | Positive interactions and compatibility can create romance; jealousy can be triggered. |
+| Romance/jealousy | Implemented | Positive interactions and compatibility can create romance; committed cohabiting partners trigger jealousy and penalise monogamy breaches. Committed Sims don't pursue flirts (UtilityAIPlanner penalty) and reject outside flirts ~92% of the time (`SocialAction`), the rare acceptance feeding jealousy. |
+| Health/illness | Implemented | `HealthSystem` cycles healthy→ill→recovering→healthy and applies off-lot incident injuries via `reportIncident`. |
+| Autonomous objects | Implemented | `AutonomousShoppingSystem` buys/places furniture by need pressure and lets a high-handiness Sim craft custom objects at the workbench. |
 | Episodic memory | Implemented | Global memory and per-Sim autobiographical memory both exist and are persisted. |
 | Narrative log | Implemented | `NarrativePlanner` emits story entries for relevant events. |
 | God Mode | Implemented | Whisper, impose, bless, curse and life-event injection are active. |
-| Life cycle | Implemented | `AgeSystem` tracks age and life stage. |
-| Career system | Implemented | `CareerSystem` tracks job, level, performance, salary, shifts, promotions and firing. |
+| Life cycle | Implemented | `AgeSystem` tracks age and life stage; children grow from data records and are embodied as teens. |
+| Career system | Implemented | `CareerSystem` tracks job, level, performance, salary, shifts, promotions, firing and player-driven job changes (`switchCareer`). All careers share one schedule (`WORK_WEEK` in `config/careers.js`): weekdays 0–4, 08:00–17:00; weekends off. |
 | Schedule system | Partially implemented | `ScheduleSystem` tracks weekly routine slots; behavior integration is still partial. |
 | Skill system | Partially implemented | Global `SkillSystem` and career-local skills both exist; they are not yet unified. |
 | Weather system | Implemented, limited UI | `WeatherSystem` updates weather state and need deltas; no dedicated weather panel is mounted. |
@@ -40,7 +42,7 @@ The project is a browser-based Three.js application using vanilla ES modules. Th
 | Build mode | Implemented | Furniture, wall/door tools, room overlay and budget are wired into runtime. |
 | Sim creator | Implemented | Mounted at startup when no save is selected. |
 | Headless research mode | Implemented, separate model | `npm run headless` runs a pure JS social simulation without Three.js/DOM and writes SQLite batch output. |
-| Family model | Partial | Household membership exists; deeper family, birth/death and inheritance rules are not implemented. |
+| Family model | Implemented, births only | Household membership and autonomous reproduction (same household, mutual romance, opposite sex, non-blood) produce children as data members that grow into teen Sims. Death and inheritance are not implemented. |
 
 ## Main Folders
 
@@ -171,11 +173,23 @@ off_lot → arriving → ringing_doorbell → waiting_response
 
 Visitor decisions consider relationship affinity, trust, affection, resentment, fear, hour, host energy, personality and visit reason. Door/entry points are semantically tied to doors, but because the current map has no real outside strip, visitors spawn and navigate via the nearest walkable porch/inside point and return home virtually after leaving.
 
+Visits are time-gated: `VisitorSystem._visitsAllowedNow()` allows scheduling only on weekends (`weekday >= 5`, since careers work days 0–4) or on weekday evenings (`hour >= 18`), and never before 08:00 or from 22:00 on; `scheduleVisit` enforces this (an `opts.force` bypass exists for scripted visits). `_nightCurfew()` sends guests home from 23:00 and hard-removes anyone still present between 00:00 and 06:00, so the lot is empty overnight. In the same window household Sims don't start outings (`OffLotSimulationSystem._canStartOuting`) and `UtilityAIPlanner` adds a strong sleep bias (critical needs still preempt it).
+
 The door responder is selected from available household Sims, not fixed to the initially requested host. The selected responder is logged as `respondingHostId`/`hostId` for the visit. Active visits have a hard timeout and always deactivate the external person on forced end, preventing saved `offLotState: visiting` records from staying active forever. Visitor need decay is slower than household decay while they are guests; low hunger, bladder or energy pushes them to leave instead of producing household-level crisis loops.
 
 `OffLotSimulationSystem` updates external people periodically, changing `offLotState`, applying lightweight relationship drift and emitting `offlot:visitIntent` events that can schedule visits. Each person carries `offLotStateUntilTick` and `lastOffLotTransitionTick`; state transitions are blocked until the minimum duration for the current state expires, reducing home/work/socializing churn.
 
 Default external people can define `relationshipSeeds` in `src/config/defaultPopulation.js`. `PopulationSystem.applyRelationshipSeeds()` applies these only to neutral relations, so new games and old neutral saves receive an initial outside network without compounding values on every load.
+
+## Family lifecycle, household outings, health and crafting
+
+**Reproduction & children.** `PopulationSystem.update(dt)` (driven from `Game._update`) periodically scans committed household couples and calls `createChild(aId, bId)` when `canHaveChild` holds: same `householdId`, mutual `partnerId`, romance ≥ 35, opposite sex (`_sexOf`) and not blood-related (`isFamily`). A birth is data-only — the child record carries `embodied:false` and `ageSeconds`; **no Sim is spawned**. `_growChildren` accumulates `ageSeconds` and `_embodyChild` spawns the Sim (via `Game._spawnSim` + `adoptHouseholdSim`) once it reaches `CHILD_GROW_SECONDS`, registering it with `AgeSystem.registerAt(sim, 13)` so it appears as a teen and keeps aging. `embodied`/`ageSeconds` are persisted through `_person`. Guards: `MAX_HOUSEHOLD` cap and a per-couple `BIRTH_COOLDOWN_SECONDS`. `CHILD_GROW_SECONDS` is deliberately decoupled from `AgeSystem`'s 86400 s/day scale (a `ponytail:` tuning knob).
+
+**Household outings.** `OffLotSimulationSystem` also iterates household Sims. A Sim can autonomously start an outing (`meal_out`, `trip`, `visit_friend`, `other`) unless a need is critical; it sets `sim._outing`, `sim._outingReason`/`_offLotReason` and `_outingUntilTick`, and emits a story entry naming the reason. `Game._update` treats `sim._atWork || sim._outing` as off-lot (hidden via `_sendToWork`, needs frozen, not selectable). On return the Sim recovers needs by outing type. Work departures also set `sim._offLotReason='work'` and log a reason (`CareerSystem._startShift`). While off-lot a Sim may have an accident → `HealthSystem.reportIncident`. Filters that skip hidden Sims (raycast, social witnesses, visitor door responder, family scoring, autonomous placement) all exclude `_outing` as well as `_atWork`.
+
+**Health.** `HealthSystem` (constructed in `Game`, ticked in `_update`) moves a person through `healthy → ill → recovering → healthy` with chance driven by hygiene/energy/hunger/weather, and exposes `reportIncident(personId, severity, cause, details)` used by off-lot accidents.
+
+**Autonomous crafting.** `AutonomousShoppingSystem` subscribes to `sim:objectUsed`; when a household Sim finishes at the `workbench` with handiness ≥ 3, `_maybeCraft` builds a custom object via `Game.createCustomObject` (→ `ObjectRegistry.registerCustom`) whose `needTarget`/`restoreRate`/utility scale with handiness, places it with the same placement validation as purchases, and is gated by a craft cooldown. Custom objects persist via `serialiseCustom`/`restoreCustom`.
 
 ## Persistence
 
@@ -199,6 +213,8 @@ Default external people can define `relationshipSeeds` in `src/config/defaultPop
 - budget and walls.
 
 `ExperimentLogger` keeps the in-memory log and also performs a best-effort append to the active persistence adapter when available. `SqlJsAdapter` stores normalized event columns plus the full JSON payload; `LocalStorageAdapter` keeps compatible JSON arrays. Every few simulated minutes, `ExperimentLogger` persists directional relationship snapshots so long runs can be queried without reconstructing every relationship from events.
+
+**Persistence cost controls.** High-churn AI/debug events (`sim:action`, `relationship:graphChanged`, `wellbeing:evaluated`) are kept only in the in-memory dashboard buffer and **not** written to SQLite (`SKIP_PERSIST` in `ExperimentLogger`) — in real saves they were ~87% of rows and ~80% of event-log bytes. `SqlJsAdapter` bounds storage and flush cost three ways: (1) each flush serializes the whole DB, so the hot event/snapshot log flushes on a long throttle (`FLUSH_MS`, 30 s) while slot saves still flush immediately; (2) `event_log` and `relationship_snapshots` are capped (`EVENT_LOG_CAP`/`REL_SNAPSHOT_CAP`) by id-based pruning every `PRUNE_EVERY` appends, so the file plateaus instead of growing without limit; (3) `_initSchema` prunes and `VACUUM`s once on connect to reclaim space from earlier bloat. (Measured: an existing 42.5 MB / 68k-event DB drops to 18.7 MB / 20k events on first connect.)
 
 Legacy social payloads are normalized as `social:legacy`; payload fields named `type` can no longer overwrite the logger's canonical event type. This keeps SQLite `event_type` stable for dashboards and post-run analysis.
 

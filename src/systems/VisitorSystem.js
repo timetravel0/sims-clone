@@ -45,6 +45,7 @@ export class VisitorSystem {
 
   scheduleVisit(personId, hostId = null, reason = 'spontaneous_neighbor', opts = {}) {
     if (!personId || this._visits.has(personId)) return null;
+    if (!opts.force && !this._visitsAllowedNow()) return null;  // weekend / weekday-evening only, never at night
     const person = this._game.population?.getPerson?.(personId);
     if (!person || this._game.population?.isHouseholdMember?.(personId)) return null;
     const host = hostId ? this._game.sims.find(s => s.id === hostId) : this._chooseHost(personId);
@@ -77,6 +78,8 @@ export class VisitorSystem {
   }
 
   update(dt) {
+    this._nightCurfew();
+
     this._scheduleTimer -= dt;
     if (this._scheduleTimer <= 0) {
       this._scheduleTimer = 75 + Math.random() * 75;
@@ -84,6 +87,33 @@ export class VisitorSystem {
     }
 
     for (const visit of [...this._visits.values()]) this._updateVisit(visit);
+  }
+
+  /**
+   * Night quiet hours. From 23:00 guests are sent home; from 00:00 to 06:00 the
+   * lot must be empty, so any still-present visitor is removed immediately.
+   */
+  _nightCurfew() {
+    const hour = Math.floor(this._game.clock?.hour ?? 12);
+    if (hour >= 6 && hour < 23) return;
+    for (const visit of [...this._visits.values()]) {
+      if (visit.state === 'returned_home') continue;
+      if (hour < 6) this._endVisit(visit, 'night_curfew');   // 00:00–06:00: hard, nobody on lot
+      else this._forceReturn(visit, 'night_curfew');          // 23:00+: head home
+    }
+  }
+
+  /**
+   * Whether new visits may be scheduled now. Guests typically come on weekends,
+   * or on weekdays only outside working hours (the evening) — and never at night.
+   */
+  _visitsAllowedNow() {
+    const hour = Math.floor(this._game.clock?.hour ?? 12);
+    if (hour < 8 || hour >= 22) return false;          // no daytime-start before 08:00 / no late or night arrivals
+    const weekday = this._game.clock?.weekday ?? 0;
+    const isWeekend = weekday >= 5;                     // careers work days 0–4, so 5–6 are the weekend
+    if (isWeekend) return true;                         // weekend: daytime & evening
+    return hour >= 18;                                  // weekday: only after work (evening)
   }
 
   decideDoorResponse(host, visitor, context = {}) {
@@ -344,7 +374,7 @@ export class VisitorSystem {
   }
 
   _chooseHost(personId) {
-    const sims = this._game.sims.filter(s => !s._isVisitor && !s._atWork);
+    const sims = this._game.sims.filter(s => !s._isVisitor && !s._atWork && !s._outing);
     if (sims.length === 0) return null;
     const dyn = this._game.socialDynamics;
     return sims.slice().sort((a, b) => (dyn?.affinity?.(b.id, personId) ?? 0) - (dyn?.affinity?.(a.id, personId) ?? 0))[0];
@@ -357,7 +387,7 @@ export class VisitorSystem {
   }
 
   _chooseDoorResponder(visit, visitor) {
-    const sims = this._game.sims.filter(s => !s._isVisitor && !s._atWork);
+    const sims = this._game.sims.filter(s => !s._isVisitor && !s._atWork && !s._outing);
     if (sims.length === 0) return null;
     const dyn = this._game.socialDynamics;
     const entry = this._entryPoint(visit.entryPointId);

@@ -137,6 +137,13 @@ export class AgeSystem {
     }
   }
 
+  /** Start tracking a newly-spawned Sim at a given age (e.g. a child grown to teen). */
+  registerAt(sim, days = 13) {
+    const stage = stageForAge(days);
+    sim._needMult = STAGE_NEED_MULT[stage] ?? 1.0;
+    this._data.set(sim.id, { seconds: days * SECONDS_PER_DAY, days, stage });
+  }
+
   // ── private ──────────────────────────────────────────────────────
 
   _initSim(sim) {

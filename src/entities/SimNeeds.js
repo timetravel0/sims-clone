@@ -18,6 +18,11 @@ const BASE_DECAY = {
   status:   1.0,
 };
 
+// These rates were tuned for a 240-unit day. The day is now 1440 game-minutes
+// (1 scaled unit = 1 game-minute), so without rescaling needs drained ~6× too
+// fast per game-day. This factor restores the original per-day balance.
+const DECAY_SCALE = 240 / 1440; // = 1/6
+
 export class SimNeeds {
   constructor(personality) {
     this._personality = personality;
@@ -45,7 +50,7 @@ export class SimNeeds {
 
   update(dt) {
     for (const k of NEED_KEYS) {
-      this._values[k] = Math.max(0, this._values[k] - this._decayMults[k] * dt);
+      this._values[k] = Math.max(0, this._values[k] - this._decayMults[k] * DECAY_SCALE * dt);
     }
     if (this._emit) this._emit(this._values);
   }

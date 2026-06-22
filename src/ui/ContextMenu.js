@@ -94,26 +94,24 @@ export class ContextMenu {
       }
     }
 
-    // ── Hit: ground / furniture ───────────────────────────
+    // ── Hit: furniture mesh directly ─────────────────────────────────────
+    // Raycasting the object meshes (not the ground) is robust for tall and
+    // multi-tile objects: clicking a bed's body used to hit the ground on a
+    // different tile than the bed's anchor, so nothing was found.
+    const furnitureMeshes = (this._game.world.furniture ?? []).map(f => f.mesh).filter(Boolean);
+    const furHits = rc.intersectObjects(furnitureMeshes, true);
+    if (furHits.length) {
+      const fur = this._furnitureFromHit(furHits[0].object);
+      if (fur) { this._showFurnitureMenu(fur, selectedSim, otherSims, e); return; }
+    }
+
+    // ── Hit: ground → furniture on that tile (fallback for flat objects) ──
     const groundHits = rc.intersectObjects(this._game.world.groundMeshes);
     if (groundHits.length) {
       const p   = groundHits[0].point;
       const gx  = Math.round(p.x), gz = Math.round(p.z);
       const fur = this._game.world.furniture?.find(f => f.gx === gx && f.gz === gz);
-      if (fur) {
-        const busy = fur.inUse || (fur.reservedBy && fur.reservedBy !== selectedSim.id);
-        if (!busy) items.push({ label: `🛋 Use ${fur.id}`, action: () => this._triggerUse(selectedSim, fur) });
-        if (fur.social && !busy) {
-          for (const other of otherSims) {
-            items.push({
-              label:  `👥 Invite ${other.name} to ${fur.id}`,
-              action: () => this._triggerSocialFurniture(selectedSim, other, fur),
-            });
-          }
-        }
-        this._show(e.clientX, e.clientY, items);
-        return;
-      }
+      if (fur) { this._showFurnitureMenu(fur, selectedSim, otherSims, e); return; }
     }
 
     // ── Hit: any Sim → select ─────────────────────────────
@@ -127,6 +125,31 @@ export class ContextMenu {
         this._show(e.clientX, e.clientY, items);
       }
     }
+  }
+
+  /** Walk up the hit object's ancestors to find which furniture's mesh it belongs to. */
+  _furnitureFromHit(obj) {
+    const furniture = this._game.world.furniture ?? [];
+    for (let node = obj; node; node = node.parent) {
+      const f = furniture.find(fr => fr.mesh === node);
+      if (f) return f;
+    }
+    return null;
+  }
+
+  _showFurnitureMenu(fur, selectedSim, otherSims, e) {
+    const items = [];
+    const busy = fur.inUse || (fur.reservedBy && fur.reservedBy !== selectedSim?.id);
+    if (!busy) items.push({ label: `🛋 Use ${fur.id}`, action: () => this._triggerUse(selectedSim, fur) });
+    if (fur.social && !busy) {
+      for (const other of otherSims) {
+        items.push({
+          label:  `👥 Invite ${other.name} to ${fur.id}`,
+          action: () => this._triggerSocialFurniture(selectedSim, other, fur),
+        });
+      }
+    }
+    this._show(e.clientX, e.clientY, items);
   }
 
   // ── Action helpers ───────────────────────────────────────

@@ -30,7 +30,11 @@ export class LifeCyclePanel {
     bus.on('career:promoted',    () => this._render());
     bus.on('career:fired',       () => this._render());
     bus.on('career:changed',     () => this._render());
+    bus.on('career:switched',    () => this._render());
     bus.on('career:skillGain',   () => this._render());
+    bus.on('health:stateChanged',() => this._render());
+    bus.on('family:childBorn',   () => this._render());
+    bus.on('family:partnerChanged',() => this._render());
     bus.on('career:shiftEnd',    () => this._render());
     bus.on('daynight:update',    () => this._renderSchedule());
   }
@@ -90,6 +94,7 @@ export class LifeCyclePanel {
     // ── Career ──
     if (career) {
       const c = career.career;
+      const person = this._game.population?.getPerson?.(sim.id);
       html += `<div style="background:rgba(255,255,255,0.05);border-radius:7px;padding:8px 10px;margin-bottom:10px">`;
       html += `<div style="display:flex;justify-content:space-between;align-items:center">`;
       html += `<span style="color:#eee;font-weight:700">${c.emoji} ${c.label}</span>`;
@@ -99,6 +104,15 @@ export class LifeCyclePanel {
       html += `<span>💰 §${Math.floor(career.simoleons).toLocaleString()}</span>`;
       html += career.atWork ? `<span style="color:#81c784">▶ At Work</span>` : `<span style="color:#888">🏠 Home</span>`;
       html += `</div>`;
+      if (person?.health) {
+        const hp = person.health.state === 'healthy' ? 'Healthy' : `${person.health.state} · ${person.health.illness ?? 'unknown'}`;
+        html += `<div style="margin-top:4px;color:${person.health.state === 'healthy' ? '#9ccc65' : '#ffab91'}">Health: ${hp}</div>`;
+      }
+      if (person) {
+        const partner = this._game.population?.getPerson?.(person.partnerId)?.name ?? '—';
+        const kids = (person.childIds ?? []).length;
+        html += `<div style="margin-top:4px;color:#aaa">Family: partner ${partner} · children ${kids}</div>`;
+      }
       html += `</div>`;
 
       // Skills
@@ -141,7 +155,7 @@ export class LifeCyclePanel {
     // Bind career picker
     this._el.querySelector('#lcp-career-select')?.addEventListener('change', e => {
       const sim = this._game.selectedSim;
-      if (sim) this._game.careerSystem?.joinCareer(sim.id, e.target.value);
+      if (sim) this._game.careerSystem?.switchCareer(sim.id, e.target.value);
     });
 
     this._renderSchedule();

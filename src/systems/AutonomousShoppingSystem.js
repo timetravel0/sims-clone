@@ -1,6 +1,9 @@
 import { bus } from '../core/EventBus.js';
 import { ObjectRegistry } from './ObjectRegistry.js';
 import { OBJECT_COSTS } from '../config/objectCatalog.js';
+import { skillSystem } from './SkillSystem.js';
+
+const CRAFT_NOUNS = { fun: 'gadget', comfort: 'stool', room: 'sculpture', energy: 'recliner' };
 
 const DEFAULT_CHECK_INTERVAL = 38;
 const HOUSEHOLD_RESERVE = 1_000;
@@ -35,9 +38,12 @@ export class AutonomousShoppingSystem {
     this._interval = opts.interval ?? DEFAULT_CHECK_INTERVAL;
     this._recent = new Map(); // objectId -> cooldown seconds
     this._history = [];
+    this._craftCd = 0;        // scaled-seconds until the next craft is allowed
+    bus.on('sim:objectUsed', e => this._maybeCraft(e));
   }
 
   update(dt) {
+    if (this._craftCd > 0) this._craftCd -= dt;
     this._decayRecent(dt);
     this._timer -= dt;
     if (this._timer > 0) return;
@@ -126,6 +132,52 @@ export class AutonomousShoppingSystem {
     if (this._history.length > 100) this._history.shift();
     buyer.showBubble?.(`Bought ${pick.def.label}`, 2.5);
     bus.emit('household:purchase', row);
+  }
+
+  /**
+   * A skilled Sim finishing at the workbench can craft a brand-new object whose
+   * characteristics (need served, restore rate, utility) scale with handiness.
+   */
+  _maybeCraft({ sim, objectType } = {}) {
+    if (objectType !== 'workbench' || !sim) return;
+    if (sim._isVisitor || sim._atWork || sim._outing) return;
+    if (this._craftCd > 0) return;
+    const handiness = skillSystem.getLevel(sim, 'handiness');
+    if (handiness < 3) return;
+    if (Math.random() > 0.15 + handiness * 0.05) return;
+
+    const need = Object.keys(CRAFT_NOUNS)[Math.floor(Math.random() * 4)];
+    const def = this._game.createCustomObject?.({
+      label: `${sim.name}'s ${CRAFT_NOUNS[need]}`,
+      color: 0x8d6e63,
+      needTarget: need,
+      restoreRate: 6 + handiness,
+      cost: 0,
+      description: `Handcrafted by ${sim.name} (handiness ${handiness}).`,
+      affordances: [{ verb: 'use', label: 'Use', utility: { [need]: 10 + handiness * 2, fun: 4 }, duration: 4 }],
+    });
+    if (!def) return;
+
+    const placement = this._findPlacementFor(def, sim);
+    if (!placement) return;
+    const ok = this._game.world.placeFurniture({
+      id: def.id, gx: placement.gx, gz: placement.gz, color: def.color,
+      needTarget: def.needTarget, restoreRate: def.restoreRate, social: def.social,
+      affordances: def.affordances,
+    });
+    if (!ok) return;
+
+    this._craftCd = 600;
+    sim.showBubble?.(`Crafted ${def.label}`, 2.5);
+    bus.emit('household:crafted', {
+      tick: this._game.tick, makerId: sim.id, makerName: sim.name,
+      objectId: def.id, objectLabel: def.label, needTarget: need,
+      restoreRate: def.restoreRate, gx: placement.gx, gz: placement.gz,
+    });
+    bus.emit('story:entry', {
+      text: `${sim.name} crafted a ${CRAFT_NOUNS[need]} at the workbench.`,
+      cat: 'family', category: 'family',
+    });
   }
 
   _rankCandidates(household, buyer) {
@@ -314,7 +366,7 @@ export class AutonomousShoppingSystem {
 
   _adjacentToSim(gx, gz) {
     return (this._game.sims ?? []).some(s => {
-      if (s._atWork) return false;
+      if (s._atWork || s._outing) return false;
       return Math.abs(Math.round(s.worldX) - gx) + Math.abs(Math.round(s.worldZ) - gz) <= 1;
     });
   }
@@ -375,7 +427,7 @@ export class AutonomousShoppingSystem {
   }
 
   _householdSims() {
-    return (this._game.sims ?? []).filter(s => !s._isVisitor && !s._atWork && (this._game.population?.isHouseholdMember?.(s.id) ?? true));
+    return (this._game.sims ?? []).filter(s => !s._isVisitor && !s._atWork && !s._outing && (this._game.population?.isHouseholdMember?.(s.id) ?? true));
   }
 
   _weightedPick(candidates) {

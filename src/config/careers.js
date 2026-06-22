@@ -2,6 +2,11 @@
  * careers.js — career catalogue (Stream B extraction). Shifts use day indices
  * 0..6; salary fields keep both legacy and current names for compatibility.
  */
+
+// All jobs share one schedule: Monday–Friday (weekdays 0–4), 08:00–17:00.
+// Weekends (weekdays 5–6) are off. Shared read-only array.
+const WORK_WEEK = [0, 1, 2, 3, 4].map(day => ({ day, start: 8, end: 17 }));
+
 export const CAREERS = [
   {
     id: 'unemployed',
@@ -25,7 +30,7 @@ export const CAREERS = [
     requiredSkill: { creativity: 2 },
     skillReq: { creativity: 2 },
     skillRequired: 'creativity',
-    shifts: [{ day: 1, start: 10, end: 16 }, { day: 3, start: 10, end: 16 }, { day: 5, start: 11, end: 15 }],
+    shifts: WORK_WEEK,
     salaryBase: 120,
     salaryPerLevel: 40,
     salaryStep: 40,
@@ -40,7 +45,7 @@ export const CAREERS = [
     requiredSkill: { logic: 2 },
     skillReq: { logic: 2 },
     skillRequired: 'logic',
-    shifts: [{ day: 0, start: 9, end: 17 }, { day: 2, start: 9, end: 17 }, { day: 4, start: 9, end: 17 }],
+    shifts: WORK_WEEK,
     salaryBase: 180,
     salaryPerLevel: 60,
     salaryStep: 60,
@@ -55,7 +60,7 @@ export const CAREERS = [
     requiredSkill: { cooking: 2 },
     skillReq: { cooking: 2 },
     skillRequired: 'cooking',
-    shifts: [{ day: 0, start: 11, end: 21 }, { day: 2, start: 11, end: 21 }, { day: 4, start: 11, end: 21 }, { day: 5, start: 11, end: 21 }],
+    shifts: WORK_WEEK,
     salaryBase: 150,
     salaryPerLevel: 50,
     salaryStep: 50,
@@ -70,7 +75,7 @@ export const CAREERS = [
     requiredSkill: { logic: 2 },
     skillReq: { logic: 2 },
     skillRequired: 'logic',
-    shifts: [{ day: 0, start: 9, end: 17 }, { day: 1, start: 9, end: 17 }, { day: 2, start: 9, end: 17 }, { day: 3, start: 9, end: 17 }, { day: 4, start: 9, end: 17 }],
+    shifts: WORK_WEEK,
     salaryBase: 200,
     salaryPerLevel: 80,
     salaryStep: 80,
@@ -85,7 +90,7 @@ export const CAREERS = [
     requiredSkill: { fitness: 2 },
     skillReq: { fitness: 2 },
     skillRequired: 'fitness',
-    shifts: [{ day: 0, start: 8, end: 14 }, { day: 2, start: 8, end: 14 }, { day: 4, start: 8, end: 14 }],
+    shifts: WORK_WEEK,
     salaryBase: 160,
     salaryPerLevel: 55,
     salaryStep: 55,

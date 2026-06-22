@@ -5,10 +5,15 @@ const POSITIVE = new Set(['chat', 'joke', 'compliment', 'hug', 'apologize', 'for
 const NEGATIVE = new Set(['argue', 'insult', 'confront', 'avoid', 'reject_flirt']);
 
 export class RelationshipGraph {
-  constructor(sims = []) {
+  constructor(sims = [], population = null) {
     this._sims = sims;
+    this._population = population;
     this._edges = new Map();
     this._register();
+  }
+
+  setPopulation(population) {
+    this._population = population;
   }
 
   _register() {
@@ -95,7 +100,14 @@ export class RelationshipGraph {
   }
 
   _sim(id) {
-    return this._sims.find(sim => sim.id === id);
+    const sim = this._sims.find(entry => entry.id === id);
+    if (sim) return sim;
+    const person = this._population?.getPerson?.(id) ?? null;
+    if (!person) return null;
+    return {
+      ...person,
+      personality: person.personality ?? person.traits ?? {},
+    };
   }
 
   serialise() {
