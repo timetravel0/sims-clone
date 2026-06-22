@@ -23,13 +23,9 @@ export class SkillSystem {
     /** @type {Map<string, Record<string, number>>} simId → highest emitted integer level per skill */
     this._emittedLevels = new Map();
     this._tickAccum = 0;
-    this._unsubscribeObjectUsed = null;
-    this.bindBus();
-  }
-
-  bindBus() {
-    this._unsubscribeObjectUsed?.();
-    this._unsubscribeObjectUsed = bus.on('sim:objectUsed', ({ sim, objectType }) => {
+    bus.onPersistent?.('sim:objectUsed', ({ sim, objectType }) => {
+      if (sim && objectType) this.gainFromObject(sim, objectType);
+    }) ?? bus.on('sim:objectUsed', ({ sim, objectType }) => {
       if (sim && objectType) this.gainFromObject(sim, objectType);
     });
   }
