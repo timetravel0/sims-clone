@@ -4,9 +4,11 @@ import { CareerSystem } from '../systems/CareerSystem.js';
 import { RomanceSystem } from '../systems/RomanceSystem.js';
 import { RelationshipGraph } from '../systems/RelationshipGraph.js';
 import { bus } from '../core/EventBus.js';
-import { SIM_DEFS, DEFAULT_EXTERNALS } from '../config/defaultPopulation.js';
+import { SIM_DEFS, DEFAULT_EXTERNALS, STARTER_CAREERS } from '../config/defaultPopulation.js';
 
 const NEGATIVE = new Set(['argue', 'insult', 'confront', 'avoid', 'reject_flirt']);
+const HOSTILE = new Set(['argue', 'insult', 'confront', 'avoid']);
+const WARM = new Set(['chat', 'joke', 'compliment', 'hug', 'comfort', 'offer_help', 'ask_help']);
 
 // Object types that feed into SkillSystem via sim:objectUsed
 const OBJECT_POOL = [
@@ -34,7 +36,7 @@ export class HeadlessSimulation {
     this.seed = seed;
     this.rng = mulberry32(seed);
     this.tick = 0;
-    this.clock = { day: 0, hour: 8 };
+    this.clock = { day: 0, weekday: 0, hour: 8 };
     this.people = [
       ...household.map((p, i) => this._person(p, `h_${i + 1}`, 'household')),
       ...externals.map((p, i) => this._person(p, `e_${i + 1}`, p.role ?? 'neighbor')),
@@ -46,12 +48,13 @@ export class HeadlessSimulation {
     this.skillSystem = new SkillSystem();
     for (const p of this.people) this.skillSystem.register(p);
 
-    this.relationshipGraph = new RelationshipGraph();
+    this.relationshipGraph = new RelationshipGraph(this.people);
 
-    this.careerSystem = new CareerSystem(
-      this.people.filter(p => p.role === 'household'),
-      this.clock,
-    );
+    const householdPeople = this.people.filter(p => p.role === 'household');
+    this.careerSystem = new CareerSystem(householdPeople, this.clock);
+    householdPeople.forEach((p, i) => {
+      this.careerSystem.assign(p.id, STARTER_CAREERS[i % STARTER_CAREERS.length]);
+    });
 
     this.romanceSystem = new RomanceSystem(
       this.people,
@@ -66,10 +69,11 @@ export class HeadlessSimulation {
     this.events = [];
     this.relationshipSnapshots = [];
 
-    // Listen to bus events emitted by the systems
+    // Listen to bus events emitted by the systems. scripts/headless.mjs clears the
+    // global bus before each run so these listeners cannot leak across runs.
     bus.on('career:promoted', e => {
       this._promotions++;
-      this.events.push({ tick: this.tick, type: 'career:promoted', actorId: e.simId, actorName: e.name, ...e });
+      this.events.push({ tick: this.tick, type: 'career:promoted', actorId: e.simId ?? e.sim?.id, actorName: e.name ?? e.sim?.name, ...e });
     });
     bus.on('skill:levelUp', e => {
       this._skillLevelUps++;
@@ -77,7 +81,7 @@ export class HeadlessSimulation {
     });
     bus.on('story:entry', e => {
       if (String(e.cat ?? e.category ?? '').match(/gossip|drama/)) {
-        this._romanceSparks++;
+        if (/romantic spark/i.test(String(e.text ?? ''))) this._romanceSparks++;
         this.events.push({ tick: this.tick, type: 'story:entry', cat: e.cat ?? e.category, text: e.text });
       }
     });
@@ -97,6 +101,7 @@ export class HeadlessSimulation {
     this.tick += 1;
     this.clock.hour = (8 + this.tick / 60) % 24;
     this.clock.day = Math.floor((8 + this.tick / 60) / 24);
+    this.clock.weekday = this.clock.day % 7;
 
     const dtDays = 1 / (60 * 24); // 1 tick = 1 sim-minute
 
@@ -153,18 +158,38 @@ export class HeadlessSimulation {
       ? +(skillSum / household.length).toFixed(2)
       : 0;
 
+    const finalAffinities = [];
+    for (const a of this.people) {
+      for (const b of this.people) {
+        if (a.id === b.id) continue;
+        finalAffinities.push(this.socialDynamics.affinity(a.id, b.id));
+      }
+    }
+    const finalMeanAffinity = finalAffinities.length
+      ? +(finalAffinities.reduce((a, b) => a + b, 0) / finalAffinities.length).toFixed(2)
+      : 0;
+    const negativeRelationshipRate = finalAffinities.length
+      ? +(finalAffinities.filter(v => v < -50).length / finalAffinities.length).toFixed(3)
+      : 0;
+    const activeCareers = household.filter(p => this.careerSystem.getState(p.id)?.careerId !== 'unemployed').length;
+    const romanceEdges = this.relationshipGraph.strongest('romance', 25).length;
+
     return {
       seed: this.seed,
       ticks: this.tick,
       events: this.events.length,
       socialInteractions: social.length,
       conflictRate: social.length ? +(negative / social.length).toFixed(3) : 0,
+      finalMeanAffinity,
+      negativeRelationshipRate,
       totalVisits: visits.length,
       visitAcceptanceRate: visits.length ? +(acceptedVisits / visits.length).toFixed(3) : 0,
       promotions: this._promotions,
+      careerActiveRate: household.length ? +(activeCareers / household.length).toFixed(3) : 0,
       skillLevelUps: this._skillLevelUps,
       avgSkillTotal,
       romanceSparks: this._romanceSparks,
+      romanceActivationRate: social.length ? +(romanceEdges / social.length).toFixed(4) : 0,
       relationshipSnapshots: this.relationshipSnapshots.length,
     };
   }
@@ -243,6 +268,7 @@ export class HeadlessSimulation {
 
   _chooseInteraction(actor, target) {
     const ab = this.socialDynamics.snapshot(actor.id, target.id);
+    const sameHousehold = actor.role === 'household' && target.role === 'household';
     const ctx = {
       actorNeedLow: false,
       targetNeedLow: false,
@@ -254,9 +280,11 @@ export class HeadlessSimulation {
       .filter(([type]) => this.socialDynamics.meetsRequirements(actor.id, target.id, type, ctx))
       .map(([type, def]) => {
         let weight = 4 + Math.max(0, def.valence ?? 0) * 2;
-        if (['confront', 'avoid', 'insult', 'argue'].includes(type)) weight += ab.resentment * 0.25;
-        if (type === 'apologize') weight += (this.socialDynamics.snapshot(target.id, actor.id).resentment ?? 0) * 0.25;
-        if (type === 'forgive')   weight += ab.resentment * 0.2;
+        if (HOSTILE.has(type)) weight += ab.resentment * 0.12;
+        if (sameHousehold && HOSTILE.has(type)) weight *= 0.45;
+        if (sameHousehold && WARM.has(type)) weight += 4;
+        if (type === 'apologize') weight += (this.socialDynamics.snapshot(target.id, actor.id).resentment ?? 0) * (sameHousehold ? 0.45 : 0.25);
+        if (type === 'forgive')   weight += ab.resentment * (sameHousehold ? 0.35 : 0.2);
         if (type === 'flirt')     weight += ab.attraction * 0.35;
         if (['chat', 'joke', 'compliment', 'gossip'].includes(type)) {
           weight += Math.max(0, this.socialDynamics.affinity(actor.id, target.id)) * 0.03;
