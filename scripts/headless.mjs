@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import initSqlJs from 'sql.js';
 import { bus } from '../src/core/EventBus.js';
-import { HeadlessSimulation } from '../src/headless/HeadlessSimulation.js';
+import { HeadlessRuntime } from '../src/headless/HeadlessRuntime.js';
 
 const args = Object.fromEntries(process.argv.slice(2).map(arg => {
   const [k, v = true] = arg.replace(/^--/, '').split('=');
@@ -56,13 +56,11 @@ db.run(`
 
 const summaries = [];
 for (let i = 0; i < runs; i++) {
-  // The runtime systems use the global bus. Clear it before each headless run so
-  // listeners from previous runs cannot double-count events or mutate new runs.
   bus.clear();
 
   const runSeed = seed + i;
   const runId = `headless_${Date.now()}_${runSeed}`;
-  const sim = new HeadlessSimulation({ seed: runSeed });
+  const sim = new HeadlessRuntime({ seed: runSeed });
   const summary = sim.run({ ticks });
   summaries.push({ runId, ...summary, busListenersAfterRun: bus.listenerCount() });
 
@@ -75,8 +73,8 @@ for (let i = 0; i < runs; i++) {
       db.run(`INSERT INTO event_log
         (run_id, tick, event_type, actor_id, target_id, interaction_type, accepted, event_json)
         VALUES (?,?,?,?,?,?,?,?)`,
-        [runId, e.tick, e.type, e.actorId ?? e.visitorId ?? null, e.targetId ?? e.hostId ?? null,
-          e.interactionType ?? null, e.accepted == null ? null : (e.accepted ? 1 : 0), JSON.stringify(e)]);
+        [runId, e.tick, e.type, e.actorId ?? e.simId ?? e.visitorId ?? null, e.targetId ?? e.hostId ?? null,
+          e.interactionType ?? e.objectId ?? null, e.accepted == null ? null : (e.accepted ? 1 : 0), JSON.stringify(e)]);
     }
     for (const snap of sim.relationshipSnapshots) {
       for (const row of snap.rows) {
