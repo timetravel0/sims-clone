@@ -32,6 +32,7 @@ export { DIMENSIONS, INTERACTIONS };
 
 // Generic fallback applied when a consent-gated interaction is refused.
 const DEFAULT_REJECT = { ab: { resentment: 4, affection: -3 }, ba: { trust: -1 } };
+const FRICTION_INTERVAL = 120;
 
 function clamp(v) { return Math.max(0, Math.min(100, v)); }
 
@@ -42,6 +43,7 @@ export class SocialDynamicsSystem {
     this._rel = new Map();
     /** @type {Map<string, number>} "from->to:type" → remaining cooldown (sim-seconds) */
     this._cooldowns = new Map();
+    this._frictionTimer = FRICTION_INTERVAL;
     this._register();
   }
 
@@ -155,9 +157,31 @@ export class SocialDynamicsSystem {
         else if (rate > 0)               d[dim] = clamp(d[dim] + rate * dt);
       }
     }
+    this._frictionTimer -= dt;
+    if (this._frictionTimer <= 0) {
+      this._frictionTimer = FRICTION_INTERVAL;
+      this._applyAmbientFriction();
+    }
     for (const [k, v] of this._cooldowns) {
       const next = v - dt;
       if (next <= 0) this._cooldowns.delete(k); else this._cooldowns.set(k, next);
+    }
+  }
+
+  _applyAmbientFriction() {
+    const active = this._sims.filter(s => !s._atWork && !s._outing && !s._isVisitor);
+    for (const a of active) {
+      const needs = a.needs?.getAll?.() ?? {};
+      const pressure = Math.max(0, 32 - (needs.social ?? 100), 28 - (needs.fun ?? 100), 28 - (needs.comfort ?? 100)) / 32;
+      const prickly = Math.max(0, -(a.personality?.nice ?? 0)) + Math.max(0, a.personality?.neurotic ?? 0) * 0.35;
+      if (pressure <= 0 && prickly <= 0.2) continue;
+      for (const b of active) {
+        if (a === b) continue;
+        const distance = Math.hypot((a.worldX ?? a.gx) - (b.worldX ?? b.gx), (a.worldZ ?? a.gz) - (b.worldZ ?? b.gz));
+        if (distance > 5) continue;
+        const amount = Math.min(3.5, pressure * 2.2 + prickly * 0.7);
+        if (amount > 0.6) this._apply(a.id, b.id, { resentment: amount, affection: -amount * 0.25 });
+      }
     }
   }
 
@@ -178,89 +202,53 @@ export class SocialDynamicsSystem {
     note(d.fear     >= 25, `is wary of ${toName} (${Math.round(d.fear)})`);
     note(d.dependency>=40, `leans on ${toName} for support (${Math.round(d.dependency)})`);
     note(d.familiarity< 10, `barely knows ${toName}`);
-    if (reasons.length === 0) reasons.push(`feels neutral toward ${toName}`);
-
-    return {
-      from: fromId, to: toId, fromName, toName,
-      dims: { ...d },
-      label: this._relationLabel(d),
-      affinity: Math.round(this.affinity(fromId, toId)),
-      summary: `${fromName} ${reasons.join(', ')}.`,
-      reasons,
-    };
-  }
-
-  _relationLabel(d) {
-    if (d.resentment >= 45 && d.resentment > d.affection) return d.fear >= 30 ? 'Feared rival' : 'Rival';
-    if (d.attraction >= 45 && d.affection >= 30)          return 'Romantic interest';
-    if (d.affection  >= 60 && d.trust >= 45)              return 'Close friend';
-    if (d.affection  >= 35)                                return 'Friend';
-    if (d.fear       >= 35)                                return 'Intimidated by';
-    if (d.familiarity< 12)                                 return 'Stranger';
-    return 'Acquaintance';
-  }
-
-  // ── Listeners ────────────────────────────────────────────────────────────────
-
-  _register() {
-    bus.on('social:interaction', ({ idA, idB, type, accepted, socialDynamicsApplied }) => {
-      if (socialDynamicsApplied) return;   // SocialAction already applied the effect
-      if (!idA || !idB || !type) return;
-      this.applyInteraction(idA, idB, type, accepted !== false);
-    });
-
-    // A Sim's public win/loss colours how others regard them.
-    bus.on('life:event', ({ simId, valence = 0 }) => {
-      if (!simId) return;
-      for (const other of this._sims) {
-        if (other.id === simId) continue;
-        const ba = this.get(other.id, simId);
-        ba.respect = clamp(ba.respect + (valence > 0 ? 3 : -2));
-        if (valence < 0) ba.affection = clamp(ba.affection + 1); // sympathy
-      }
-    });
-
-    bus.on('goal:completed', ({ simId, goal }) => {
-      if (goal?.targetId) this._apply(simId, goal.targetId, { affection: 4, trust: 3 });
-    });
-    bus.on('goal:failed', ({ simId, goal }) => {
-      if (goal?.type === 'avoid_sim' && goal.targetId) this._apply(simId, goal.targetId, { resentment: 3 });
-    });
-
-    bus.on('relationship:romance', ({ idA, idB, amount = 8 }) => {
-      if (!idA || !idB) return;
-      this._apply(idA, idB, { attraction: amount, affection: amount * 0.5 });
-      this._apply(idB, idA, { attraction: amount * 0.8, affection: amount * 0.4 });
-    });
+    return reasons.length ? reasons.join('; ') : `${fromName} feels neutral toward ${toName}`;
   }
 
   _name(id) {
-    return this._sims.find(s => s.id === id)?.name
-      ?? globalThis.window?._game?.population?.getPerson?.(id)?.name
-      ?? id;
+    return this._sims.find(s => s.id === id)?.name ?? id;
   }
 
-  // ── Serialisation ─────────────────────────────────────────────────────────────
-
   serialise() {
-    const rel = {};
-    for (const [k, v] of this._rel) rel[k] = { ...v };
-    const cooldowns = {};
-    for (const [k, v] of this._cooldowns) cooldowns[k] = v;
-    return { rel, cooldowns };
+    return {
+      rel: [...this._rel.entries()],
+      cooldowns: [...this._cooldowns.entries()],
+      frictionTimer: this._frictionTimer,
+    };
   }
 
   restore(data = {}) {
-    this._rel.clear();
-    this._cooldowns.clear();
-    for (const [k, v] of Object.entries(data.rel ?? {})) {
-      const d = {};
-      for (const dim of DIMENSIONS) d[dim] = clamp(v[dim] ?? 0);
-      this._rel.set(k, d);
-    }
-    for (const [k, v] of Object.entries(data.cooldowns ?? {})) {
-      const n = Number(v);
-      if (Number.isFinite(n) && n > 0) this._cooldowns.set(k, n);
-    }
+    this._rel = new Map(data.rel ?? []);
+    this._cooldowns = new Map(data.cooldowns ?? []);
+    this._frictionTimer = data.frictionTimer ?? FRICTION_INTERVAL;
+  }
+
+  _register() {
+    bus.on('social:interaction', event => {
+      if (event.socialDynamicsApplied) return;
+      this.applyInteraction(event.idA, event.idB, event.type, event.accepted !== false);
+      this.markCooldown(event.idA, event.idB, event.type);
+    });
+
+    bus.on('life:event', ({ simId, affectedIds = [], valence = 0 }) => {
+      for (const other of affectedIds) {
+        if (!simId || !other || simId === other) continue;
+        if (valence >= 0) this._apply(other, simId, { affection: 4 * valence, trust: 2 * valence });
+        else this._apply(other, simId, { resentment: Math.abs(valence) * 6, fear: Math.abs(valence) * 2 });
+      }
+    });
+
+    bus.on('goal:completed', ({ simId, targetId, type }) => {
+      if (targetId) this._apply(simId, targetId, { respect: 3, affection: type === 'support_family' ? 4 : 1 });
+    });
+
+    bus.on('goal:failed', ({ simId, targetId }) => {
+      if (targetId) this._apply(targetId, simId, { resentment: 4, trust: -2 });
+    });
+
+    bus.on('relationship:romance', ({ idA, idB, amount = 4 }) => {
+      this._apply(idA, idB, { attraction: amount, affection: amount * 0.4 });
+      this._apply(idB, idA, { attraction: amount * 0.8, affection: amount * 0.3 });
+    });
   }
 }
