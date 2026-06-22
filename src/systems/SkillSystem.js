@@ -1,8 +1,9 @@
 /**
  * SkillSystem — Sprint 4
  * Tracks 6 skills per Sim: cooking, logic, charisma, fitness, creativity, handiness.
- * Skills grow 0-10 via object use. Each integer milestone emits skill:levelUp.
- * Skills decay very slowly when unused (0.001/day). Serialisable.
+ * Skills grow 0-10 via object use. Each integer milestone emits skill:levelUp
+ * once per Sim/skill/level, even if slow decay later nudges the value below the
+ * same integer boundary.
  */
 import { bus } from '../core/EventBus.js';
 import { ObjectRegistry, SKILL_BY_OBJECT } from './ObjectRegistry.js';
@@ -19,6 +20,8 @@ export class SkillSystem {
   constructor() {
     /** @type {Map<string, Record<string, number>>} simId → skills */
     this._data = new Map();
+    /** @type {Map<string, Record<string, number>>} simId → highest emitted integer level per skill */
+    this._emittedLevels = new Map();
     this._tickAccum = 0;
     // Using an object grows the matching skill (book/desk/piano/etc as XP vector).
     bus.on('sim:objectUsed', ({ sim, objectType }) => {
@@ -29,9 +32,9 @@ export class SkillSystem {
   /** Call once per Sim on creation */
   register(sim) {
     if (this._data.has(sim.id)) return;
-    const skills = {};
-    for (const s of SKILLS) skills[s] = 0;
+    const skills = this._blankSkills();
     this._data.set(sim.id, skills);
+    this._emittedLevels.set(sim.id, this._levelsFrom(skills));
   }
 
   /** Called by UseObjectAction when a Sim finishes interacting */
@@ -49,15 +52,22 @@ export class SkillSystem {
   _gain(sim, skillName, amount) {
     const skills = this._data.get(sim.id);
     if (!skills || !(skillName in skills)) return;
-    const prev  = skills[skillName];
-    const next  = Math.min(10, prev + amount);
+    const prev = skills[skillName];
+    const next = Math.min(10, prev + amount);
     skills[skillName] = next;
-    // Emit on integer milestone
-    if (Math.floor(next) > Math.floor(prev)) {
+
+    const reached = Math.floor(next);
+    const emitted = this._emittedLevels.get(sim.id) ?? this._levelsFrom(skills);
+    this._emittedLevels.set(sim.id, emitted);
+
+    // Emit each integer milestone once. Without this, tiny skill decay can move a
+    // maxed skill from 10.000 to 9.999 and every future use re-emits Lv.10.
+    if (reached > Math.floor(prev) && reached > (emitted[skillName] ?? 0)) {
+      emitted[skillName] = reached;
       bus.emit('skill:levelUp', {
         sim,
         skill: skillName,
-        level: Math.floor(next),
+        level: reached,
       });
     }
   }
@@ -88,9 +98,25 @@ export class SkillSystem {
 
   restore(data) {
     if (!data) return;
+    this._data.clear();
+    this._emittedLevels.clear();
     for (const [id, skills] of Object.entries(data)) {
-      this._data.set(id, { ...skills });
+      const normalized = this._blankSkills(skills);
+      this._data.set(id, normalized);
+      this._emittedLevels.set(id, this._levelsFrom(normalized));
     }
+  }
+
+  _blankSkills(overrides = {}) {
+    const skills = {};
+    for (const s of SKILLS) skills[s] = Number(overrides[s] ?? 0);
+    return skills;
+  }
+
+  _levelsFrom(skills = {}) {
+    const levels = {};
+    for (const s of SKILLS) levels[s] = Math.floor(skills[s] ?? 0);
+    return levels;
   }
 }
 
