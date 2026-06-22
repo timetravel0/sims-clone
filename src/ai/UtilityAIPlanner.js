@@ -5,9 +5,10 @@ import { INTERACTIONS }                  from '../systems/SocialDynamicsSystem.j
 import { GameContext }                   from '../core/GameContext.js';
 
 const VIEW_RADIUS = 8;
-const TOP_K       = 5;
+const TOP_K       = 5;   // wider pick pool: history can rescue lower-ranked affordances
 const SOCIAL_ENERGY_MIN = 12;
 
+// Need-pressure utility per interaction type (drives base scoring).
 const SOCIAL_UTILITY = {
   chat:        { social: 24, energy: -5 },
   joke:        { social: 20, fun: 10, energy: -4 },
@@ -28,6 +29,10 @@ const SOCIAL_UTILITY = {
 const POSITIVE_SOCIAL = new Set(['chat', 'joke', 'compliment', 'hug', 'apologize', 'forgive', 'comfort', 'offer_help', 'ask_help', 'gossip', 'flirt']);
 const NEGATIVE_SOCIAL = new Set(['argue', 'insult', 'confront', 'avoid']);
 
+/**
+ * NEED_TRAIT_WEIGHT — personality modulation on utility.
+ * Now reads from the (potentially drifted) personality live.
+ */
 const NEED_TRAIT_WEIGHT = {
   social:   sim => 1 + sim.personality.outgoing  * 0.45,
   status:   sim => 1 + sim.personality.ambitious * 0.25 + sim.personality.nice * 0.15,
@@ -44,10 +49,11 @@ const NEED_TRAIT_WEIGHT = {
 export class UtilityAIPlanner {
   constructor(sim) {
     this._sim   = sim;
-    this._brain = null;
+    this._brain = null;   // injected by SimBrain.setBrain()
     this.lastDecision = null;
   }
 
+  /** Called by SimBrain after construction to avoid circular dependency. */
   setBrain(brain) { this._brain = brain; }
 
   plan() {
@@ -59,6 +65,7 @@ export class UtilityAIPlanner {
 
     if (affordances.length === 0) return [];
 
+    // ── Softmax-style weighted pick from TOP_K ─────────────────────────────
     const pool    = affordances.slice(0, TOP_K);
     const minS    = pool[pool.length - 1].score;
     const weights = pool.map(a => Math.exp(a.score - minS));
@@ -81,7 +88,6 @@ export class UtilityAIPlanner {
       if (this._distanceTo(furniture) > VIEW_RADIUS) continue;
       out.push(...furniture.getAffordancesFor(this._sim));
     }
-    // Usa GameContext invece di window._game
     for (const other of GameContext.sims(this._sim.id)) {
       if (this._distanceTo(other) > VIEW_RADIUS) continue;
       out.push(...this._socialAffordances(other));
@@ -90,7 +96,7 @@ export class UtilityAIPlanner {
   }
 
   _socialAffordances(target) {
-    const dyn   = GameContext.socialDynamics;
+    const dyn  = GameContext.socialDynamics;
     const actor = this._sim;
     if (target._atWork) return [];
     if (actor.needs.get('energy') < SOCIAL_ENERGY_MIN) return [];
@@ -118,6 +124,7 @@ export class UtilityAIPlanner {
     return out;
   }
 
+  /** Legacy hardcoded social affordances — only used if socialDynamics absent. */
   _legacySocialAffordances(target) {
     const rel = socialManager.getRelation(this._sim.id, target.id);
     return [
@@ -131,11 +138,12 @@ export class UtilityAIPlanner {
   _socialContext(target) {
     const a = this._sim, b = target;
     const label = (b._moodLabel ?? '').toLowerCase();
+    const graph = GameContext.relationshipGraph;
     return {
       actorNeedLow:  a.needs.get('social') < 30 || a.needs.get('fun') < 22,
       targetNeedLow: b.needs.get('social') < 30 || b.needs.get('comfort') < 25,
       targetMoodLow: /miser|sad|low|down/.test(label) || b.needs.get('comfort') < 25 || b.needs.get('fun') < 20,
-      compatible:    (GameContext.relationshipGraph?.compatibility?.(a.id, b.id) ?? 0) >= 0.5,
+      compatible:    (graph?.compatibility?.(a.id, b.id) ?? 0) >= 0.5,
     };
   }
 
@@ -171,10 +179,10 @@ export class UtilityAIPlanner {
     if (affordance.targetType === 'sim' && affordance.verb) {
       const dyn = GameContext.socialDynamics;
       if (dyn) {
-        const ab      = affordance.dyn ?? dyn.snapshot(this._sim.id, affordance.target.id);
-        const ba      = dyn.snapshot(affordance.target.id, this._sim.id);
+        const ab = affordance.dyn ?? dyn.snapshot(this._sim.id, affordance.target.id);
+        const ba = dyn.snapshot(affordance.target.id, this._sim.id);
         const affinity = dyn.affinity(this._sim.id, affordance.target.id);
-        const verb    = affordance.verb;
+        const verb = affordance.verb;
         if (POSITIVE_SOCIAL.has(verb)) score += affinity * 0.06 + ab.affection * 0.08 + ab.trust * 0.05;
         if (NEGATIVE_SOCIAL.has(verb)) score += ab.resentment * 0.16 - ab.affection * 0.04;
         if (verb === 'flirt') {
@@ -211,7 +219,6 @@ export class UtilityAIPlanner {
       score += Math.random() * 2.5;
     }
 
-    // Orario notturno: usa GameContext.hour invece di window._game
     const hour = GameContext.hour;
     if (hour >= 22 || hour < 7) {
       if (affordance.verb === 'sleep') score += 80;
