@@ -38,7 +38,7 @@ export class AutonomousShoppingSystem {
     this._interval = opts.interval ?? DEFAULT_CHECK_INTERVAL;
     this._recent = new Map(); // objectId -> cooldown seconds
     this._history = [];
-    this._craftCd = 0;        // scaled-seconds until the next craft is allowed
+    this._craftCd = opts.craftCd ?? 0;        // scaled-seconds until the next craft is allowed
     bus.on('sim:objectUsed', e => this._maybeCraft(e));
   }
 
@@ -59,6 +59,7 @@ export class AutonomousShoppingSystem {
       interval: this._interval,
       recent: Object.fromEntries(this._recent),
       history: this._history.slice(-100),
+      craftCd: this._craftCd,
     };
   }
 
@@ -67,6 +68,7 @@ export class AutonomousShoppingSystem {
     this._interval = data.interval ?? DEFAULT_CHECK_INTERVAL;
     this._recent = new Map(Object.entries(data.recent ?? {}).map(([k, v]) => [k, Number(v)]));
     this._history = Array.isArray(data.history) ? data.history.slice(-100) : [];
+    this._craftCd = data.craftCd ?? 0;
   }
 
   _considerPurchase() {
@@ -147,7 +149,7 @@ export class AutonomousShoppingSystem {
     if (Math.random() > 0.15 + handiness * 0.05) return;
 
     const need = Object.keys(CRAFT_NOUNS)[Math.floor(Math.random() * 4)];
-    const def = this._game.createCustomObject?.({
+    const candidate = {
       label: `${sim.name}'s ${CRAFT_NOUNS[need]}`,
       color: 0x8d6e63,
       needTarget: need,
@@ -155,7 +157,14 @@ export class AutonomousShoppingSystem {
       cost: 0,
       description: `Handcrafted by ${sim.name} (handiness ${handiness}).`,
       affordances: [{ verb: 'use', label: 'Use', utility: { [need]: 10 + handiness * 2, fun: 4 }, duration: 4 }],
-    });
+    };
+
+    // Same rule as autonomous buying: crafting should not create clutter when a
+    // free equivalent already exists. Craft only if the household genuinely lacks
+    // free capacity for the need/affordance this object would serve.
+    if (!this._needsAdditionalInstance(candidate, this._householdSims())) return;
+
+    const def = this._game.createCustomObject?.(candidate);
     if (!def) return;
 
     const placement = this._findPlacementFor(def, sim);
