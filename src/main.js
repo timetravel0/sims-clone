@@ -15,7 +15,7 @@ async function resolvePersistenceAdapter() {
     if (SqlJsAdapter.available()) {
       const adapter = await new SqlJsAdapter().connect();
       window.__SIMS_PERSISTENCE_ADAPTER__ = adapter;
-      console.info('[Persistence] SQLite (sql.js + OPFS) enabled.');
+      console.info('[Persistence] SQLite (sql.js + OPFS) enabled. Use await window._simsPersistenceInfo() for diagnostics.');
       return adapter;
     }
   } catch (err) {
@@ -26,4 +26,13 @@ async function resolvePersistenceAdapter() {
 
 const container = document.getElementById('canvas-container');
 const persistenceAdapter = await resolvePersistenceAdapter();
-new Game(container, { persistenceAdapter });
+
+window._simsPersistence = persistenceAdapter ?? null;
+window._simsPersistenceInfo = async () => {
+  const sl = window._game?._saveLoad;
+  if (sl?.backendInfo) return sl.backendInfo();
+  if (persistenceAdapter?.diagnostics) return persistenceAdapter.diagnostics();
+  return { backend: 'LocalStorageAdapter', sqlite: false };
+};
+
+window._game = new Game(container, { persistenceAdapter });
