@@ -34,7 +34,7 @@ export class MemorySystem {
       data:      { ...data },
       intensity: Math.min(1, Math.max(0, intensity)),
       valence:   Math.min(1, Math.max(-1, valence)),
-      gameTime:  window._game?.clock?.hour ?? 0,
+      gameTime:  (globalThis.window?._game ?? globalThis._game)?.clock?.hour ?? 0,
       decayRate,
     };
     const list = this._memories.get(simId);
@@ -88,8 +88,11 @@ export class MemorySystem {
       this.record(simId, 'mood_peak', { tier: to }, intensity, valence, 0.001);
     });
 
-    // Need crisis via custom DOM event (fired by NeedDrivenPlanner)
-    window.addEventListener('sim:need:crisis', ({ detail: { simId, need, value } }) => {
+    // Need crisis via custom DOM event (fired by NeedDrivenPlanner).
+    // In Node.js/headless environments `window` does not exist — the bus event
+    // `need:crisis` can still be emitted directly by callers that have access
+    // to the DOM; the listener is simply skipped when running headless.
+    globalThis.window?.addEventListener('sim:need:crisis', ({ detail: { simId, need, value } }) => {
       bus.emit('need:crisis', { simId, need, value });
       const intensity = Math.min(1, 1 - value / 15);
       this.record(simId, 'need_crisis', { need, value }, intensity, -0.6, 0.001);
@@ -97,7 +100,7 @@ export class MemorySystem {
 
     bus.on('life:event', ({ simId, simName, type, valence }) => {
       if (!simId) return;
-      const game = window._game;
+      const game = globalThis.window?._game ?? globalThis._game;
       const sims = game?.sims || [];
       for (const sim of sims) {
         if (sim.id === simId) continue;
