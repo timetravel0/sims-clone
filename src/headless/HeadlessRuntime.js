@@ -41,6 +41,7 @@ const SUBSTEPS   = Math.round(1 / SUBSTEP_DT);  // 20 frames == 1 game-minute at
 const HEADLESS_METRIC_EVENTS = [
   'skill:levelUp',
   'career:promoted',
+  'career:switched',
   'career:salary',
   'career:shiftEnd',
   'story:entry',
@@ -227,6 +228,8 @@ export class HeadlessRuntime {
     const activeCareers = household.filter(p => this.careerSystem.getState(p.id)?.careerId !== 'unemployed').length;
     const romanceEdges = this.relationshipGraph.strongest('romance', 25).length;
     const promotionEvents = events.filter(e => e.type === 'career:promoted').length;
+    const careerSwitchEvents = events.filter(e => e.type === 'career:switched').length;
+    const craftedEvents = events.filter(e => e.type === 'household:crafted').length;
     const levelUpEvents = events.filter(e => e.type === 'skill:levelUp').length;
     const sparkEvents = events.filter(e => e.type === 'story:entry' && /romantic spark/i.test(String(e.text ?? ''))).length;
     return {
@@ -240,6 +243,8 @@ export class HeadlessRuntime {
       totalVisits: visits.length,
       visitAcceptanceRate: visits.length ? +(acceptedVisits / visits.length).toFixed(3) : 0,
       promotions: promotionEvents,
+      careerSwitches: careerSwitchEvents,
+      crafted: craftedEvents,
       careerActiveRate: household.length ? +(activeCareers / household.length).toFixed(3) : 0,
       skillLevelUps: levelUpEvents,
       avgSkillTotal,

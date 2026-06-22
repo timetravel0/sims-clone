@@ -161,7 +161,7 @@ export class AutonomousShoppingSystem {
     if (sim._isVisitor || sim._atWork || sim._outing) return;
     if (this._craftCd > 0) return;
     const handiness = skillSystem.getLevel(sim, 'handiness');
-    if (handiness < 3) return;
+    if (handiness < 2) return;
     if (Math.random() > 0.15 + handiness * 0.05) return;
 
     const need = Object.keys(CRAFT_NOUNS)[Math.floor(Math.random() * 4)];
@@ -175,11 +175,8 @@ export class AutonomousShoppingSystem {
       affordances: [{ verb: 'use', label: 'Use', utility: { [need]: 10 + handiness * 2, fun: 4 }, duration: 4 }],
     };
 
-    // Same rule as autonomous buying: crafting should not create clutter when a
-    // free equivalent already exists. Craft only if the household genuinely lacks
-    // free capacity for the need/affordance this object would serve.
-    if (!this._needsAdditionalInstance(candidate, this._householdSims())) return;
-
+    // ponytail: skip capacity check for crafted objects — they're free (cost=0)
+    // and expressive; the cooldown + probability gate already prevents spam.
     const def = this._game.createCustomObject?.(candidate);
     if (!def) return;
 

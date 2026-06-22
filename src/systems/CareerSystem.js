@@ -9,6 +9,10 @@ const MAX_SKILL = 10;
 const MAX_LEVEL = 10;
 const SKILL_GAIN_PER_USE = 0.2;
 const PROMOTION_PERFORMANCE = 100;
+// Autonomous career switch: if a sim stays at the same level for this many
+// game-days without a promotion, they reconsider their career.
+const STAGNATION_DAYS  = 3;    // game-days at same level before reconsidering
+const BASE_SWITCH_PROB = 0.08;
 
 // Object→skill mapping lives in ObjectRegistry (single source of truth).
 
@@ -121,6 +125,7 @@ export class CareerSystem {
     state.level = 1;
     state.performance = 50;
     state.daysWorked = 0;
+    state._daysAtLevel = 0;
     state.atWork = false;
     sim._atWork = false;
     if (wasUnemployed || mode === 'assign') {
@@ -205,6 +210,7 @@ export class CareerSystem {
         atWork: saved.atWork ?? false,
         _shiftStarted: saved._shiftStarted ?? false,
         _sickNotifiedAt: saved._sickNotifiedAt ?? null,
+        _daysAtLevel: saved._daysAtLevel ?? 0,
         skills: this._defaultSkills(saved.skills),
       };
       this._data.set(id, state);
@@ -228,6 +234,7 @@ export class CareerSystem {
       atWork: false,
       _shiftStarted: false,
       _sickNotifiedAt: null,
+      _daysAtLevel: 0,
       skills: this._defaultSkills(),
     };
     this._data.set(sim.id, state);
@@ -287,6 +294,7 @@ export class CareerSystem {
     const salary = this._salaryFor(career, state.level);
     state.simoleons += salary;
     state.daysWorked += 1;
+    state._daysAtLevel = (state._daysAtLevel ?? 0) + 1;
     state.performance = Math.min(PROMOTION_PERFORMANCE, state.performance + this._performanceGain(state, career));
     sim.needs?.restore?.('status', 12);
 
@@ -300,6 +308,8 @@ export class CareerSystem {
 
     if (state.performance >= PROMOTION_PERFORMANCE && state.level < MAX_LEVEL) {
       this._promote(sim, 'performance');
+    } else {
+      this._considerCareerChange(sim, state);
     }
   }
 
@@ -317,6 +327,17 @@ export class CareerSystem {
     return career.salaryBase + Math.max(0, level - 1) * career.salaryPerLevel;
   }
 
+  _considerCareerChange(sim, state) {
+    if ((state._daysAtLevel ?? 0) < STAGNATION_DAYS) return;
+    if (state.level >= MAX_LEVEL) return;
+    const ambitious = sim.personality?.ambitious ?? 0;
+    if (Math.random() >= BASE_SWITCH_PROB * (1 + Math.max(0, ambitious))) return;
+    const options = CAREERS.filter(c => c.id !== 'unemployed' && c.id !== state.careerId);
+    const next = options[Math.floor(Math.random() * options.length)];
+    if (!next) return;
+    this._setCareer(sim, next.id, { mode: 'switch' });
+  }
+
   _promote(sim, source = 'system') {
     const state = this._data.get(sim.id);
     if (!state || state.careerId === 'unemployed' || state.level >= MAX_LEVEL) return false;
@@ -324,6 +345,7 @@ export class CareerSystem {
     const oldLevel = state.level;
     state.level += 1;
     state.performance = 50;
+    state._daysAtLevel = 0;
     const salary = this._salaryFor(career, state.level);
     sim.needs?.restore?.('status', 20);
     bus.emit('career:promoted', { sim, career: career.label, oldLevel, newLevel: state.level, salary, source });
