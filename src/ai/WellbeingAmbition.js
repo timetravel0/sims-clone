@@ -152,7 +152,9 @@ export class WellbeingAmbition {
     const members = this._familyMembers();
     if (members.length <= 1) return 0;
     const p = this._sim.personality ?? {};
-    return clamp01(0.45 + Math.max(0, p.nice ?? 0) * 0.35 + Math.max(0, p.outgoing ?? 0) * 0.15 - Math.max(0, -p.nice ?? 0) * 0.25);
+    const nice = p.nice ?? 0;
+    const outgoing = p.outgoing ?? 0;
+    return clamp01(0.45 + Math.max(0, nice) * 0.35 + Math.max(0, outgoing) * 0.15 - Math.max(0, -nice) * 0.25);
   }
 
   _moodBonus(sim) {
