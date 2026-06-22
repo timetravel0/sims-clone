@@ -75,14 +75,15 @@ export class MemorySystem {
   }
 
   _registerListeners() {
-    bus.on('social:interaction', ({ idA, idB, nameA, nameB, type, score, delta }) => {
+    const on = bus.onPersistent?.bind(bus) ?? bus.on.bind(bus);
+    on('social:interaction', ({ idA, idB, nameA, nameB, type, score, delta }) => {
       const valence   = delta > 0 ? Math.min(1, delta / 20) : Math.max(-1, delta / 20);
       const intensity = Math.min(1, Math.abs(delta) / 20 + 0.2);
       this.record(idA, 'social', { otherId: idB, otherName: nameB, type, score }, intensity, valence);
       this.record(idB, 'social', { otherId: idA, otherName: nameA, type, score }, intensity * 0.6, valence * 0.5);
     });
 
-    bus.on('sim:moodChanged', ({ simId, to }) => {
+    on('sim:moodChanged', ({ simId, to }) => {
       const valence   = ['ecstatic','happy'].includes(to) ? 0.8 : -0.7;
       const intensity = (to === 'ecstatic' || to === 'miserable') ? 0.9 : 0.4;
       this.record(simId, 'mood_peak', { tier: to }, intensity, valence, 0.001);
@@ -92,13 +93,13 @@ export class MemorySystem {
     // In Node.js/headless environments `window` does not exist — the bus event
     // `need:crisis` can still be emitted directly by callers that have access
     // to the DOM; the listener is simply skipped when running headless.
-    globalThis.window?.addEventListener('sim:need:crisis', ({ detail: { simId, need, value } }) => {
+    globalThis.window?.addEventListener?.('sim:need:crisis', ({ detail: { simId, need, value } }) => {
       bus.emit('need:crisis', { simId, need, value });
       const intensity = Math.min(1, 1 - value / 15);
       this.record(simId, 'need_crisis', { need, value }, intensity, -0.6, 0.001);
     });
 
-    bus.on('life:event', ({ simId, simName, type, valence }) => {
+    on('life:event', ({ simId, simName, type, valence }) => {
       if (!simId) return;
       const game = globalThis.window?._game ?? globalThis._game;
       const sims = game?.sims || [];
