@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.chrome-app/
+package-lock.json

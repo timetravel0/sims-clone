@@ -151,7 +151,11 @@ export class AutonomousShoppingSystem {
     const world = this._game.world;
     const existing = this._objectCounts();
     const pressures = this._needPressures(household);
-    return ObjectRegistry.all().map(def => {
+    return ObjectRegistry.all()
+      // Don't rebuy what already exists and is free to use — only contention
+      // (every existing instance busy) or absence justifies a purchase.
+      .filter(def => !this._hasFreeInstance(def))
+      .map(def => {
       const cost = def.cost ?? COSTS[def.id] ?? 600;
       const count = existing.get(def.id) ?? 0;
       const costRatio = cost / Math.max(1, this._game.budgetSystem?.funds ?? cost);
@@ -233,16 +237,12 @@ export class AutonomousShoppingSystem {
   }
 
   _findPlacementFor(def, buyer) {
-    const preferred = [
-      { gx: buyer.gx + 1, gz: buyer.gz },
-      { gx: buyer.gx - 1, gz: buyer.gz },
-      { gx: buyer.gx, gz: buyer.gz + 1 },
-      { gx: buyer.gx, gz: buyer.gz - 1 },
-    ];
-    for (const p of preferred) if (this._validCell(p.gx, p.gz)) return p;
-
+    // Search outward from a sensible anchor (existing similar furniture, else the
+    // buyer), nearest-to-buyer first. We do NOT prefer cells next to the buyer:
+    // dropping furniture beside a Sim is exactly what boxes people in.
     const anchor = this._anchorFor(def) ?? buyer;
-    for (let r = 1; r <= 7; r++) {
+    const maxR = this._game.world.tilemap.width + this._game.world.tilemap.height;
+    for (let r = 1; r <= maxR; r++) {
       const cells = [];
       for (let dz = -r; dz <= r; dz++) {
         for (let dx = -r; dx <= r; dx++) {
@@ -267,7 +267,78 @@ export class AutonomousShoppingSystem {
     const world = this._game.world;
     if (gx == null || gz == null) return false;
     if (gx <= 0 || gz <= 0 || gx >= world.tilemap.width - 1 || gz >= world.tilemap.height - 1) return false;
-    return world.isCellAvailable(gx, gz);
+    if (!world.isCellAvailable(gx, gz)) return false;
+    if (this._protectedCells().has(`${gx},${gz}`)) return false;  // keep doors/entries clear
+    if (this._adjacentToSim(gx, gz)) return false;                // don't drop next to a Sim
+    if (this._wouldBlock(gx, gz)) return false;                   // don't sever the walkable area
+    return true;
+  }
+
+  /** True if the same object already exists on the lot and is currently free. */
+  _hasFreeInstance(def) {
+    return (this._game.world?.furniture ?? []).some(
+      f => f.id === def.id && !f.inUse && !f.reservedBy,
+    );
+  }
+
+  /** Door/entry cells visitors and Sims must keep walking through. */
+  _protectedCells() {
+    const set = new Set();
+    for (const p of this._game.world?.entryPoints ?? []) {
+      for (const [x, z] of [[p.insideGx, p.insideGz], [p.spawnGx, p.spawnGz], [p.porchGx, p.porchGz]]) {
+        if (x != null && z != null) set.add(`${x},${z}`);
+      }
+    }
+    return set;
+  }
+
+  _adjacentToSim(gx, gz) {
+    return (this._game.sims ?? []).some(s => {
+      if (s._atWork) return false;
+      return Math.abs(Math.round(s.worldX) - gx) + Math.abs(Math.round(s.worldZ) - gz) <= 1;
+    });
+  }
+
+  /**
+   * Would placing furniture on (gx,gz) cut off part of the lot? Compares the
+   * walkable area reachable with the cell open vs blocked: if blocking removes
+   * more than just the cell itself, it's a chokepoint and we refuse it.
+   * Relative check so pre-existing isolated regions don't poison the result.
+   */
+  _wouldBlock(gx, gz) {
+    const tm = this._game.world.tilemap;
+    let start = null;
+    for (const s of this._game.sims ?? []) {
+      const sx = Math.round(s.worldX), sz = Math.round(s.worldZ);
+      if (tm.isWalkable(sx, sz) && !(sx === gx && sz === gz)) { start = { x: sx, z: sz }; break; }
+    }
+    if (!start) {
+      for (let z = 0; z < tm.height && !start; z++)
+        for (let x = 0; x < tm.width && !start; x++)
+          if (tm.isWalkable(x, z) && !(x === gx && z === gz)) start = { x, z };
+    }
+    if (!start) return false;
+    return this._reachCount(start, null, null) - this._reachCount(start, gx, gz) > 1;
+  }
+
+  _reachCount(start, blockX, blockZ) {
+    const world = this._game.world;
+    const tm = world.tilemap;
+    const passable = (x1, z1, x2, z2) => world.wallManager?.isPassable(x1, z1, x2, z2) ?? true;
+    const seen = new Set([`${start.x},${start.z}`]);
+    const stack = [start];
+    while (stack.length) {
+      const { x, z } = stack.pop();
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, nz = z + dz;
+        if (nx === blockX && nz === blockZ) continue;
+        if (!tm.isWalkable(nx, nz)) continue;
+        if (!passable(x, z, nx, nz)) continue;
+        const k = `${nx},${nz}`;
+        if (!seen.has(k)) { seen.add(k); stack.push({ x: nx, z: nz }); }
+      }
+    }
+    return seen.size;
   }
 
   _hasAnyPlacement(world) {

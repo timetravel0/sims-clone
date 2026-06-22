@@ -1,6 +1,6 @@
 # Persistence — from localStorage to SQLite
 
-This document explains the persistence strategy for the simulation: why the current `localStorage` backend is a stop-gap, why SQLite is the right target for social-experiment data, why the live loop must stay in memory, and how the implemented adapters fit together.
+This document explains the persistence strategy for the simulation: why `localStorage` is only a fallback, why SQLite is the right backend for social-experiment data, why the live loop must stay in memory, and how the implemented adapters fit together.
 
 It complements the `PersistenceAdapter` abstraction in `src/persistence/`. `SaveLoad` no longer talks to storage directly, so the backend can be swapped without touching the simulation model.
 
@@ -12,43 +12,30 @@ There are two concrete adapters:
 
 | Adapter | File | Status | Use case |
 |---|---|---|---|
-| `LocalStorageAdapter` | `src/persistence/LocalStorageAdapter.js` | Default runtime backend | Browser/static web app. |
-| `SQLiteAdapter` | `src/persistence/SQLiteAdapter.js` | Implemented and auto-enabled in Tauri | Tauri/desktop or SQLite WASM backend. |
+| `SqlJsAdapter` | `src/persistence/SqlJsAdapter.js` | Default runtime backend | Real SQLite in the browser (sql.js / WASM) persisted to OPFS. |
+| `LocalStorageAdapter` | `src/persistence/LocalStorageAdapter.js` | Fallback | Browsers without OPFS. |
 
-`SQLiteAdapter` expects a SQL backend exposing:
+`SqlJsAdapter` runs SQLite compiled to WebAssembly (the `sql.js` package). The
+database lives in memory and is flushed to a single OPFS file
+(`sims-clone.sqlite`) as bytes. There is no native/Rust backend.
 
-```js
-execute(sql, params?)
-select(sql, params?)
-```
-
-This matches `tauri-plugin-sql` and can also be wrapped around a SQLite WASM implementation.
-
-The runtime is now async-safe for boot/save UI:
+The runtime is async-safe for boot/save UI:
 
 - `SaveLoad.save/readSlot/load/slotList/deleteSlot/hasSlot` are async;
 - `Game._boot()` awaits slot reads and slot scans;
 - the start menu awaits slot loads;
 - `SaveSlotPanel` renders async slot lists and handles save/load/delete with `await`;
-- `main.js` detects Tauri and creates a connected `SQLiteAdapter` automatically.
+- `main.js` initialises a connected `SqlJsAdapter` when OPFS is available.
 
-The static browser build still uses `LocalStorageAdapter` by default. The Tauri desktop build uses SQLite when `@tauri-apps/plugin-sql` is available and the SQL permission is granted.
+If OPFS is unavailable the game falls back to `LocalStorageAdapter`.
 
 ---
 
-## Tauri bootstrap
+## Browser runtime (sql.js + OPFS)
 
-The repository now includes a minimal Tauri shell:
-
-```text
-package.json
-src-tauri/Cargo.toml
-src-tauri/build.rs
-src-tauri/tauri.conf.json
-src-tauri/src/main.rs
-src-tauri/src/lib.rs
-src-tauri/capabilities/default.json
-```
+The app is a web app served by Vite and opened in Chrome via the `npm run app`
+launcher (see `scripts/launch.mjs` and `docs/PLATFORM_ROADMAP.md`). There is no
+desktop shell.
 
 Frontend boot is handled in `src/main.js`:
 
@@ -57,25 +44,14 @@ const persistenceAdapter = await resolvePersistenceAdapter();
 new Game(container, { persistenceAdapter });
 ```
 
-In a normal browser, `resolvePersistenceAdapter()` returns `null` and the game uses `LocalStorageAdapter`.
+`resolvePersistenceAdapter()` dynamically imports `SqlJsAdapter`; if
+`navigator.storage.getDirectory` (OPFS) is available it loads the WASM build,
+opens/creates the OPFS file `sims-clone.sqlite`, and returns the connected
+adapter. Otherwise it returns `null` and `SaveLoad` uses `LocalStorageAdapter`.
 
-In Tauri, it dynamically imports `@tauri-apps/plugin-sql`, opens:
-
-```text
-sqlite:sims-clone.db
-```
-
-then creates:
-
-```js
-new SQLiteAdapter({ db, runId }).connect()
-```
-
-You can override the database URL before startup with:
-
-```js
-window.__SIMS_SQLITE_URL__ = 'sqlite:custom-name.db';
-```
+Flush policy: slot saves and deletes flush the whole DB to OPFS immediately; the
+high-frequency `event_log` is flushed throttled (and on the next slot save) so
+logging stays cheap. A hard crash can lose at most ~2s of `event_log` rows.
 
 ---
 
@@ -87,25 +63,17 @@ Install dependencies:
 npm install
 ```
 
-Run browser dev server:
+Run the app (Vite + Chrome app window):
+
+```bash
+npm run app
+```
+
+Or just the dev server, then open the printed URL in Chrome yourself:
 
 ```bash
 npm run dev
 ```
-
-Run Tauri desktop app:
-
-```bash
-npm run tauri:dev
-```
-
-Build Tauri bundle:
-
-```bash
-npm run tauri:build
-```
-
-The first Tauri run should create/migrate the SQLite schema through `SQLiteAdapter.migrate()`.
 
 ---
 
@@ -135,25 +103,21 @@ SQLite is for durable, between-frame data, not for every simulation tick. Needs,
 
 ---
 
-## Implemented SQLiteAdapter behavior
+## Implemented SqlJsAdapter behavior
 
-`SQLiteAdapter` currently supports:
+`SqlJsAdapter` currently implements:
 
-- `connect(dbOrFactory)`;
-- `migrate()`;
-- `saveSlot(slot, data)`;
-- `readSlot(slot)`;
-- `hasSlot(slot)`;
-- `deleteSlot(slot)`;
-- `listSlots()`;
+- `connect()` — load WASM, open the OPFS file, create tables;
+- `saveSlot(slot, data)` / `readSlot(slot)` / `hasSlot(slot)` / `deleteSlot(slot)` / `listSlots()`;
 - `appendEvent(runId, event)`;
-- `saveSnapshot(runId, state)`;
-- `loadSnapshot(runId, snapshotId)`;
-- `listSnapshots(runId)`;
-- `ensureRun(runId, data)`;
-- `close()`.
+- `saveSnapshot(runId, state)` / `loadSnapshot(runId, snapshotId)`.
 
-Event rows are always inserted into `event_log`. Visitor events are additionally mirrored into `visitor_events` for easier visitor-specific queries.
+It creates a focused subset of the target schema below: `saves` (slot blobs),
+`event_log` (one row per logged event, indexed by `run_id`) and `snapshots`.
+The remaining tables (`people`, `relationship_state`, `visitor_events`,
+`*_defs`, …) are the design target; today the full game state is still stored
+as a JSON blob inside the `saves` row, while the event log is already queryable
+row by row.
 
 ---
 
@@ -345,4 +309,4 @@ ORDER BY tick;
 
 ## Next migration step
 
-Run the Tauri app and fix any platform-specific build errors from the installed Tauri/plugin versions. After that, start moving configuration data (`ObjectRegistry`, interactions, starter careers, scenario definitions) into SQLite-backed definition tables.
+Grow `SqlJsAdapter` from the current `saves` / `event_log` / `snapshots` subset toward the target schema, and move configuration data (`ObjectRegistry`, interactions, starter careers, scenario definitions) into `src/config/*` and then into SQLite-backed definition tables. A future distributable desktop build would wrap this same web app in Electron (which bundles Chromium, so WebGL works); Tauri/WKWebView was dropped because it lacks reliable WebGL on the target hardware — see `docs/PLATFORM_ROADMAP.md`.

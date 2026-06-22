@@ -147,7 +147,7 @@ Visitor decisions consider relationship affinity, trust, affection, resentment, 
 
 ## Persistence
 
-`SaveLoad` delegates storage to `src/persistence/LocalStorageAdapter.js`. The adapter is the only browser backend that touches `localStorage`. `src/persistence/SQLiteAdapter.js` is intentionally a loud stub: it documents the two future paths, SQLite WASM or Tauri + SQLite, without breaking the pure browser runtime.
+`SaveLoad` delegates storage to a `PersistenceAdapter`. The default backend is `src/persistence/SqlJsAdapter.js` — real SQLite compiled to WebAssembly (sql.js), persisted to an OPFS file. Where OPFS is unavailable it falls back to `src/persistence/LocalStorageAdapter.js`, the only backend that touches `localStorage`. See `docs/PERSISTENCE.md`.
 
 `Game.serialise()` persists:
 

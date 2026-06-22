@@ -2,9 +2,9 @@
  * PersistenceAdapter — storage abstraction for SaveLoad and the experiment log.
  *
  * SaveLoad no longer talks to localStorage directly; it goes through an adapter.
- * This makes it possible to swap the browser-only localStorage backend for a
- * structured local store (SQLite via Tauri, or SQLite WASM) without touching
- * the simulation or SaveLoad logic. See docs/PERSISTENCE.md.
+ * This makes it possible to swap storage backends (SqlJsAdapter — SQLite WASM on
+ * OPFS — or LocalStorageAdapter) without touching the simulation or SaveLoad
+ * logic. See docs/PERSISTENCE.md.
  *
  * Contract (all methods are async / await-compatible):
  *   saveSlot(slot, data)          → store a full save blob for a slot
