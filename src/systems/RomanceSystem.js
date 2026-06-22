@@ -2,6 +2,7 @@ import { bus } from '../core/EventBus.js';
 import { memorySystem } from './MemorySystem.js';
 
 const POSITIVE = new Set(['chat', 'joke', 'compliment', 'hug']);
+const ROMANTIC = new Set(['flirt', 'hug', 'compliment']);
 
 export class RomanceSystem {
   constructor(sims, graph, population = null) {
@@ -21,21 +22,33 @@ export class RomanceSystem {
   }
 
   _onSocial(event) {
-    const { idA, idB, nameA, nameB, type, delta } = event;
-    if (!idA || !idB || !POSITIVE.has(type) || (delta ?? 0) <= 0) return;
+    const { idA, idB, nameA, nameB, type, delta, accepted } = event;
+    if (!idA || !idB) return;
+
+    const isWarm = POSITIVE.has(type) && (delta ?? 0) > 0;
+    const isRomantic = ROMANTIC.has(type) && accepted !== false;
+    if (!isWarm && !isRomantic) return;
 
     const compatibility = this._graph.compatibility(idA, idB);
     const existing = Math.max(
       this._graph.score(idA, idB, 'romance'),
       this._graph.score(idB, idA, 'romance')
     );
-    if (compatibility > 0.58 && existing > 18) {
+
+    if (isRomantic && compatibility > 0.45) {
+      const amount = type === 'flirt' ? 8 : type === 'hug' ? 5 : 3;
+      this._graph.adjust(idA, idB, 'romance', amount * compatibility);
+      this._graph.adjust(idB, idA, 'romance', amount * compatibility * 0.85);
+    }
+
+    if (isWarm && compatibility > 0.58 && existing > 18) {
       const amount = type === 'hug' ? 10 : 5;
       this._graph.adjust(idA, idB, 'romance', amount);
       this._graph.adjust(idB, idA, 'romance', amount * 0.8);
-      this._announceRomance(idA, idB, nameA, nameB);
-      this._maybeCommitPair(idA, idB);
     }
+
+    this._announceRomance(idA, idB, nameA, nameB);
+    this._maybeCommitPair(idA, idB);
 
     if (this._monogamyBreach(idA, idB, type)) {
       this._penaliseBreach(idA, idB, type);
@@ -85,7 +98,7 @@ export class RomanceSystem {
       const targetName = towardA >= towardB ? nameA : nameB;
       const partnerPull = Math.max(towardA, towardB);
       if (partnerPull < 35) continue;
-      const jealousy = Math.min(1, 0.45 + partnerPull / 140 + Math.max(0, watcher.personality.neurotic) * 0.25);
+      const jealousy = Math.min(1, 0.45 + partnerPull / 140 + Math.max(0, watcher.personality?.neurotic ?? 0) * 0.25);
       watcher.emotions.trigger('jealousy', jealousy);
       memorySystem.record(watcher.id, 'social', {
         otherId: targetId,
