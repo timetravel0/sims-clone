@@ -1,29 +1,10 @@
 import { bus } from '../core/EventBus.js';
 import { ObjectRegistry } from './ObjectRegistry.js';
+import { OBJECT_COSTS } from '../config/objectCatalog.js';
 
 const DEFAULT_CHECK_INTERVAL = 38;
 const HOUSEHOLD_RESERVE = 1_000;
 const MAX_DUPLICATES = 3;
-
-const COSTS = {
-  bed: 900,
-  fridge: 1_200,
-  toilet: 700,
-  shower: 850,
-  lamp: 120,
-  treadmill: 1_800,
-  desk: 450,
-  bookshelf: 550,
-  workbench: 900,
-  couch: 800,
-  tv: 1_500,
-  bar: 1_700,
-  chess: 600,
-  piano: 2_200,
-  hot_tub: 3_500,
-  dining_table: 650,
-  fire_pit: 900,
-};
 
 const NEED_WEIGHTS = {
   hunger: 1.35,
@@ -152,23 +133,21 @@ export class AutonomousShoppingSystem {
     const existing = this._objectCounts();
     const pressures = this._needPressures(household);
     return ObjectRegistry.all()
-      // Don't rebuy what already exists and is free to use — only contention
-      // (every existing instance busy) or absence justifies a purchase.
-      .filter(def => !this._hasFreeInstance(def))
+      .filter(def => this._needsAdditionalInstance(def, household))
       .map(def => {
-      const cost = def.cost ?? COSTS[def.id] ?? 600;
-      const count = existing.get(def.id) ?? 0;
-      const costRatio = cost / Math.max(1, this._game.budgetSystem?.funds ?? cost);
-      const duplicatePenalty = count >= MAX_DUPLICATES ? 100 : count * 7;
-      const recentPenalty = this._recent.has(def.id) ? 28 : 0;
-      const utility = this._utilityScore(def, pressures);
-      const scarcity = count === 0 ? 16 : 0;
-      const personality = this._buyerPreference(buyer, def);
-      const affordabilityPenalty = costRatio > 0.35 ? 24 : costRatio * 18;
-      const spacePenalty = this._hasAnyPlacement(world) ? 0 : 100;
-      const score = utility + scarcity + personality - duplicatePenalty - recentPenalty - affordabilityPenalty - spacePenalty;
-      return { def, cost, score, reasonNeed: this._dominantNeed(def, pressures) };
-    });
+        const cost = def.cost ?? OBJECT_COSTS[def.id] ?? 600;
+        const count = existing.get(def.id) ?? 0;
+        const costRatio = cost / Math.max(1, this._game.budgetSystem?.funds ?? cost);
+        const duplicatePenalty = count >= MAX_DUPLICATES ? 100 : count * 7;
+        const recentPenalty = this._recent.has(def.id) ? 28 : 0;
+        const utility = this._utilityScore(def, pressures);
+        const scarcity = count === 0 ? 16 : 0;
+        const personality = this._buyerPreference(buyer, def);
+        const affordabilityPenalty = costRatio > 0.35 ? 24 : costRatio * 18;
+        const spacePenalty = this._hasAnyPlacement(world) ? 0 : 100;
+        const score = utility + scarcity + personality - duplicatePenalty - recentPenalty - affordabilityPenalty - spacePenalty;
+        return { def, cost, score, reasonNeed: this._dominantNeed(def, pressures) };
+      });
   }
 
   _utilityScore(def, pressures) {
@@ -274,11 +253,52 @@ export class AutonomousShoppingSystem {
     return true;
   }
 
-  /** True if the same object already exists on the lot and is currently free. */
-  _hasFreeInstance(def) {
-    return (this._game.world?.furniture ?? []).some(
-      f => f.id === def.id && !f.inUse && !f.reservedBy,
-    );
+  /**
+   * True only when the household genuinely needs another instance.
+   *
+   * Rule: do not buy an object if an equivalent object already exists and is
+   * free. "Equivalent" is broader than same id: a free object that restores the
+   * same need or offers the same affordance verbs already satisfies the desire.
+   * A duplicate is justified only when every useful equivalent is occupied or
+   * there are fewer useful free instances than simultaneous pressured Sims.
+   */
+  _needsAdditionalInstance(def, household) {
+    const existing = this._equivalentFurniture(def);
+    if (existing.length === 0) return true;
+
+    const free = existing.filter(f => this._isFurnitureFree(f));
+    if (free.length === 0) return true;
+
+    const dominantNeed = this._dominantNeed(def, this._needPressures(household));
+    const demand = household.filter(sim => this._needPressureFor(sim, dominantNeed) > 0.45).length;
+
+    return demand > free.length;
+  }
+
+  _equivalentFurniture(def) {
+    const wantedVerbs = new Set((def.affordances ?? []).map(a => a.verb).filter(Boolean));
+    const wantedNeeds = new Set(Object.keys(this._primaryUtility(def)));
+    return (this._game.world?.furniture ?? []).filter(f => {
+      if (f.id === def.id) return true;
+      if (def.needTarget && f.needTarget === def.needTarget) return true;
+      if (def.social && f.social) return true;
+      const fDef = ObjectRegistry.get(f.id) ?? f;
+      const fVerbs = new Set((fDef.affordances ?? f.affordances ?? []).map(a => a.verb).filter(Boolean));
+      for (const verb of wantedVerbs) if (fVerbs.has(verb)) return true;
+      const fNeeds = new Set(Object.keys(this._primaryUtility(fDef)));
+      for (const need of wantedNeeds) if (fNeeds.has(need)) return true;
+      return false;
+    });
+  }
+
+  _isFurnitureFree(furniture) {
+    return !furniture.inUse && !furniture.reservedBy;
+  }
+
+  _needPressureFor(sim, need) {
+    const value = sim.needs?.getAll?.()[need];
+    if (typeof value !== 'number') return 0;
+    return clamp01((65 - value) / 65);
   }
 
   /** Door/entry cells visitors and Sims must keep walking through. */
