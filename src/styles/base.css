@@ -1,0 +1,91 @@
+/* base.css — reset, document shell, and global overlays (bubbles, hint, toasts). */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:#0e0d0b;
+  font-family:'Segoe UI',system-ui,sans-serif; }
+#canvas-container { position:fixed; inset:0; }
+
+/* ── Speech bubbles ──────────────────────────────────────── */
+#bubbles { position:fixed; inset:0; pointer-events:none; z-index:30; }
+.bubble {
+  position:absolute; background:rgba(20,19,17,0.92);
+  border:1px solid rgba(255,255,255,0.13); border-radius:8px;
+  padding:3px 8px; font-size:11px; color:#eee;
+  transform:translate(-50%,-100%);
+  transition:opacity .3s; opacity:0;
+  white-space:nowrap; pointer-events:none;
+}
+
+/* ── Hint ────────────────────────────────────────────────── */
+#hint {
+  position:fixed; bottom:44px; left:50%; transform:translateX(-50%);
+  z-index:45; font-size:11px; color:rgba(255,255,255,0.3);
+  pointer-events:none; white-space:nowrap;
+}
+
+/* ── Drama toast ─────────────────────────────────────────── */
+#drama-toast {
+  position:fixed; top:70px; left:50%; transform:translateX(-50%);
+  z-index:70; pointer-events:none;
+}
+.toast {
+  background:rgba(239,83,80,0.18); border:1px solid rgba(239,83,80,0.4);
+  color:#ef9a9a; border-radius:8px; padding:6px 14px;
+  font-size:12px; text-align:center; margin-bottom:6px;
+  animation:toastIn .3s ease, toastOut .4s ease 2.8s forwards;
+}
+.toast.positive { background:rgba(102,187,106,0.15); border-color:rgba(102,187,106,0.35); color:#a5d6a7; }
+.toast.mood     { background:rgba(255,213,79,0.12);  border-color:rgba(255,213,79,0.3);   color:#ffd54f; }
+@keyframes toastIn  { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
+@keyframes toastOut { to  {opacity:0;transform:translateY(-8px)} }
+
+/* ── Lifecycle toast ─────────────────────────────────────── */
+/*
+ * #lifecycle-toast  — fixed column on the bottom-left, above toolbar.
+ * Each .lc-toast slides in from the left and fades out.
+ * Categories: lc-stage | lc-promote | lc-fire | lc-skill | lc-schedule
+ */
+#lifecycle-toast {
+  position:fixed;
+  bottom:52px;        /* just above toolbar */
+  left:16px;
+  z-index:65;
+  display:flex;
+  flex-direction:column-reverse; /* newest on top */
+  gap:5px;
+  pointer-events:none;
+  max-width:320px;
+}
+
+.lc-toast {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:7px 13px;
+  border-radius:8px;
+  font-size:12px;
+  line-height:1.4;
+  border:1px solid rgba(255,255,255,0.1);
+  backdrop-filter:blur(8px);
+  /* default: neutral */
+  background:rgba(30,28,25,0.92);
+  color:#ccc;
+  animation: lcToastIn 0.28s cubic-bezier(0.16,1,0.3,1) both;
+}
+.lc-toast.lc-toast--out {
+  animation: lcToastOut 0.4s ease forwards;
+}
+
+/* category colours */
+.lc-toast.lc-stage   { background:rgba(79,152,163,0.18); border-color:rgba(79,152,163,0.4); color:#80cbc4; }
+.lc-toast.lc-promote { background:rgba(255,213,79,0.14); border-color:rgba(255,213,79,0.35); color:#ffd54f; }
+.lc-toast.lc-fire    { background:rgba(239,83,80,0.16);  border-color:rgba(239,83,80,0.38);  color:#ef9a9a; }
+.lc-toast.lc-skill   { background:rgba(165,214,167,0.14);border-color:rgba(165,214,167,0.35);color:#a5d6a7; }
+.lc-toast.lc-schedule{ background:rgba(206,147,216,0.13);border-color:rgba(206,147,216,0.3); color:#ce93d8; }
+
+@keyframes lcToastIn {
+  from { opacity:0; transform:translateX(-18px); }
+  to   { opacity:1; transform:none; }
+}
+@keyframes lcToastOut {
+  to   { opacity:0; transform:translateX(-10px); }
+}

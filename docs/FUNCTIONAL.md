@@ -232,3 +232,10 @@ Sim vengono salvati e ripristinati assieme al resto della partita.
 - SaveLoad JSON completo
 - Routine scheduling (agenda giornaliera)
 - UI emozionale (icone emozione sul Sim, tooltip memoria)
+
+### Piattaforma (docs/PLATFORM_ROADMAP.md)
+Stream tecnologici post-rimozione di Tauri (runtime: web app + Chrome, persistenza SQLite via sql.js/OPFS):
+- ✅ **Stream A — Decomposizione HTML/CSS**: CSS estratto in `src/styles/*.css`, `index.html` ridotto a shell di soli anchor. Nessun cambiamento funzionale.
+- ⬜ Stream B — Estrazione configurazione in `src/config/*`
+- ⬜ Stream C — Pipeline eventi & analytics (export CSV/JSON, confronto run)
+- ⬜ Stream D — Simulazione headless (runner JS senza rendering)

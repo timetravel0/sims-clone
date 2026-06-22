@@ -52,6 +52,14 @@ that keeps the 3D scene working on hardware where WebKit's WebGL is broken.
 
 ### Stream A — HTML/CSS decomposition
 
+✅ DONE — The inline `<style>` block (~500 lines) was extracted into
+`src/styles/{base,toolbar,panels,build-mode,sim-creator,start-menu,dashboard}.css`,
+linked from `index.html`. `index.html` is now a ~95-line shell: stable DOM anchors,
+the stylesheet links, the import map and `main.js`. The UI anchor contract is
+documented in `docs/TECHNICAL.md`. Verified: every stylesheet loads (no 404),
+`#toolbar`/`#needs-panel`/`#sim-creator`/`#start-menu` keep their computed styles,
+the game boots with 3 Sims and no console errors. No behavior change.
+
 `index.html` is large because it mixes DOM anchors, inline CSS, modal layouts and
 the app shell. Target: extract CSS into `src/styles/*.css`, keep only stable DOM
 anchors in the HTML, and document the UI anchor contract. No behavior change; all

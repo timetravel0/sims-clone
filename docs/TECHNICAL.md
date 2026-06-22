@@ -52,7 +52,8 @@ The project is a browser-based Three.js application using vanilla ES modules. Th
 | `src/ai` | Utility AI, action FSM, walking, object usage, visitor actions and social actions. |
 | `src/systems` | Social state, population, visitors, memories, narrative, God Mode, careers, aging, schedules, skills, weather, romance, persistence and logging. |
 | `src/ui` | Runtime panels and dashboards. |
-| `src/persistence` | Storage adapter abstraction, localStorage backend and SQLite stub. |
+| `src/styles` | Extracted CSS, one file per concern (see "Frontend shell"). |
+| `src/persistence` | Storage adapter abstraction, sql.js/OPFS backend and localStorage fallback. |
 
 ## Runtime Loop
 
@@ -100,6 +101,31 @@ The toolbar supports pause plus `1x`, `2x` and `5x` simulation speed.
 | Save slots | `SaveSlotPanel` / toolbar | Active. |
 | Sim creator | `SimCreator` | Active in startup flow. |
 | Experiment dashboard | `dashboard.html` via 🧪 Lab | Active; opens separate window and falls back to inline panel. |
+
+## Frontend shell
+
+`index.html` is a minimal shell: stable DOM anchors, the stylesheet links, the
+Three.js import map, and `main.js`. It contains no inline CSS. Styles live in
+`src/styles/`, one file per concern, linked in this order:
+
+| File | Covers |
+|---|---|
+| `base.css` | Reset, document/body, `#canvas-container`, speech bubbles, hint, drama/lifecycle toasts. |
+| `toolbar.css` | `#toolbar` and `#clock`. |
+| `panels.css` | Needs, sim portraits, story log, relations, build catalogue, god, graph, lifecycle, skill, save-slot modal. |
+| `build-mode.css` | `#build-tools`, `#bt-funds`, `#room-overlay`. |
+| `sim-creator.css` | `#sim-creator` onboarding modal. |
+| `start-menu.css` | `#start-menu` launch screen. |
+| `dashboard.css` | `#experiment-panel` inline dashboard. |
+
+**UI anchor contract.** UI managers attach to these stable IDs (do not rename
+without updating the corresponding manager): `#canvas-container`, `#sim-selector`,
+`#bubbles`, `#drama-toast`, `#lifecycle-toast`, `#needs-panel` (+ `#sim-name`,
+`#sim-mood`, `#sim-traits`, `#sim-status`, `#sim-missing`, `#needs-bars`),
+`#story-panel`/`#story-log`/`#btn-story-close`, `#rel-panel`, `#god-panel`,
+`#graph-panel`, `#skill-panel`, `#save-slot-panel`, `#sim-creator`, `#start-menu`,
+`#experiment-panel`, `#build-panel`/`#build-tools`/`#build-catalog`,
+`#room-overlay`, `#hint`, `#toolbar` (+ the `#btn-*` buttons), `#clock`.
 
 ## Social Simulation Core 2.0
 

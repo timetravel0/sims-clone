@@ -1,0 +1,16 @@
+/* toolbar.css — bottom toolbar and its clock. */
+#toolbar {
+  position:fixed; bottom:0; left:0; right:0; z-index:50;
+  display:flex; align-items:center; gap:8px; padding:7px 14px;
+  background:rgba(14,13,11,0.92); backdrop-filter:blur(10px);
+  border-top:1px solid rgba(255,255,255,0.07);
+}
+#toolbar button {
+  background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12);
+  color:#ccc; border-radius:6px; padding:4px 10px; cursor:pointer;
+  font-size:12px; transition:background .15s;
+}
+#toolbar button:hover  { background:rgba(255,255,255,0.15); }
+#toolbar button.active { background:#01696f; color:#fff; border-color:#01696f; }
+.tb-sep { width:1px; height:18px; background:rgba(255,255,255,0.1); margin:0 2px; }
+#clock  { margin-left:auto; font-size:12px; font-weight:600; color:#ffd580; min-width:60px; text-align:right; }

@@ -1,0 +1,24 @@
+/* start-menu.css — Load / New Game launch screen. */
+#start-menu {
+  display:none; position:fixed; inset:0; z-index:110;
+  background:rgba(8,7,6,0.94); align-items:center; justify-content:center;
+}
+#start-menu .sm-modal {
+  width:440px; max-width:92vw;
+  background:rgba(22,21,18,0.99); border:1px solid rgba(255,255,255,0.12);
+  border-radius:14px; padding:22px; color:#ddd; text-align:center;
+}
+#start-menu h2 { color:#fff; font-size:22px; margin-bottom:16px; }
+#sm-new {
+  width:100%; background:#01696f; color:#fff; border:none; border-radius:9px;
+  padding:11px; cursor:pointer; font-size:15px; font-weight:600; margin-bottom:14px;
+}
+#sm-new:hover { background:#018a92; }
+.sm-loads { display:flex; flex-direction:column; gap:8px; }
+.sm-load {
+  text-align:left; background:rgba(255,255,255,0.05); color:#ddd;
+  border:1px solid rgba(255,255,255,0.12); border-radius:9px;
+  padding:10px 13px; cursor:pointer; font-size:13px; line-height:1.5;
+}
+.sm-load:hover { background:rgba(255,255,255,0.12); }
+.sm-when { display:block; color:#7a7974; font-size:11px; }

@@ -1,0 +1,40 @@
+/* sim-creator.css — first-run onboarding modal. */
+#sim-creator {
+  display:none; position:fixed; inset:0; z-index:100;
+  background:rgba(8,7,6,0.92); align-items:center; justify-content:center;
+}
+#sim-creator .sc-modal {
+  width:520px; max-width:94vw; max-height:90vh; overflow-y:auto;
+  background:rgba(22,21,18,0.99); border:1px solid rgba(255,255,255,0.12);
+  border-radius:14px; color:#ddd; font-size:13px;
+}
+.sc-header { font-size:18px; font-weight:700; color:#fff; padding:18px 22px 4px; }
+.sc-steps  { display:flex; align-items:center; gap:6px; padding:0 22px 12px;
+  color:#666; font-size:11px; border-bottom:1px solid rgba(255,255,255,0.07); }
+.sc-step.active { color:#4fc3f7; font-weight:700; }
+.sc-body   { padding:18px 22px; }
+.sc-label  { display:block; color:#888; font-size:11px; margin:12px 0 5px;
+  text-transform:uppercase; letter-spacing:.06em; }
+.sc-input  { width:100%; background:rgba(255,255,255,0.06); color:#fff;
+  border:1px solid rgba(255,255,255,0.12); border-radius:7px; padding:8px 10px; font-size:14px; }
+.sc-simtabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+.sc-simtab, .sc-radio, .sc-trait, #sc-addsim, #sc-remsim {
+  background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
+  color:#ccc; border-radius:6px; padding:5px 10px; cursor:pointer; font-size:12px; }
+.sc-simtab.active, .sc-radio.active { background:#01696f; color:#fff; border-color:#01696f; }
+.sc-radio-row { display:flex; gap:6px; }
+.sc-swatches { display:flex; gap:7px; }
+.sc-swatch { width:26px; height:26px; border-radius:50%; border:2px solid transparent; cursor:pointer; }
+.sc-swatch.active { border-color:#fff; }
+.sc-traits { display:flex; flex-wrap:wrap; gap:6px; }
+.sc-trait.selected { background:#7e57c2; color:#fff; border-color:#7e57c2; }
+.sc-trait.disabled { opacity:.35; cursor:not-allowed; }
+.sc-confirm-grid { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; }
+.sc-confirm-card { text-align:center; width:120px; }
+.sc-avatar { width:54px; height:54px; border-radius:50%; margin:0 auto 6px; }
+.sc-footer { padding:14px 22px 20px; border-top:1px solid rgba(255,255,255,0.07); }
+.sc-footer-inner { display:flex; justify-content:space-between; gap:10px; }
+.sc-btn-pri { margin-left:auto; background:#01696f; color:#fff; border:none;
+  border-radius:8px; padding:9px 18px; cursor:pointer; font-size:14px; font-weight:600; }
+.sc-btn-sec { background:rgba(255,255,255,0.08); color:#ccc; border:1px solid rgba(255,255,255,0.12);
+  border-radius:8px; padding:9px 16px; cursor:pointer; font-size:13px; }

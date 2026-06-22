@@ -1,0 +1,40 @@
+/* dashboard.css — in-game experiment dashboard panel (Social Core 2.0). */
+#experiment-panel {
+  display:none; position:fixed; top:16px; left:50%; transform:translateX(-50%);
+  z-index:80; width:430px; max-width:94vw; max-height:88vh; overflow-y:auto;
+  background:rgba(16,15,13,0.96); backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,0.12); border-radius:12px;
+  padding:12px 14px; color:#ddd; font-size:12px;
+}
+.exp-head { display:flex; justify-content:space-between; align-items:center;
+  color:#eee; font-size:12px; font-weight:600; margin-bottom:10px;
+  text-transform:uppercase; letter-spacing:.06em; }
+.exp-head button { background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12);
+  color:#ccc; border-radius:6px; padding:3px 8px; cursor:pointer; font-size:11px; margin-left:4px; }
+.exp-head button:hover { background:rgba(255,255,255,0.16); }
+.exp-section-title { color:#80cbc4; font-size:10px; text-transform:uppercase;
+  letter-spacing:.07em; margin:12px 0 5px; }
+.exp-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+.exp-metric { background:rgba(255,255,255,0.05); border-radius:7px; padding:6px 8px; }
+.exp-metric b { display:block; color:#fff; font-size:13px; }
+.exp-metric span { color:#8a8a86; font-size:9px; text-transform:uppercase; letter-spacing:.04em; }
+.exp-mtx { border-collapse:collapse; width:100%; }
+.exp-mtx th { color:#9a9a96; font-size:10px; font-weight:600; padding:2px 4px; }
+.exp-mtx th:first-child { text-align:right; }
+.exp-cell { text-align:center; color:#10100e; font-size:10px; font-weight:700;
+  padding:5px 4px; border-radius:4px; cursor:pointer; min-width:26px; }
+.exp-diag { background:rgba(255,255,255,0.05); color:#555; cursor:default; }
+.exp-sel { outline:2px solid #fff; outline-offset:-2px; }
+.exp-explain-head { display:flex; justify-content:space-between; align-items:baseline; }
+.exp-label { color:#ffd580; font-size:11px; }
+.exp-summary { color:#cfcfca; margin:4px 0 6px; line-height:1.4; }
+.exp-dims { display:flex; flex-wrap:wrap; gap:4px; }
+.exp-dim { background:rgba(255,255,255,0.06); border-radius:5px; padding:2px 6px; font-size:10px; color:#bbb; }
+.exp-dim i { color:#777; font-style:normal; margin-right:4px; }
+.exp-timeline { display:flex; flex-direction:column; gap:3px; }
+.exp-evt { display:flex; gap:8px; align-items:center; font-size:11px; padding:3px 6px;
+  border-radius:5px; background:rgba(255,255,255,0.04); }
+.exp-evt .exp-day { color:#666; min-width:26px; }
+.exp-evt .exp-motive { margin-left:auto; color:#777; font-size:9px; font-style:italic; }
+.exp-pos b { color:#a5d6a7; } .exp-neg b { color:#ef9a9a; } .exp-rej b { color:#ffcc80; }
+.exp-empty { color:#666; font-size:11px; padding:4px; }

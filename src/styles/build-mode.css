@@ -1,0 +1,15 @@
+/* build-mode.css — build tools bar, funds readout, and room overlay. */
+#build-tools { display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+.bt-tool, #bt-rooms {
+  background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
+  color:#ccc; border-radius:6px; padding:4px 9px; cursor:pointer; font-size:11px;
+}
+.bt-tool:hover, #bt-rooms:hover { background:rgba(255,255,255,0.14); }
+.bt-tool.active, #bt-rooms.active { background:#01696f; color:#fff; border-color:#01696f; }
+#bt-funds { margin-left:auto; color:#a5d6a7; font-size:12px; font-weight:600; }
+#room-overlay {
+  display:none; position:fixed; right:16px; bottom:96px; z-index:55;
+  width:160px; height:160px; border-radius:8px;
+  border:1px solid rgba(255,255,255,0.12); background:rgba(14,13,11,0.6);
+  pointer-events:none;
+}
