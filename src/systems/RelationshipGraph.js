@@ -4,6 +4,11 @@ const EDGE_TYPES = ['friendship', 'rivalry', 'romance', 'kinship'];
 const POSITIVE = new Set(['chat', 'joke', 'compliment', 'hug', 'apologize', 'forgive', 'comfort', 'offer_help', 'ask_help', 'gossip', 'flirt']);
 const NEGATIVE = new Set(['argue', 'insult', 'confront', 'avoid', 'reject_flirt']);
 
+function trait(person, key) {
+  const value = person?.personality?.[key];
+  return Number.isFinite(value) ? value : 0;
+}
+
 export class RelationshipGraph {
   constructor(sims = [], population = null) {
     this._sims = sims;
@@ -44,7 +49,7 @@ export class RelationshipGraph {
       this.adjust(idB, idA, 'friendship', amount * 0.7);
       this.adjust(idA, idB, 'rivalry', -amount * 0.45);
       this.adjust(idB, idA, 'rivalry', -amount * 0.35);
-      const romanceGain = this.compatibility(idA, idB) * (type === 'hug' ? 8 : 3);
+      const romanceGain = this.compatibility(idA, idB) * (type === 'flirt' ? 10 : type === 'hug' ? 8 : 3);
       if (romanceGain > 1.5) {
         this.adjust(idA, idB, 'romance', romanceGain);
         this.adjust(idB, idA, 'romance', romanceGain * 0.85);
@@ -91,11 +96,10 @@ export class RelationshipGraph {
   compatibility(idA, idB) {
     const a = this._sim(idA), b = this._sim(idB);
     if (!a || !b) return 0;
-    const pa = a.personality, pb = b.personality;
-    const warmth = (pa.nice + pb.nice + 2) / 4;
-    const sharedFun = 1 - Math.min(1, Math.abs(pa.playful - pb.playful) / 2);
-    const socialFit = 1 - Math.min(1, Math.abs(pa.outgoing - pb.outgoing) / 2);
-    const volatility = Math.max(0, (pa.neurotic + pb.neurotic) / 4);
+    const warmth = (trait(a, 'nice') + trait(b, 'nice') + 2) / 4;
+    const sharedFun = 1 - Math.min(1, Math.abs(trait(a, 'playful') - trait(b, 'playful')) / 2);
+    const socialFit = 1 - Math.min(1, Math.abs(trait(a, 'outgoing') - trait(b, 'outgoing')) / 2);
+    const volatility = Math.max(0, (trait(a, 'neurotic') + trait(b, 'neurotic')) / 4);
     return Math.max(0, Math.min(1, warmth * 0.35 + sharedFun * 0.35 + socialFit * 0.25 - volatility * 0.2));
   }
 
