@@ -31,6 +31,7 @@ export class SimCreator {
     this._editIndex   = 0;
     this._step        = 'household';  // 'household' | 'sims' | 'confirm'
     this._error       = '';
+    this._finished    = false;
     this._render();
   }
 
@@ -127,7 +128,7 @@ export class SimCreator {
     const prev = this._step !== 'household'
       ? '<button id="sc-back" class="sc-btn-sec">← Back</button>' : '';
     const next = this._step === 'confirm'
-      ? '<button id="sc-start" class="sc-btn-pri">🎲 Start Game</button>'
+      ? `<button id="sc-start" class="sc-btn-pri"${this._finished ? ' disabled' : ''}>${this._finished ? 'Starting…' : '🎲 Start Game'}</button>`
       : '<button id="sc-next" class="sc-btn-pri">Next →</button>';
     return `<div class="sc-footer-inner">${prev}${next}</div>`;
   }
@@ -193,6 +194,10 @@ export class SimCreator {
     this._render();
   }
   _finish() {
+    if (this._finished) return;
+    this._finished = true;
+    this._error = '';
+    this._render();
     try {
       bus.emit('simcreator:done', {
         householdName: this._household,
@@ -201,6 +206,7 @@ export class SimCreator {
       this.hide();
     } catch (err) {
       console.error('[SimCreator] failed to start game', err);
+      this._finished = false;
       this._error = err?.message ?? String(err);
       this._render();
     }
