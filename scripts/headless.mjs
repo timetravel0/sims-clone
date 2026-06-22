@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import initSqlJs from 'sql.js';
+import { bus } from '../src/core/EventBus.js';
 import { HeadlessSimulation } from '../src/headless/HeadlessSimulation.js';
 
 const args = Object.fromEntries(process.argv.slice(2).map(arg => {
@@ -55,11 +56,15 @@ db.run(`
 
 const summaries = [];
 for (let i = 0; i < runs; i++) {
+  // The runtime systems use the global bus. Clear it before each headless run so
+  // listeners from previous runs cannot double-count events or mutate new runs.
+  bus.clear();
+
   const runSeed = seed + i;
   const runId = `headless_${Date.now()}_${runSeed}`;
   const sim = new HeadlessSimulation({ seed: runSeed });
   const summary = sim.run({ ticks });
-  summaries.push({ runId, ...summary });
+  summaries.push({ runId, ...summary, busListenersAfterRun: bus.listenerCount() });
 
   db.run('INSERT INTO runs (id, seed, ticks, started_at, summary_json) VALUES (?,?,?,?,?)',
     [runId, runSeed, ticks, new Date().toISOString(), JSON.stringify(summary)]);
