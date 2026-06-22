@@ -199,8 +199,10 @@ delle crisi nel tempo.
 ## Lavoro, salute, famiglia e uscite
 
 **Cambio lavoro.** Ogni Sim può cambiare carriera dal pannello Lifecycle/Career
-(`switchCareer`): lascia quella attuale e ne inizia un'altra, ripartendo dal
-livello base.
+(`switchCareer`) oppure **autonomamente**: se dopo 3 giorni lavorativi consecutivi
+il Sim non è stato promosso, valuta spontaneamente se cambiare settore (probabilità
+base 8%, amplificata dal tratto Ambitious). In ogni caso lascia la carriera attuale
+e ne inizia un'altra ripartendo dal livello base.
 
 **Orario di lavoro.** Tutte le carriere lavorano **dal lunedì al venerdì
 (giorni 0–4), 08:00–17:00**; nel weekend (giorni 5–6) i Sim sono a casa. Durante
@@ -231,11 +233,13 @@ della famiglia a livello di dati** (non un Sim sul lotto); cresce sullo sfondo e
 invecchiare normalmente. Esiste un tetto alla dimensione del nucleo e un cooldown
 tra una nascita e l'altra.
 
-**Creazione di oggetti.** Un Sim con **skill handiness** sufficiente, usando il
-**workbench**, può fabbricare autonomamente un **nuovo oggetto** le cui
-caratteristiche (bisogno soddisfatto, restore rate, utilità) **scalano con il
-livello di handiness**. L'oggetto creato viene piazzato sul lotto e salvato con
-la partita.
+**Creazione di oggetti.** Un Sim con **handiness ≥ 2** (raggiungibile dopo ~8 usi
+del workbench), usando il **workbench**, può fabbricare autonomamente un **nuovo
+oggetto** le cui caratteristiche (bisogno soddisfatto, restore rate, utilità)
+**scalano con il livello di handiness**. La creazione è gated da un cooldown (600 s
+di gioco) e non richiede che la casa sia "piena" di oggetti equivalenti — l'oggetto
+artigianale è espressivo, non economico. Viene piazzato sul lotto e salvato con la
+partita.
 
 **Gelosia e monogamia.** Se due Sim conviventi hanno una relazione amorosa,
 tendono a non stringere altri legami romantici. Un Sim impegnato **non cerca**
