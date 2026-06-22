@@ -242,6 +242,7 @@ export class CareerSystem {
       creativity: 0,
       fitness: 0,
       charisma: 0,
+      handiness: 0,
       ...overrides,
     };
   }
@@ -359,20 +360,15 @@ export class CareerSystem {
   _handleLifeEvent(payload = {}) {
     const sim = payload.sim ?? this._findSim(payload.simId);
     if (!sim) return;
-    if (payload.type === 'promoted') this._promote(sim, 'life_event');
-    if (payload.type === 'fired') this._fire(sim);
-  }
-
-  _healthState(sim) {
-    return this._game?.population?.getPerson?.(sim?.id)?.health ?? null;
+    if (payload.type === 'elder' && Math.random() < 0.08) this._fire(sim);
   }
 
   _shouldCallInSick(sim) {
     const health = this._healthState(sim);
-    if (!health) return false;
-    if (health.state === 'healthy') return false;
-    return health.severity >= 0.35 || health.state === 'ill';
+    return health?.stage === 'sick' && (health.severity ?? 0) > 0.5;
+  }
+
+  _healthState(sim) {
+    return this._game?.healthSystem?.getState?.(sim.id) ?? null;
   }
 }
-
-export const careerSystem = new CareerSystem();
