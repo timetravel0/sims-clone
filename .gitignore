@@ -3,3 +3,4 @@ dist/
 .chrome-app/
 package-lock.json
 .DS_Store
+headless-runs/

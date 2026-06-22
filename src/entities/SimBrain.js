@@ -12,6 +12,15 @@ import { SocialLearning }     from '../ai/SocialLearning.js';
 import { MemorySystem }       from '../ai/MemorySystem.js';
 import { EmotionEngine }      from './EmotionEngine.js';
 
+// Household bonding cooldown (game-minutes between deliberate "spend time with a
+// housemate" actions). Measurement showed household social need stays ~86 (well
+// supplied by visitors), so a loneliness floor never fired and housemates almost
+// never interacted with EACH OTHER — which is exactly what romance (and then
+// births) needs. So bonding is driven on a gentle timer, not by the satiated
+// social need, and is biased toward the most compatible present housemate.
+const BOND_COOLDOWN_MIN = 60;
+const BOND_COOLDOWN_JITTER = 60;
+
 export class SimBrain {
   constructor(sim) {
     this._sim            = sim;
@@ -19,6 +28,7 @@ export class SimBrain {
     this._utilityPlanner = new UtilityAIPlanner(sim);
     this._queue          = new ActionQueue();
     this._socialCooldown = 0;
+    this._bondCooldown   = Math.random() * BOND_COOLDOWN_MIN;  // stagger first bond
     this._lastMoodTier   = null;
     this._playerOverride = false;
     this._overrideTimer  = 0;
@@ -75,6 +85,7 @@ export class SimBrain {
     // Tick all subsystems
     this._queue.update(dt);
     if (this._socialCooldown > 0) this._socialCooldown -= dt;
+    if (this._bondCooldown > 0)   this._bondCooldown -= dt;
     this.expBias.update(dt);
     this.emotions.update(dt);
     this.wellbeing.update(dt);
@@ -105,6 +116,22 @@ export class SimBrain {
       this._sim.showBubble(this._planner.lastNeedLabel);
       this._queue.push(...criticalNeedActions);
       return;
+    }
+
+    // 1b. Household bonding — periodically seek out a present housemate (biased to
+    // the most compatible) to spend time together. SocialAction walks to them, so
+    // this is what produces household-to-household co-location; the social need is
+    // already well supplied by visitors, so this is timer-driven, not need-driven.
+    // It's the keystone for romance → committed couples → births. Physical crises
+    // (step 1) still take priority, and a cooldown keeps it from chasing.
+    if (this._bondCooldown <= 0) {
+      const companion = this._findCompanion();
+      if (companion) {
+        this._bondCooldown = BOND_COOLDOWN_MIN + Math.random() * BOND_COOLDOWN_JITTER;
+        this._sim.showBubble('🫂');
+        this._queue.push(new SocialAction(this._sim, companion, this._sim._world));
+        return;
+      }
     }
 
     // 2. Utility AI (history + goals + wellbeing + context + emotion-aware)
@@ -152,11 +179,46 @@ export class SimBrain {
     return this._planner.planFor(priorities[0][0], { force: true });
   }
 
+  /** A present, free housemate to bond with — biased toward the most compatible. */
+  _findCompanion() {
+    const game = window._game;
+    if (!game) return null;
+    const me = this._sim;
+    const mates = game.sims.filter(s =>
+      s.id !== me.id && !s._isVisitor && !s._atWork && !s._outing && (s.mesh?.visible ?? true) &&
+      (game.population?.isHouseholdMember?.(s.id) ?? true)
+    );
+    if (mates.length === 0) return null;
+    // Prefer the housemate this Sim is most compatible with (drives pair-formation
+    // toward romance); compatibility is stable per pair, so a couple keeps choosing
+    // each other. Falls back to any present mate when compatibility is unavailable.
+    const graph = game.relationshipGraph;
+    let best = mates[0], bestScore = -Infinity;
+    for (const s of mates) {
+      const compat = graph?.compatibility?.(me.id, s.id) ?? 0;
+      if (compat > bestScore) { bestScore = compat; best = s; }
+    }
+    return best;
+  }
+
   _findSocialTarget() {
     const game = window._game;
     if (!game) return null;
-    const others = game.sims.filter(s => s.id !== this._sim.id);
-    return others.length ? others[Math.floor(Math.random() * others.length)] : null;
+    const me = this._sim;
+    // Only sims actually present on the lot and free (not at work / out / hidden):
+    // walking toward someone who isn't here is wasted motion.
+    const others = game.sims.filter(s =>
+      s.id !== me.id && !s._atWork && !s._outing && (s.mesh?.visible ?? true)
+    );
+    if (others.length === 0) return null;
+    // Nearest present companion — closing the smallest distance maximises the
+    // chance the encounter actually happens before either re-plans.
+    let best = null, bestD = Infinity;
+    for (const s of others) {
+      const d = Math.hypot((s.gx ?? 0) - me.gx, (s.gz ?? 0) - me.gz);
+      if (d < bestD) { bestD = d; best = s; }
+    }
+    return best;
   }
 
   get busy() { return !this._queue.isEmpty(); }

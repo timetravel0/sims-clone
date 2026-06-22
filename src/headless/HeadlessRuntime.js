@@ -27,6 +27,17 @@ import { RoomDetector } from '../world/RoomDetector.js';
 import { SIM_DEFS, STARTER_CAREERS } from '../config/defaultPopulation.js';
 import { ObjectRegistry } from '../systems/ObjectRegistry.js';
 
+// Fidelity: the browser advances on a fixed 20 Hz timestep (GameLoop TICK_MS),
+// i.e. dt=0.05s per frame. Movement (step = SPEED·dt), path-block timers and the
+// brain's decision cadence all depend on that small dt. Driving the headless loop
+// with a single dt=1 step per game-minute teleported Sims ~3.5 cells/step, which
+// made co-location (and therefore social interaction counts) an artifact. We now
+// sub-step each game-minute into SUBSTEPS browser-sized frames so behaviour
+// matches the browser; linear per-dt integrations (needs, drift, cooldowns) are
+// unaffected since 20×0.05 == 1.0.
+const SUBSTEP_DT = 0.05;             // seconds; mirrors GameLoop 20 Hz fixed step
+const SUBSTEPS   = Math.round(1 / SUBSTEP_DT);  // 20 frames == 1 game-minute at 1×
+
 const HEADLESS_METRIC_EVENTS = [
   'skill:levelUp',
   'career:promoted',
@@ -54,6 +65,9 @@ export class HeadlessRuntime {
     this.buildMode = { active: false };
     this.objectRegistry = ObjectRegistry;
     this.budgetSystem = budgetSystem;
+    // budgetSystem is a module singleton; without this each headless run would
+    // inherit the previous run's depleted balance and stop buying after ~4 runs.
+    this.budgetSystem.reset();
     this._unsubscribers = [];
     ensureHeadlessGlobals(this);
 
@@ -99,15 +113,18 @@ export class HeadlessRuntime {
     for (const sim of this.sims) skillSystem.register(sim);
   }
 
-  run({ ticks = 2000, dt = 1, snapshotEvery = 100 } = {}) {
+  run({ ticks = 2000, snapshotEvery = 100 } = {}) {
+    // `ticks` counts game-minutes (external semantics unchanged). Each is advanced
+    // through SUBSTEPS browser-sized frames so movement/brain behave faithfully.
     for (let i = 0; i < ticks; i++) {
-      this.update(dt);
+      this.tick += 1;
+      for (let s = 0; s < SUBSTEPS; s++) this.update(SUBSTEP_DT);
       if (snapshotEvery > 0 && this.tick % snapshotEvery === 0) this.relationshipSnapshots.push(this.relationshipSnapshot());
     }
     return this.summary();
   }
 
-  update(dt) {
+  update(dt = SUBSTEP_DT) {
     if (this.clock.paused) return;
     const scaled = dt * this.clock.speed;
 
@@ -115,7 +132,6 @@ export class HeadlessRuntime {
     this.clock.hour = this.dayNight.time * 24;
     this.clock.weekday = Math.floor(this.dayNight.totalDays ?? 0) % 7;
     this.clock.day = Math.floor(this.dayNight.totalDays ?? 0);
-    this.tick += 1;
 
     for (const sim of this.sims) {
       if (sim._atWork || sim._outing) {

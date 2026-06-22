@@ -31,7 +31,10 @@ import { DIMENSIONS, DRIFT, INTERACTIONS } from '../config/interactions.js';
 export { DIMENSIONS, INTERACTIONS };
 
 // Generic fallback applied when a consent-gated interaction is refused.
-const DEFAULT_REJECT = { ab: { resentment: 4, affection: -3 }, ba: { trust: -1 } };
+// ponytail: a polite "no" used to breed resentment 4 / affection -3, which —
+// combined with ~50% refusals — made every social attempt net-negative and kept
+// affinity pinned near 0. Softened so rejection stings lightly, not poisons.
+const DEFAULT_REJECT = { ab: { resentment: 1, affection: -1 }, ba: { trust: -1 } };
 const FRICTION_INTERVAL = 120;
 
 function clamp(v) { return Math.max(0, Math.min(100, v)); }
@@ -67,7 +70,11 @@ export class SocialDynamicsSystem {
   /** Net affinity in [-100,100]: warm dims minus cold ones. */
   affinity(from, to) {
     const d = this.get(from, to);
-    return clamp(d.trust * 0.3 + d.affection * 0.4 + d.respect * 0.3) - (d.resentment + d.fear * 0.6);
+    // ponytail: familiarity (built by every positive interaction) now feeds
+    // affinity. Without it, two Sims could chat 50 times — accumulating huge
+    // familiarity — and stay at affinity 0, so relationships never warmed up.
+    return clamp(d.trust * 0.3 + d.affection * 0.4 + d.respect * 0.3 + d.familiarity * 0.1)
+      - (d.resentment + d.fear * 0.6);
   }
 
   // ── Interaction effects ─────────────────────────────────────────────────────

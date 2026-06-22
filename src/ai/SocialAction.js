@@ -143,7 +143,7 @@ export class SocialAction extends Action {
 
     let score, delta;
     if (!accepted) {
-      score = socialManager.applyOutcome(a.id, b.id, -10, 2, `reject_${this._type}`);
+      score = socialManager.applyOutcome(a.id, b.id, -4, 2, `reject_${this._type}`);
       delta = score - before;
       this._changeNeed(a, 'status', -8);
       this._changeNeed(a, 'social', -5);
@@ -181,14 +181,17 @@ export class SocialAction extends Action {
     const dynRel = window._game?.socialDynamics?.snapshot?.(this._simB.id, this._simA.id) ?? {};
     const p = this._simB.personality;
     const energy = this._simB.needs.get('energy');
-    let score = 0;
+    // ponytail: +10 baseline lifts cold-start acceptance from ~47% to ~60-65%.
+    // At ~50% refusal, social was net-negative on relationships; raising the
+    // accept rate (with softened rejection) makes positive contact dominate.
+    let score = 10;
     score += (energy - 20) * 0.7;
     score += rel.familiarity * 0.2;
     score += p.nice * 16;
     score += p.outgoing * 10;
     score -= Math.max(0, p.neurotic) * 8;
     if (energy < 25) score -= 8;
-    if ((dynRel.familiarity ?? rel.familiarity ?? 0) < 15 && ['joke', 'compliment', 'hug'].includes(this._type)) score -= 10;
+    if ((dynRel.familiarity ?? rel.familiarity ?? 0) < 15 && ['joke', 'compliment', 'hug'].includes(this._type)) score -= 6;
     if (this._type === 'flirt') score -= (dynRel.attraction ?? 0) < 15 ? 24 : 8;
     if (this._type === 'ask_help' && (dynRel.trust ?? 0) < 10) score -= 8;
     if ((dynRel.resentment ?? 0) > 20 && !['apologize', 'forgive', 'confront', 'avoid'].includes(this._type)) score -= 12;

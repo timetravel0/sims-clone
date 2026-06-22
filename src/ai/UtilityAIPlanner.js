@@ -239,10 +239,15 @@ export class UtilityAIPlanner {
   _criticalNeedAdjustment(affordance, needs) {
     const utility = affordance.utility ?? {};
     let penalty = 0;
-    if ((needs.hunger ?? 100) < 18 && (utility.hunger ?? 0) <= 0) penalty -= 90;
-    if ((needs.bladder ?? 100) < 16 && (utility.bladder ?? 0) <= 0) penalty -= 95;
-    if ((needs.energy ?? 100) < 14 && (utility.energy ?? 0) <= 0) penalty -= 75;
-    if ((needs.energy ?? 100) < 10 && (utility.energy ?? 0) < 0) penalty -= 35;
+    // ponytail: thresholds raised vs the old 14-18 so Sims head off to
+    // eat/pee/sleep BEFORE the need craters (bladder/hunger/energy were the top 3
+    // crisis sources). Kept moderate: 32/30/26 choked socialisation because the
+    // single contended bathroom kept needs low, so the social penalty fired
+    // constantly. 26/24/20 still pre-empts crises but leaves a sociable window.
+    if ((needs.hunger ?? 100) < 26 && (utility.hunger ?? 0) <= 0) penalty -= 90;
+    if ((needs.bladder ?? 100) < 24 && (utility.bladder ?? 0) <= 0) penalty -= 95;
+    if ((needs.energy ?? 100) < 20 && (utility.energy ?? 0) <= 0) penalty -= 75;
+    if ((needs.energy ?? 100) < 14 && (utility.energy ?? 0) < 0) penalty -= 35;
     if (affordance.targetType === 'sim' && penalty < 0) {
       const allowed = new Set(['ask_help', 'comfort', 'avoid']);
       if (!allowed.has(affordance.verb)) penalty -= 20;

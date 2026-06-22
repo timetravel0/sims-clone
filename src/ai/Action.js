@@ -62,7 +62,13 @@ export class UseObjectAction extends Action {
     }
     const dx = this._sim.gx - this._furniture.gx;
     const dz = this._sim.gz - this._furniture.gz;
-    if (Math.abs(dx) + Math.abs(dz) > 1) {
+    // Chebyshev adjacency (any of the 8 surrounding cells), not just orthogonal:
+    // WalkToAction targets one side (gz±1) but falls back to the nearest free
+    // cell when it's taken, which is often a diagonal neighbour. Requiring
+    // Manhattan ≤ 1 then rejected the use, the Sim re-planned the same object and
+    // span in a walk→fail→replan loop — harmless-looking at dt=1 (one game-minute
+    // per spin) but a fast infinite loop under fine timesteps (and in the browser).
+    if (Math.max(Math.abs(dx), Math.abs(dz)) > 1) {
       Logger.warn(`[UseObject] ${this._sim.name} is not adjacent to ${this._furniture.id}`);
       if (this._furniture.reservedBy === this._sim.id) this._furniture.reservedBy = null;
       this.done = true;

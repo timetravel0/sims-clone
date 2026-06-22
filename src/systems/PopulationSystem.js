@@ -361,7 +361,12 @@ export class PopulationSystem {
     if (!age?.getInfo) return true;
     const a = age.getInfo(aId);
     const b = age.getInfo(bId);
-    const allowed = info => ['adult', 'young adult'].includes(String(info?.stage?.id ?? info?.stage?.label ?? '').toLowerCase());
+    // Normalise to letters-only so the stage id 'youngAdult' matches regardless
+    // of label spacing ('Young Adult'). Without this, young adults — the default
+    // starting stage for every Sim — never qualified and births were impossible.
+    const allowed = info => ['youngadult', 'adult'].includes(
+      String(info?.stage?.id ?? info?.stage?.label ?? '').toLowerCase().replace(/[^a-z]/g, '')
+    );
     return !!a && !!b && allowed(a) && allowed(b);
   }
 

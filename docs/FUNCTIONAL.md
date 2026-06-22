@@ -104,6 +104,7 @@ Le memorie hanno:
 Ogni Sim decide autonomamente cosa fare tramite una pipeline a 5 livelli:
 
 1. **Critical need preemption** — fame, bladder o energia critici hanno priorità su tutto il comportamento autonomo
+1b. **Bonding coinquilini** — a intervalli (~1-2 ore di gioco) il Sim va a stare con il coinquilino più compatibile presente, per costruire i legami che portano a romance e figli
 2. **UtilityAIPlanner** — sceglie l'affordance con punteggio più alto tra tutti gli oggetti e Sim vicini (raggio 8 tile)
 3. **NeedDrivenPlanner** — fallback se nessuna affordance supera la soglia minima: soddisfa direttamente il bisogno più critico
 4. **SocialAction fallback** — se il bisogno Social è molto basso, cerca un Sim vicino
@@ -122,7 +123,9 @@ Il punteggio di ogni affordance combina 6 fattori:
 Se fame, bladder o energia sono critici, le azioni che non aiutano quel bisogno
 ricevono una forte penalità. Questo evita casi osservati nei dati SQLite in cui
 i Sim continuavano a socializzare o vagare mentre fame/energia/bladder erano a
-zero.
+zero. Le soglie di preemption sono state alzate (da 14-18 a 20-26) in base
+all'analisi headless: ora i Sim vanno a mangiare/bagno/dormire **prima** che il
+bisogno collassi, non dopo — dimezzando gli eventi di crisi.
 
 ### Obiettivi
 
@@ -183,6 +186,13 @@ Gli oggetti possono essere **riservati** da un solo Sim alla volta
 Gli oggetti disponibili, i costi d'acquisto autonomo, gli skill source e la
 dotazione iniziale della casa sono configurati in `src/config/*`, non sparsi nei
 sistemi runtime.
+
+**Acquisto automatico su contesa.** Se un bisogno va ripetutamente in crisi
+(es. un solo WC per più Sim), la famiglia compra autonomamente una seconda
+istanza dell'oggetto che lo soddisfa (secondo bagno/letto/frigo), invece di
+lasciare quel bisogno crollare in continuazione. La decisione non guarda solo se
+un oggetto equivalente è libero *in quell'istante*, ma accumula la pressione
+delle crisi nel tempo.
 
 ---
 
@@ -254,6 +264,18 @@ un costo/ricompensa sui bisogni e un effetto sulle dimensioni relazionali. Un
 eventuali testimoni (interazione pubblica o privata), umore e bisogni dei due
 Sim, la relazione attuale, i ricordi recenti, gli obiettivi attivi e l'ora del
 giorno — tutto questo modula la probabilità di accettazione e il risultato.
+
+**Crescita dei legami.** Il contatto positivo ripetuto fa crescere davvero la
+relazione: la familiarità accumulata contribuisce all'affinità (prima due Sim
+potevano chiacchierare a lungo restando "neutri") e un rifiuto educato pesa molto
+meno di prima. Così, anche partendo da estranei, le interazioni positive nel
+tempo prevalgono e le coppie che si piacciono si scaldano sempre più in fretta.
+
+**Voglia di stare insieme.** Periodicamente un Sim va a passare del tempo con un
+**coinquilino** (preferendo quello più compatibile), invece di accudire l'ennesimo
+oggetto. Senza questa spinta i Sim di casa, già "sazi" di socialità grazie ai
+visitatori, non si cercavano mai a vicenda e nessuna coppia nasceva. È questo a
+innescare la catena **amicizia → corteggiamento → coppia stabile → figli**.
 
 **Experiment Dashboard (pulsante 🧪 Lab).** Un pannello mostra: la timeline
 degli eventi sociali recenti, una matrice relazionale a colori (clic su una

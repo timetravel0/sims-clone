@@ -9,6 +9,14 @@ const DEFAULT_CHECK_INTERVAL = 38;
 const HOUSEHOLD_RESERVE = 1_000;
 const MAX_DUPLICATES = 3;
 
+// Chronic-contention buying. The instantaneous "is an equivalent free right now?"
+// gate misses bursty contention: a single toilet/bed serving 3 Sims looks free at
+// most random check instants, yet drives most need crises. We accumulate a
+// decaying pressure per need from need:crisis events; when a need keeps cratering
+// the household buys another instance of whatever serves it, free-snapshot or not.
+const CRISIS_DECAY = 0.0025;   // per scaled-second
+const CRISIS_THRESHOLD = 1.5;  // pressure above which a second instance is justified
+
 const NEED_WEIGHTS = {
   hunger: 1.35,
   energy: 1.25,
@@ -39,11 +47,17 @@ export class AutonomousShoppingSystem {
     this._recent = new Map(); // objectId -> cooldown seconds
     this._history = [];
     this._craftCd = opts.craftCd ?? 0;        // scaled-seconds until the next craft is allowed
+    this._crisis = new Map();                 // need -> decaying crisis pressure
     bus.on('sim:objectUsed', e => this._maybeCraft(e));
+    bus.on('need:crisis', e => {
+      if (!e?.need) return;
+      this._crisis.set(e.need, (this._crisis.get(e.need) ?? 0) + 1);
+    });
   }
 
   update(dt) {
     if (this._craftCd > 0) this._craftCd -= dt;
+    this._decayCrisis(dt);
     this._decayRecent(dt);
     this._timer -= dt;
     if (this._timer > 0) return;
@@ -60,6 +74,7 @@ export class AutonomousShoppingSystem {
       recent: Object.fromEntries(this._recent),
       history: this._history.slice(-100),
       craftCd: this._craftCd,
+      crisis: Object.fromEntries(this._crisis),
     };
   }
 
@@ -69,6 +84,7 @@ export class AutonomousShoppingSystem {
     this._recent = new Map(Object.entries(data.recent ?? {}).map(([k, v]) => [k, Number(v)]));
     this._history = Array.isArray(data.history) ? data.history.slice(-100) : [];
     this._craftCd = data.craftCd ?? 0;
+    this._crisis = new Map(Object.entries(data.crisis ?? {}).map(([k, v]) => [k, Number(v)]));
   }
 
   _considerPurchase() {
@@ -194,7 +210,7 @@ export class AutonomousShoppingSystem {
     const existing = this._objectCounts();
     const pressures = this._needPressures(household);
     return ObjectRegistry.all()
-      .filter(def => this._needsAdditionalInstance(def, household))
+      .filter(def => this._needsAdditionalInstance(def, household) || this._servesChronicCrisis(def))
       .map(def => {
         const cost = def.cost ?? OBJECT_COSTS[def.id] ?? 600;
         const count = existing.get(def.id) ?? 0;
@@ -206,7 +222,8 @@ export class AutonomousShoppingSystem {
         const personality = this._buyerPreference(buyer, def);
         const affordabilityPenalty = costRatio > 0.35 ? 24 : costRatio * 18;
         const spacePenalty = this._hasAnyPlacement(world) ? 0 : 100;
-        const score = utility + scarcity + personality - duplicatePenalty - recentPenalty - affordabilityPenalty - spacePenalty;
+        const crisisBonus = this._crisisBonus(def);
+        const score = utility + scarcity + personality + crisisBonus - duplicatePenalty - recentPenalty - affordabilityPenalty - spacePenalty;
         return { def, cost, score, reasonNeed: this._dominantNeed(def, pressures) };
       });
   }
@@ -456,6 +473,32 @@ export class AutonomousShoppingSystem {
       if (next <= 0) this._recent.delete(id);
       else this._recent.set(id, next);
     }
+  }
+
+  _decayCrisis(dt) {
+    for (const [need, p] of this._crisis) {
+      const next = p - dt * CRISIS_DECAY;
+      if (next <= 0.05) this._crisis.delete(need);
+      else this._crisis.set(need, next);
+    }
+  }
+
+  /** Needs this object would relieve that are under chronic crisis pressure. */
+  _crisisNeeds(def) {
+    return Object.keys(this._primaryUtility(def)).filter(n => (this._crisis.get(n) ?? 0) >= CRISIS_THRESHOLD);
+  }
+
+  _servesChronicCrisis(def) {
+    return this._crisisNeeds(def).length > 0;
+  }
+
+  /** Strong score boost for buying what relieves a chronically-crisised need. */
+  _crisisBonus(def) {
+    let bonus = 0;
+    for (const need of Object.keys(this._primaryUtility(def))) {
+      bonus += (this._crisis.get(need) ?? 0) * 14;
+    }
+    return bonus;
   }
 
   _emitFailed(buyer, pick, reason) {

@@ -21,6 +21,9 @@ export class BudgetSystem {
 
   get funds() { return this._funds; }
 
+  /** Reset to the starting balance (used to isolate headless runs). */
+  reset() { this._funds = STARTING_FUNDS; }
+
   /**
    * Attempt to debit § for a purchase.
    * @returns {boolean} true if successful

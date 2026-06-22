@@ -147,6 +147,10 @@ The exported `INTERACTIONS` catalogue is the single source of truth for social a
 
 Interaction cooldowns are serialised with the relationship dimensions. This preserves short-term anti-spam state across save/load and avoids unrealistic repeated apologies, confrontations or flirting immediately after loading.
 
+**Affinity balance (headless-tuned).** `affinity()` includes a small `familiarity * 0.1` term: without it, repeated positive contact built familiarity but left net affinity at 0, so relationships never warmed. The generic `DEFAULT_REJECT` was softened (`resentment 1, affection -1`; was `4 / -3`) and `SocialAction._baseAcceptance` gained a `+10` baseline (cold-start acceptance ~47% → ~60-65%). Together these make the expected value of a social attempt positive even at coin-flip acceptance (≈ +1.5 per accepted chat vs ≈ −1.4 per rejection), so relationships drift upward with contact and warm pairs accelerate. With faithful (sub-stepped) headless movement the dominant limiter on relationships turned out to be **opportunity**, not payoff: household Sims are at work 08:00–17:00 and then disperse across scattered furniture, so they rarely co-located while both free, and their social need was anyway well supplied by visitors (~86/100). Household-to-household contact was ~1 interaction/run, so romance never started.
+
+**Household bonding drive** (`SimBrain`): a timer-gated step (between critical-need preemption and the utility planner) periodically sends a Sim to bond with a present housemate — `_findCompanion()` picks the most *compatible* present, non-visitor household member, and `SocialAction` walks to them. It is driven by `BOND_COOLDOWN_MIN`/`_JITTER` (≈1–2 game-hours), not by the satiated social need, because measurement showed the need rarely drops. This produced the co-location romance needs: in 20×5000-tick seeds, household-to-household interactions rose from ~20 to ~1010, flirts from 0 to ~120, committed couples from 0 to ~20, and strongest relationship edges from ~5 to ~33. (Note: seeded-PRNG runs can't be compared one-to-one across code changes — any change in `Math.random()` call count reshuffles the stream — so judge by aggregate distributions across seeds.)
+
 ## Population, Visitors and Off-lot People
 
 `PopulationSystem` separates persistent people from active rendered Sims:
@@ -183,13 +187,15 @@ Default external people can define `relationshipSeeds` in `src/config/defaultPop
 
 ## Family lifecycle, household outings, health and crafting
 
-**Reproduction & children.** `PopulationSystem.update(dt)` (driven from `Game._update`) periodically scans committed household couples and calls `createChild(aId, bId)` when `canHaveChild` holds: same `householdId`, mutual `partnerId`, romance ≥ 35, opposite sex (`_sexOf`) and not blood-related (`isFamily`). A birth is data-only — the child record carries `embodied:false` and `ageSeconds`; **no Sim is spawned**. `_growChildren` accumulates `ageSeconds` and `_embodyChild` spawns the Sim (via `Game._spawnSim` + `adoptHouseholdSim`) once it reaches `CHILD_GROW_SECONDS`, registering it with `AgeSystem.registerAt(sim, 13)` so it appears as a teen and keeps aging. `embodied`/`ageSeconds` are persisted through `_person`. Guards: `MAX_HOUSEHOLD` cap and a per-couple `BIRTH_COOLDOWN_SECONDS`. `CHILD_GROW_SECONDS` is deliberately decoupled from `AgeSystem`'s 86400 s/day scale (a `ponytail:` tuning knob).
+**Reproduction & children.** `PopulationSystem.update(dt)` (driven from `Game._update`) periodically scans committed household couples and calls `createChild(aId, bId)` when `canHaveChild` holds: same `householdId`, mutual `partnerId`, romance ≥ 35, opposite sex (`_sexOf`) and not blood-related (`isFamily`). A birth is data-only — the child record carries `embodied:false` and `ageSeconds`; **no Sim is spawned**. `_growChildren` accumulates `ageSeconds` and `_embodyChild` spawns the Sim (via `Game._spawnSim` + `adoptHouseholdSim`) once it reaches `CHILD_GROW_SECONDS`, registering it with `AgeSystem.registerAt(sim, 13)` so it appears as a teen and keeps aging. `embodied`/`ageSeconds` are persisted through `_person`. Guards: `MAX_HOUSEHOLD` cap and a per-couple `BIRTH_COOLDOWN_SECONDS`. `CHILD_GROW_SECONDS` is deliberately decoupled from `AgeSystem`'s 86400 s/day scale (a `ponytail:` tuning knob). `_compatibleAgesForChild` allows `youngAdult` and `adult` stages: it normalises the stage to letters-only before matching, because the `AgeSystem` stage **id** is camelCase `youngAdult` while the check previously compared against `'young adult'` (with a space) — a mismatch that silently made births impossible for the default population (everyone starts as `youngAdult`). Headless confirms births now occur (~46 across 18/20 seeds once the bonding drive supplies couples).
 
 **Household outings.** `OffLotSimulationSystem` also iterates household Sims. A Sim can autonomously start an outing (`meal_out`, `trip`, `visit_friend`, `other`) unless a need is critical; it sets `sim._outing`, `sim._outingReason`/`_offLotReason` and `_outingUntilTick`, and emits a story entry naming the reason. `Game._update` treats `sim._atWork || sim._outing` as off-lot (hidden via `_sendToWork`, needs frozen, not selectable). On return the Sim recovers needs by outing type. Work departures also set `sim._offLotReason='work'` and log a reason (`CareerSystem._startShift`). While off-lot a Sim may have an accident → `HealthSystem.reportIncident`. Filters that skip hidden Sims (raycast, social witnesses, visitor door responder, family scoring, autonomous placement) all exclude `_outing` as well as `_atWork`.
 
 **Health.** `HealthSystem` (constructed in `Game`, ticked in `_update`) moves a person through `healthy → ill → recovering → healthy` with chance driven by hygiene/energy/hunger/weather, and exposes `reportIncident(personId, severity, cause, details)` used by off-lot accidents.
 
 **Autonomous crafting.** `AutonomousShoppingSystem` subscribes to `sim:objectUsed`; when a household Sim finishes at the `workbench` with handiness ≥ 3, `_maybeCraft` builds a custom object via `Game.createCustomObject` (→ `ObjectRegistry.registerCustom`) whose `needTarget`/`restoreRate`/utility scale with handiness, places it with the same placement validation as purchases, and is gated by a craft cooldown. Custom objects persist via `serialiseCustom`/`restoreCustom`.
+
+**Chronic-contention buying.** `AutonomousShoppingSystem`'s `_needsAdditionalInstance` only sees an *instantaneous* snapshot ("is an equivalent object free right now?"), which misses bursty contention — a single toilet/bed serving the household looks free at most random check instants yet drives most need crises. The system now subscribes to `need:crisis` and accumulates a decaying per-need pressure (`CRISIS_DECAY`, `CRISIS_THRESHOLD`). A need under chronic crisis both bypasses the instantaneous gate (`_servesChronicCrisis`) and adds a strong score bonus (`_crisisBonus`), so the household buys a second toilet/bed/fridge instead of letting the same need crater repeatedly. Crisis pressure is serialised. Need-crisis preemption was also tuned in `UtilityAIPlanner._criticalNeedAdjustment`: thresholds raised from 14-18 to 20-26 so Sims leave to eat/pee/sleep before a need craters (not after). Combined headless effect: `need:crisis` events roughly halved (~1119 → ~530 over 20×5000-tick seeds), with every run now provisioning a second bathroom/bed.
 
 ## Persistence
 
@@ -279,7 +285,8 @@ Tip: save to a manual slot, run an intervention, then load to compare. `socialDy
 
 ## Headless Batch Runs
 
-`npm run headless` runs the pure JS model in `src/headless/HeadlessSimulation.js`.
+`npm run headless` runs the pure JS model in `src/headless/HeadlessRuntime.js`
+(the CLI entry point in `scripts/headless.mjs`).
 It does not instantiate `Game`, Three.js, DOM UI or pathfinding meshes. It uses
 the same extracted population and interaction configuration, emits social and
 visitor experiment rows, stores periodic relationship snapshots, and writes a
@@ -293,6 +300,12 @@ Outputs:
 
 - `headless-runs/sims-headless.sqlite`;
 - `headless-runs/latest-summary.json`.
+
+**Faithful movement (sub-stepping).** `run()` counts game-minutes (`ticks`), but advances each one through `SUBSTEPS` (=20) browser-sized frames of `SUBSTEP_DT` (=0.05s), mirroring `GameLoop`'s 20 Hz fixed timestep. Previously the loop took one `dt=1` step per game-minute, which teleported Sims ~3.5 cells/step and made co-location (hence social interaction counts) an artifact; sub-stepping makes movement, path-block timers and the brain's decision cadence behave exactly as in the browser, so social/idle/deadlock metrics are now trustworthy. Linear per-`dt` integrations (need decay, relationship drift, cooldowns) are unaffected since `20 × 0.05 == 1.0`. Cost: ~1.8 s per 1000 game-minutes per run.
+
+Sub-stepping surfaced (and fixed) a latent bug that affects the browser too: `UseObjectAction` required *orthogonal* adjacency (Manhattan ≤ 1), but `WalkToAction` falls back to the nearest free cell when its target side is taken — often a *diagonal* neighbour. The use was then rejected, the Sim re-planned the same object, and span in a walk→fail→replan loop (slow at `dt=1`, a fast infinite spin under fine timesteps — and a real glitch in the browser). The adjacency test is now Chebyshev (any of the 8 surrounding cells).
+
+**Run isolation caveat.** `HeadlessRuntime` builds fresh per-run instances of most systems, but a few module singletons (`budgetSystem`, `skillSystem`, `socialManager`, `memorySystem`) persist across the run loop even though `bus.clear()` is called between runs. `budgetSystem.reset()` is now called per run in the constructor — without it, autonomous purchases drained the shared balance after ~4 runs and the rest of the batch could buy nothing, masking the auto-shopping behaviour. The remaining singletons still carry state across runs (skills/scalar-score/memories accumulate); treat cross-run skill/affinity aggregates with that in mind.
 
 ## Missing Work
 
