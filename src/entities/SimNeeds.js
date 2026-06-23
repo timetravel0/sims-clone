@@ -6,8 +6,8 @@ export const NEED_KEYS = [
 ];
 
 const BASE_DECAY = {
-  hunger:  3.0,
-  energy:  2.5,
+  hunger:  2.0,  // was 3.0 — eat dominated 31% of AI decisions
+  energy:  2.0,  // was 2.5 — sleep dominated 20% of AI decisions
   bladder: 4.0,
   hygiene: 2.0,
   social:  2.5,

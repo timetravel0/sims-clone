@@ -26,12 +26,12 @@ export const OBJECT_DEFS = [
   { id: 'treadmill', label: 'Treadmill',    color: 0xb0bec5, needTarget: 'comfort', restoreRate: 8,
     onUse: (sim) => sim.needs.decay('energy', 3) },
   { id: 'desk',      label: 'Desk',         color: 0xa1887f, needTarget: 'fun',     restoreRate: 10,
-    affordances: [{ verb: 'study', label: 'Study', utility: { autonomy: 20, status: 8, fun: 8, energy: -6 }, duration: 6 }] },
+    affordances: [{ verb: 'study', label: 'Study', utility: { autonomy: 20, status: 8, fun: 8, energy: -6 }, duration: 6, skillGain: true }] },
   { id: 'bookshelf', label: 'Bookshelf',    color: 0x8d6e63, needTarget: 'fun',     restoreRate: 12,
-    affordances: [{ verb: 'read', label: 'Read', utility: { autonomy: 25, fun: 12, status: 4 }, duration: 6 }],
+    affordances: [{ verb: 'read', label: 'Read', utility: { autonomy: 25, fun: 12, status: 4 }, duration: 6, skillGain: true }],
     onUse: (sim) => sim.needs.restore('social', 2) },
   { id: 'workbench', label: 'Workbench',    color: 0x90a4ae, needTarget: 'fun',    restoreRate: 10,
-    affordances: [{ verb: 'tinker', label: 'Tinker', utility: { fun: 10, status: 6, autonomy: 12, energy: -4 }, duration: 6 }] },
+    affordances: [{ verb: 'tinker', label: 'Tinker', utility: { fun: 18, status: 14, autonomy: 20, energy: -5 }, duration: 6, skillGain: true }] },
 
   // ── Social furniture (social: true) ──────────────────────────────────────
   {
@@ -58,13 +58,13 @@ export const OBJECT_DEFS = [
   {
     id: 'chess',    label: 'Chess Table',    color: 0x4a4a4a,
     needTarget: 'fun',     restoreRate: 22, social: true,
-    affordances: [{ verb: 'play_chess', label: 'Play Chess', utility: { fun: 20, autonomy: 18, status: 10 }, duration: 7 }],
+    affordances: [{ verb: 'play_chess', label: 'Play Chess', utility: { fun: 20, autonomy: 18, status: 10 }, duration: 7, skillGain: true }],
     onUse: (sim) => sim.needs.restore('social', 12),
   },
   {
     id: 'piano',    label: 'Piano',          color: 0x212121,
     needTarget: 'fun',     restoreRate: 25, social: true,
-    affordances: [{ verb: 'play_piano', label: 'Play Piano', utility: { fun: 22, status: 22, autonomy: 8 }, duration: 7 }],
+    affordances: [{ verb: 'play_piano', label: 'Play Piano', utility: { fun: 22, status: 22, autonomy: 8 }, duration: 7, skillGain: true }],
     onUse: (sim) => sim.needs.restore('social', 5),
   },
   {

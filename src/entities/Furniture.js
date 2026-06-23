@@ -41,6 +41,7 @@ export class Furniture {
         utility    : { ...(a.utility || {}) },
         duration   : a.duration ?? 5,
         requirements: a.requirements || {},
+        skillGain  : a.skillGain ?? false,
       }));
     }
     return [{

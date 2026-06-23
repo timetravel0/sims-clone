@@ -107,13 +107,22 @@ export class EmotionEngine {
    */
   spike(type, intensity, duration = 8) {
     const mod = this._personalityMod(type);
+    const finalIntensity = Math.min(1, intensity * mod);
     this._spikes.push({
       type,
-      intensity : Math.min(1, intensity * mod),
+      intensity : finalIntensity,
       remaining : duration,
-      decayRate : (intensity * mod) / duration,
+      decayRate : finalIntensity / duration,
     });
-    bus.emit('emotion:spike', { simId: this._sim.id, type, intensity });
+    bus.emit('emotion:spike',     { simId: this._sim.id, type, intensity: finalIntensity });
+    bus.emit('emotion:triggered', {
+      simId:    this._sim.id,
+      simName:  this._sim.name,
+      type,
+      intensity: finalIntensity,
+      def: { label: type.charAt(0).toUpperCase() + type.slice(1),
+             emoji: '', moodDelta: EMOTION_TIER_DELTA[type] ?? 0 },
+    });
   }
 
   /** Tick: decay spikes + periodically update baseline. */

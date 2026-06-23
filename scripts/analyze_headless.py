@@ -334,12 +334,14 @@ if dim_counts:
 # Affinity over time (early vs late ticks across all runs)
 early = q("SELECT AVG(affinity) AS a FROM relationship_snapshots WHERE tick < 3000")
 late  = q("SELECT AVG(affinity) AS a FROM relationship_snapshots WHERE tick > 7000")
-print(f"\n  Affinity trend:  early ticks (<3000) avg={early[0]['a']:.3f}"
-      f"  late ticks (>7000) avg={late[0]['a']:.3f}")
-if early[0]['a'] and late[0]['a']:
-    delta = late[0]['a'] - early[0]['a']
+ea, la = early[0]['a'], late[0]['a']
+if ea is not None and la is not None:
+    delta = la - ea
     arrow = "↑ growing" if delta > 0.5 else ("↓ declining" if delta < -0.5 else "→ stable")
+    print(f"\n  Affinity trend:  early ticks (<3000) avg={ea:.3f}  late ticks (>7000) avg={la:.3f}")
     print(f"  Δ={delta:.3f}  {arrow}")
+else:
+    print(f"\n  Affinity trend: insufficient data (need runs > 7000 ticks)")
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  8. SIM ACTIONS (AI behaviour)
@@ -352,28 +354,40 @@ n_acts = len(acts)
 print(f"  Total actions: {n_acts:,}  ({n_acts/n_runs:.0f} / run)")
 
 # Extract verb from label e.g. "Sleep(bed)" → "sleep"  or  "social:hug"
+# Empty label = ActionQueue emits 'queue empty' notification, not a real decision.
 def action_verb(a):
     label = a.get('label', '')
+    if not label:
+        return 'idle'
     if '(' in label:
         return label.split('(')[0].strip().lower()
-    return label.lower() or '?'
+    return label.lower()
 
 verbs = Counter(action_verb(a) for a in acts)
-print(f"\n  Action distribution ({len(verbs)} distinct verbs):")
+print(f"\n  Action distribution ({len(verbs)} distinct verbs, incl. overhead):")
 print(fmt_dist(verbs, top=12, total=n_acts))
 
-# Diversity metric: Shannon entropy
-total_acts = sum(verbs.values())
-entropy = -sum((c/total_acts)*math.log2(c/total_acts) for c in verbs.values() if c > 0)
-max_entropy = math.log2(len(verbs))
+# Diversity: exclude navigation overhead (idle = queue-empty, walkto = pathing)
+# These are not AI choices — they inflate the count of repetitive events.
+OVERHEAD = {'idle', 'walkto'}
+decision_verbs = Counter({k: v for k, v in verbs.items() if k not in OVERHEAD})
+n_decisions = sum(decision_verbs.values())
+overhead_pct = pct(n_acts - n_decisions, n_acts)
+print(f"\n  (excluding overhead: idle+walkTo = {overhead_pct} of all events)")
+print(f"  Real decision distribution ({n_decisions:,} events, {len(decision_verbs)} verbs):")
+print(fmt_dist(decision_verbs, top=10, total=n_decisions))
+
+total_dec = sum(decision_verbs.values())
+entropy = -sum((c/total_dec)*math.log2(c/total_dec) for c in decision_verbs.values() if c > 0)
+max_entropy = math.log2(len(decision_verbs)) if len(decision_verbs) > 1 else 1
 norm_entropy = entropy / max_entropy if max_entropy > 0 else 0
-print(f"\n  Action diversity (normalised Shannon entropy): {norm_entropy:.3f}  "
-      f"[0=uniform single, 1=perfectly even]")
+print(f"\n  Decision diversity (normalised Shannon entropy): {norm_entropy:.3f}  "
+      f"[0=one action, 1=perfectly even]")
 if norm_entropy < 0.5:
     print("  ⚠  Low action diversity — AI may be stuck in a loop")
 
 write_csv('08_sim_actions', [
-    {'verb': v, 'count': c, 'pct': round(100*c/total_acts, 2)}
+    {'verb': v, 'count': c, 'pct': round(100*c/n_decisions, 2), 'is_overhead': v in OVERHEAD}
     for v, c in verbs.most_common()
 ])
 
@@ -428,7 +442,7 @@ checks.append(("Social interactions/run", soc_per_run,
     "low" if soc_per_run < 50 else "ok" if soc_per_run < 1000 else "high"))
 
 overall_acceptance = sum(s.get('accepted', False) for s in socials) / n_social if n_social else 0
-checks.append(("Social acceptance rate", overall_acceptance,
+checks.append(("Social acceptance rate", f"{overall_acceptance:.1%}",
     "⚠ near 100%" if overall_acceptance > 0.95 else
     "⚠ very low"  if overall_acceptance < 0.3  else "ok"))
 

@@ -182,17 +182,16 @@ export class SocialAction extends Action {
     const dynRel = GameContext.socialDynamics?.snapshot?.(this._simB.id, this._simA.id) ?? {};
     const p = this._simB.personality;
     const energy = this._simB.needs.get('energy');
-    // ponytail: +10 baseline lifts cold-start acceptance from ~47% to ~60-65%.
-    // At ~50% refusal, social was net-negative on relationships; raising the
-    // accept rate (with softened rejection) makes positive contact dominate.
-    let score = 10;
-    score += (energy - 20) * 0.7;
+    // ponytail: centered at energy=40; personality deltas around 0.5 neutral so
+    // strangers face a net-negative score and need familiarity/energy to accept.
+    let score = 0;
+    score += (energy - 40) * 0.4;
     score += rel.familiarity * 0.2;
-    score += p.nice * 16;
-    score += p.outgoing * 10;
+    score += (p.nice    - 0.5) * 16;
+    score += (p.outgoing - 0.5) * 10;
     score -= Math.max(0, p.neurotic) * 8;
     if (energy < 25) score -= 8;
-    if ((dynRel.familiarity ?? rel.familiarity ?? 0) < 15 && ['joke', 'compliment', 'hug'].includes(this._type)) score -= 6;
+    if ((dynRel.familiarity ?? rel.familiarity ?? 0) < 15 && ['chat', 'joke', 'compliment', 'hug'].includes(this._type)) score -= 12;
     if (this._type === 'flirt') score -= (dynRel.attraction ?? 0) < 15 ? 24 : 8;
     if (this._type === 'ask_help' && (dynRel.trust ?? 0) < 10) score -= 8;
     if ((dynRel.resentment ?? 0) > 20 && !['apologize', 'forgive', 'confront', 'avoid'].includes(this._type)) score -= 12;

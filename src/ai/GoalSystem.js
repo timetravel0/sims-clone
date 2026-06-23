@@ -269,7 +269,10 @@ export class GoalSystem {
       case 'rest':
         return (affordance.verb === 'sleep' || affordance.verb === 'sit' || affordance.verb === 'relax') ? 0.7 : 0;
       case 'avoid_sim':
-        if (affordance.targetType === 'sim' && affordance.target?.id === goal.targetId) return -1.2;
+        if (affordance.targetType === 'sim' && affordance.target?.id === goal.targetId) {
+          if (affordance.verb === 'avoid') return 1.5;  // encourage actual avoidance
+          return -3.0;  // strongly penalise positive contact with target
+        }
         return 0;
       default:
         return 0;
