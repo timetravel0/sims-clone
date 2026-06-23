@@ -129,8 +129,21 @@ export class DramaEngine {
     });
     // Listener's opinion of subject shifts slightly
     const delta = type === 'negative' ? -8 : 5;
-    socialManager.interact(listener.id, subject.id,
-      delta > 0 ? 'compliment' : 'argue');
+    socialManager.interact(listener.id, subject.id, delta > 0 ? 'compliment' : 'argue');
+
+    // 30% chance the subject finds out and resents the gossiper
+    if (type === 'negative' && Math.random() < 0.3) {
+      const dyn = this._game?.socialDynamics;
+      if (dyn) dyn.applyInteraction(subject.id, gossiper.id, 'insult', true);
+      bus.emit('gossip:discovered', {
+        subjectId: subject.id, subjectName: subject.name,
+        gossiperName: gossiper.name,
+      });
+      bus.emit('story:entry', {
+        text: `${subject.name} ha scoperto che ${gossiper.name} sparla di lui/lei.`,
+        cat: 'drama',
+      });
+    }
   }
 
   _checkMilestone(nameA, nameB, score) {

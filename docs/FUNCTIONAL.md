@@ -377,3 +377,36 @@ interazioni positive.
 
 > Per gli esperimenti da console vedi “How to run a social experiment manually”
 > in `docs/TECHNICAL.md`.
+
+## Pannello di configurazione (Admin)
+
+Apri `http://127.0.0.1:1420/admin.html` mentre il server di sviluppo Vite è attivo.
+
+Il pannello mostra tutti i parametri numerici del gioco organizzati in sezioni:
+
+- **Decadimento Bisogni** — quanto rapidamente fame, energia, igiene ecc. calano nel tempo
+- **AI Planner** — soglie e pesi del pianificatore utilità (goal bonus, rumore, topK)
+- **Accettazione Sociale** — pesi della formula che decide se un Sim accetta un'interazione
+- **Utilità Azioni Sociali** — impatto su ogni bisogno per ciascun tipo di interazione (chat, flirt, conforto…)
+- **Delta Tier Emozione** — quanto ogni emozione alza/abbassa il tier d'umore
+- **Drift Relazioni** — decadimento passivo delle dimensioni relazionali (fiducia, affetto…)
+- **Oggetti** — utilità e prezzo di acquisto per ogni oggetto della casa
+
+Ogni valore ha uno slider e un campo numerico sincronizzati. Clicca **Salva** per scrivere le modifiche su `config/gameConfig.json`; Vite rileva il cambiamento e ricarica il gioco automaticamente nella scheda del browser.
+
+## Funzionalità recenti
+
+### Inviti programmati (Telefono)
+Nel pannello telefono ogni contatto ha ora due pulsanti di invito: **Invita ora** (visita immediata) e **Domani** (visita programmata a ~1440 tick, circa un giorno di gioco). Le visite programmate bypassano il citofono — il visitatore entra direttamente senza attendere risposta alla porta.
+
+### Ispezione memorie (tasto M)
+Con un Sim selezionato, premi **M** per aprire il pannello memorie. Mostra le memorie episodiche del Sim (tipo, intensità, attori coinvolti) come barre colorate. Il pannello si aggiorna automaticamente quando si seleziona un altro Sim.
+
+### Reputazione e gossip
+Ogni Sim ha una reputazione calcolata come media ponderata di rispetto, affetto e risentimento degli altri verso di lui. Il gossip negativo ha una probabilità del 30% che il soggetto venga a sapere, causando un deterioramento della relazione con il gossiper.
+
+### Invecchiamento e morte
+Gli anziani (elder) esposti a energy o hunger sotto 5 per 3 giorni consecutivi muoiono di vecchiaia. Il Sim viene rimosso dalla partita e compare una voce nella storia. Il bonus AI per le azioni di cura (comfort, hug, chat) verso familiari è +4 punti score.
+
+### Seeding deterministico (browser)
+Aggiungere `?seed=42` all'URL della partita fa sì che tutte le chiamate a `Math.random()` usino Mulberry32 con quel seed — identico all'headless runner. Due sessioni con lo stesso seed producono la stessa sequenza di azioni.

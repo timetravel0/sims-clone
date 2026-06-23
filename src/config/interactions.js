@@ -15,10 +15,8 @@ export const DIMENSIONS = [
   'resentment', 'fear', 'familiarity', 'dependency',
 ];
 
-export const DRIFT = {
-  trust: -0.02, affection: -0.02, respect: -0.015, attraction: -0.03,
-  resentment: -0.05, fear: -0.06, familiarity: -0.005, dependency: -0.04,
-};
+import cfg from './gameConfig.js';
+export const DRIFT = cfg.drift;
 
 export const INTERACTIONS = {
   chat:        { label: 'Chat',        emoji: '💬', duration: 4, valence:  1, needsConsent: true,  cooldown: 12,

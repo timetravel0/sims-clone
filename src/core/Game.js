@@ -32,6 +32,7 @@ import { AutonomousShoppingSystem } from '../systems/AutonomousShoppingSystem.js
 import { RomanceSystem }       from '../systems/RomanceSystem.js';
 import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
 import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
+import { MemoryInspectorPanel } from '../ui/MemoryInspectorPanel.js';
 import { LifecycleNotifier }   from '../ui/LifecycleNotifier.js';
 import { AgeSystem }           from '../systems/AgeSystem.js';
 import { CareerSystem }        from '../systems/CareerSystem.js';
@@ -49,6 +50,7 @@ import { PhonePanel }          from '../ui/PhonePanel.js';
 import { SIM_DEFS, TRAIT_AXIS, STARTER_CAREERS } from '../config/defaultPopulation.js';
 import { ObjectRegistry }      from '../systems/ObjectRegistry.js';
 import { GameContext }         from './GameContext.js';
+import { initRng }            from './Rng.js';
 
 function creatorDefToSimDef(def) {
   const traits = {};
@@ -160,6 +162,7 @@ export class Game {
   _init(simDefs = SIM_DEFS) {
     if (this._initialized) return;
     this._initialized = true;
+    initRng();
     // ── Renderer ──────────────────────────────────────────────────────────
     this._renderer = new THREE.WebGLRenderer({ antialias: true });
     this._renderer.setPixelRatio(window.devicePixelRatio);
@@ -260,6 +263,7 @@ export class Game {
     this._phonePanel = new PhonePanel(this);
 
     this._lifecyclePanel    = new LifeCyclePanel(this);
+    this._memoryInspector   = new MemoryInspectorPanel();
     this._lifecycleNotifier = new LifecycleNotifier('lifecycle-toast');
     this._skillPanel    = new SkillPanel(this);
     // BuildPanel is created by UIManager — don't duplicate it here.
@@ -517,6 +521,19 @@ export class Game {
     });
     bus.on('party:started', () => partyBtn?.classList.add('active'));
     bus.on('party:ended',   () => partyBtn?.classList.remove('active'));
+
+    bus.on('sim:death', ({ simId, simName, cause }) => {
+      const sim = this.sims.find(s => s.id === simId);
+      if (!sim) return;
+      // Remove from scene and sim list
+      sim.dispose?.();
+      this.sims = this.sims.filter(s => s.id !== simId);
+      if (this.selectedSim?.id === simId) {
+        this.selectedSim = this.sims[0] ?? null;
+        if (this.selectedSim) bus.emit('sim:selected', { sim: this.selectedSim });
+      }
+      bus.emit('story:entry', { text: `${simName} è morto/a di ${cause === 'old_age' ? 'vecchiaia' : cause}.`, cat: 'life_event' });
+    });
 
     // Social Core 2.0 — experiment dashboard (opens in its own window)
     q('btn-lab')?.addEventListener('click', () => this._openLab());

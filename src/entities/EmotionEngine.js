@@ -1,4 +1,5 @@
 import { bus } from '../core/EventBus.js';
+import cfg from '../config/gameConfig.js';
 
 /**
  * EmotionEngine — two-layer emotion model for a single Sim.
@@ -48,12 +49,7 @@ export const EMOTION_TYPES = {
   GUILT         : 'guilt',
 };
 
-// Emotion → mood tier delta (+1 lifts tier, -1 drops tier)
-const EMOTION_TIER_DELTA = {
-  joy: +1, anger: -1, sadness: -1, fear: -1,
-  surprise: 0, embarrassment: -1, love: +2,
-  pride: +1, guilt: -1,
-};
+const EMOTION_TIER_DELTA = cfg.emotionTierDelta;
 
 const BASE_UPDATE_INTERVAL = 5;  // sim-seconds between baseline recalculations
 

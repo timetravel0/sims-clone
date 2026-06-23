@@ -27,6 +27,7 @@ export class VisitorSystem {
   constructor(game) {
     this._game = game;
     this._visits = new Map();
+    this._pendingInvitations = [];
     this._history = [];
     this._lastDoorbell = null;
     this._scheduleTimer = 35;
@@ -77,8 +78,23 @@ export class VisitorSystem {
     return visit;
   }
 
+  /** Schedule a pre-accepted visit that fires at a specific future tick. */
+  scheduleInvitation(toId, fromId, targetTick, reason = 'invited_call') {
+    this._pendingInvitations.push({ toId, fromId, targetTick, reason });
+    bus.emit('visitor:invitationScheduled', { toId, fromId, targetTick, reason });
+  }
+
   update(dt) {
     this._nightCurfew();
+
+    // Fire pending invitations whose target tick has arrived.
+    const now = this._game.tick;
+    this._pendingInvitations = this._pendingInvitations.filter(inv => {
+      if (now < inv.targetTick) return true;
+      const visit = this.scheduleVisit(inv.toId, inv.fromId, inv.reason, { force: true });
+      if (visit) visit.preAccepted = true;
+      return false;
+    });
 
     this._scheduleTimer -= dt;
     if (this._scheduleTimer <= 0) {
@@ -191,6 +207,13 @@ export class VisitorSystem {
     }
 
     if (visit.state === 'ringing_doorbell' && this._idle(visitor)) {
+      if (visit.preAccepted) {
+        // Pre-accepted — skip doorbell, go straight to invited_in
+        visit.state = 'invited_in';
+        visit._phaseStarted = this._game.tick;
+        this._emit('visitor:invited', visit);
+        return;
+      }
       visit.state = 'waiting_response';
       visit._phaseStarted = this._game.tick;
       visit._decisionAt = this._game.tick + 2 + Math.floor(Math.random() * 5);

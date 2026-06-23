@@ -1,27 +1,13 @@
 import { bus } from '../core/EventBus.js';
+import cfg from '../config/gameConfig.js';
 
 export const NEED_KEYS = [
   'hunger', 'energy', 'bladder', 'hygiene',
   'social', 'fun', 'comfort', 'room', 'autonomy', 'status',
 ];
 
-const BASE_DECAY = {
-  hunger:  2.0,  // was 3.0 — eat dominated 31% of AI decisions
-  energy:  2.0,  // was 2.5 — sleep dominated 20% of AI decisions
-  bladder: 4.0,
-  hygiene: 2.0,
-  social:  2.5,
-  fun:     2.2,
-  comfort: 1.8,
-  room:    0.5,
-  autonomy: 1.2,
-  status:   1.0,
-};
-
-// These rates were tuned for a 240-unit day. The day is now 1440 game-minutes
-// (1 scaled unit = 1 game-minute), so without rescaling needs drained ~6× too
-// fast per game-day. This factor restores the original per-day balance.
-const DECAY_SCALE = 240 / 1440; // = 1/6
+const BASE_DECAY  = cfg.needDecay;
+const DECAY_SCALE = cfg.decayScale;
 
 export class SimNeeds {
   constructor(personality) {

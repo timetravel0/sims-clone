@@ -1,5 +1,6 @@
 import { bus } from '../core/EventBus.js';
 import { ObjectRegistry } from './ObjectRegistry.js';
+import { skillSystem } from './SkillSystem.js';
 
 import { CAREERS } from '../config/careers.js';
 export { CAREERS };
@@ -168,16 +169,13 @@ export class CareerSystem {
       daysWorked: state.daysWorked,
       simoleons: state.simoleons,
       atWork: state.atWork,
-      skills: { ...state.skills },
+      skills: skillSystem.getSkills(this._findSim(simId)) ?? {},
     };
   }
 
   gainSkill(sim, skill, amount = SKILL_GAIN_PER_USE) {
-    const state = this._data.get(sim.id) ?? this._initSim(sim);
-    if (!(skill in state.skills)) state.skills[skill] = 0;
-    const prev = state.skills[skill];
-    const next = Math.min(MAX_SKILL, prev + amount);
-    state.skills[skill] = next;
+    skillSystem.gain(sim, skill, amount);
+    const next = skillSystem.getLevel(sim, skill);
     bus.emit('career:skillGain', { sim, skill, value: next });
     return next;
   }
@@ -191,7 +189,8 @@ export class CareerSystem {
   serialise() {
     const out = {};
     for (const [id, state] of this._data) {
-      out[id] = { ...state, skills: { ...state.skills } };
+      const { skills: _drop, ...rest } = state;  // skills live in SkillSystem
+      out[id] = rest;
     }
     return out;
   }
@@ -211,7 +210,7 @@ export class CareerSystem {
         _shiftStarted: saved._shiftStarted ?? false,
         _sickNotifiedAt: saved._sickNotifiedAt ?? null,
         _daysAtLevel: saved._daysAtLevel ?? 0,
-        skills: this._defaultSkills(saved.skills),
+        _simId: id,
       };
       this._data.set(id, state);
       if (sim) sim._atWork = state.atWork;
@@ -226,6 +225,7 @@ export class CareerSystem {
 
   _initSim(sim) {
     const state = {
+      _simId: sim.id,
       careerId: 'unemployed',
       level: 1,
       performance: 50,
@@ -235,23 +235,10 @@ export class CareerSystem {
       _shiftStarted: false,
       _sickNotifiedAt: null,
       _daysAtLevel: 0,
-      skills: this._defaultSkills(),
     };
     this._data.set(sim.id, state);
     sim._atWork = false;
     return state;
-  }
-
-  _defaultSkills(overrides = {}) {
-    return {
-      cooking: 0,
-      logic: 0,
-      creativity: 0,
-      fitness: 0,
-      charisma: 0,
-      handiness: 0,
-      ...overrides,
-    };
   }
 
   _findSim(simId) {
@@ -316,8 +303,10 @@ export class CareerSystem {
   _performanceGain(state, career) {
     const requiredSkills = Object.entries(career.skillReq ?? {});
     if (requiredSkills.length === 0) return 8;
+    const sim = this._findSim(state._simId);
     const bonus = requiredSkills.reduce((sum, [skill, min]) => {
-      return sum + Math.max(0, (state.skills[skill] ?? 0) - min) * 2;
+      const level = sim ? skillSystem.getLevel(sim, skill) : (state.skills?.[skill] ?? 0);
+      return sum + Math.max(0, level - min) * 2;
     }, 0);
     return 8 + bonus;
   }

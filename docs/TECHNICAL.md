@@ -317,17 +317,43 @@ Sub-stepping surfaced (and fixed) a latent bug that affects the browser too: `Us
 
 **Run isolation caveat.** `HeadlessRuntime` builds fresh per-run instances of most systems, but a few module singletons (`budgetSystem`, `skillSystem`, `socialManager`, `memorySystem`) persist across the run loop even though `bus.clear()` is called between runs. `budgetSystem.reset()` is now called per run in the constructor — without it, autonomous purchases drained the shared balance after ~4 runs and the rest of the batch could buy nothing, masking the auto-shopping behaviour. The remaining singletons still carry state across runs (skills/scalar-score/memories accumulate); treat cross-run skill/affinity aggregates with that in mind.
 
+## Game Config — parametri centralizzati
+
+Tutti i parametri numerici tunable sono estratti in `config/gameConfig.json` (unica fonte di verità) e importati dai moduli via `src/config/gameConfig.js`.
+
+**Sezioni del JSON:**
+
+| Sezione | Modulo che la usa | Contenuto |
+|---|---|---|
+| `needDecay` | `SimNeeds.js` | Tasso di decadimento per ogni bisogno (hunger, energy, …) |
+| `decayScale` | `SimNeeds.js` | Fattore di scala giornaliero (240/1440 = 1/6) |
+| `ai.goalBonus` | `GoalSystem.js` | Moltiplicatore del match-score goal sull'utility score |
+| `ai.topK` | `UtilityAIPlanner.js` | Candidati top-K per la selezione softmax |
+| `ai.noiseAmplitude` | `UtilityAIPlanner.js` | Ampiezza del rumore contestuale (ContextualNoise) |
+| `ai.avoidMatchScore` | `GoalSystem.js` | Penalty per interazioni positive con Sim da evitare |
+| `ai.avoidVerbBonus` | `GoalSystem.js` | Bonus per il verbo `avoid` quando goal è `avoid_sim` |
+| `socialAcceptance` | `SocialAction.js` | 12 pesi della formula `_baseAcceptance()` |
+| `socialUtility` | `UtilityAIPlanner.js` | Utility need per ogni verbo sociale (15 verbi) |
+| `emotionTierDelta` | `EmotionEngine.js` | Delta tier per ogni tipo di emozione |
+| `drift` | `interactions.js` | Drift passivo per ogni dimensione relazione |
+| `objects[id].utility` | `objectCatalog.js` | Utility need per affordance principale di ogni oggetto |
+| `objects[id].price` | `objectCatalog.js` | Prezzo di acquisto (usato da `OBJECT_COSTS`) |
+
+**Compatibilità Node/Vite:** il loader usa `import … with { type: 'json' }` (supportato da Node ≥ 22 e da Vite 5 via esbuild).
+
+**Admin panel:** `admin.html`, servito da Vite su `http://127.0.0.1:1420/admin.html`. Mostra tutti i parametri con slider + input numerico. Il bottone "Salva" fa `POST /admin/save` — endpoint registrato nel plugin Vite (`vite.config.js`) che scrive il JSON su disco. Vite's HMR rileva la modifica e ricarica il gioco automaticamente.
+
 ## Missing Work
 
-The main missing or incomplete technical work is:
-
-- true outside/neighborhood map instead of virtual outside entry points;
-- richer off-lot causality and scheduled invitations;
-- reputation and gossip propagation beyond one-off relationship drift;
-- unified skill model shared by career, mood, UI and logs;
-- full schedule-to-action integration in the active `SimBrain`;
-- dedicated weather and memory inspection UI;
-- family simulation beyond household membership and graph edge types;
-- true headless mode for fast-forward experiments;
-- deterministic seeded experiments;
-- automated tests for identity, visitor lifecycle, AI planning, collision/reservation, social graph, careers, save/load and schedule behavior.
+| Item | Status | Note |
+|---|---|---|
+| True neighborhood map | ❌ Fuori scope | Richiederebbe seconda TileMap + renderer separato |
+| True headless senza Three.js | ❌ Fuori scope | Sims usano THREE.Object3D per posizione/movimento |
+| Richer off-lot causality / scheduled invitations | ✅ Implementato | `scheduleInvitation(toId, fromId, targetTick, reason)` in VisitorSystem; pulsante "Domani" in PhonePanel; visite pre-accettate bypassano il citofono |
+| Reputation e gossip propagation | ✅ Implementato | `getReputation(simId)` in SocialDynamicsSystem; gossip discovery 30% in DramaEngine |
+| Unified skill model | ✅ Implementato | CareerSystem delega a SkillSystem; duplicazione eliminata |
+| Schedule → SimBrain integration | ✅ Implementato | `suggestFurniture()` e `suggestSocial()` in SimBrain; bonus in UtilityAIPlanner |
+| Memory inspection UI | ✅ Implementato | `MemoryInspectorPanel` — tasto `M` apre pannello memorie del Sim selezionato |
+| Family simulation | ✅ Implementato | AgeSystem emette `lifecycle:stageChanged`; blood relation bonus (+4) per comfort/hug/chat; morte elders per vecchiaia dopo 3 giorni critici → `sim:death` gestito in Game.js |
+| Deterministic seeded experiments | ✅ Implementato | `src/core/Rng.js` monkey-patcha `Math.random` da `?seed=` URL; headless usa già Mulberry32 |
+| Automated tests | ✅ Implementato | Vitest, 40 test in 5 suite (`npm test`) |

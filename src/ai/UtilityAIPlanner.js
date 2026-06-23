@@ -3,28 +3,12 @@ import { SocialAction }                  from './SocialAction.js';
 import { socialManager }                 from '../systems/SocialManager.js';
 import { INTERACTIONS }                  from '../systems/SocialDynamicsSystem.js';
 import { GameContext }                   from '../core/GameContext.js';
+import cfg                               from '../config/gameConfig.js';
 
-const VIEW_RADIUS = 8;
-const TOP_K       = 5;
+const VIEW_RADIUS       = 8;
+const TOP_K             = cfg.ai.topK;
 const SOCIAL_ENERGY_MIN = 12;
-
-const SOCIAL_UTILITY = {
-  chat:        { social: 24, energy: -5 },
-  joke:        { social: 20, fun: 10, energy: -4 },
-  compliment:  { social: 18, status: 8, energy: -4 },
-  hug:         { social: 30, comfort: 10, energy: -4 },
-  argue:       { status: 8, social: -8, autonomy: 5, energy: -6 },
-  insult:      { status: 16, social: -8, autonomy: 5, energy: -6 },
-  apologize:   { social: 14, status: -4, energy: -4 },
-  forgive:     { social: 16, comfort: 6, energy: -4 },
-  confront:    { status: 10, autonomy: 8, social: -4, energy: -6 },
-  avoid:       { autonomy: 10, social: -4, energy: -2 },
-  ask_help:    { social: 12, energy: -3 },
-  offer_help:  { social: 16, status: 8, energy: -5 },
-  comfort:     { social: 16, comfort: 8, energy: -5 },
-  gossip:      { social: 18, fun: 8, energy: -4 },
-  flirt:       { social: 18, fun: 10, energy: -4 },
-};
+const SOCIAL_UTILITY    = cfg.socialUtility;
 const POSITIVE_SOCIAL = new Set(['chat', 'joke', 'compliment', 'hug', 'apologize', 'forgive', 'comfort', 'offer_help', 'ask_help', 'gossip', 'flirt']);
 const NEGATIVE_SOCIAL = new Set(['argue', 'insult', 'confront', 'avoid']);
 
@@ -205,8 +189,23 @@ export class UtilityAIPlanner {
       score += this._brain.goalSystem.boost(affordance);
     }
 
+    // Family bonus: comfort/hug/chat actions toward blood relatives score higher
+    const pop = GameContext.get()?.population;
+    if (pop && affordance.targetType === 'sim' && affordance.target?.id) {
+      const FAMILY_VERBS = new Set(['comfort', 'hug', 'chat']);
+      if (FAMILY_VERBS.has(affordance.verb) && pop.isFamily(this._sim.id, affordance.target.id)) {
+        score += 4;
+      }
+    }
+
+    const sched = this._brain?._scheduleSuggestion;
+    if (sched) {
+      if (sched.type === 'furniture' && affordance.target?.id === sched.id) score += sched.bonus;
+      if (sched.type === 'social'    && affordance.targetType === 'sim')    score += sched.bonus;
+    }
+
     if (this._brain?.ctxNoise) {
-      score += this._brain.ctxNoise.sample(affordance, 4.0);
+      score += this._brain.ctxNoise.sample(affordance, cfg.ai.noiseAmplitude);
     } else {
       score += Math.random() * 2.5;
     }

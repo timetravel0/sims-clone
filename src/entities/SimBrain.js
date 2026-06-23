@@ -63,6 +63,16 @@ export class SimBrain {
     this._utilityPlanner.setBrain(this);
   }
 
+  // ── Schedule suggestions (called by ScheduleSystem) ─────────────────────
+
+  suggestFurniture(furnitureId, priority) {
+    this._scheduleSuggestion = { type: 'furniture', id: furnitureId, bonus: priority * 5 };
+  }
+
+  suggestSocial(priority) {
+    this._scheduleSuggestion = { type: 'social', bonus: priority * 4 };
+  }
+
   // ── Player override ──────────────────────────────────────────────────────
 
   override(actions) {

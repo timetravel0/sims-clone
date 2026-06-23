@@ -1,5 +1,6 @@
 import { bus }         from '../core/EventBus.js';
 import { GameContext } from '../core/GameContext.js';
+import cfg            from '../config/gameConfig.js';
 
 /**
  * GoalSystem — obiettivi a medio termine auto-generati per Sim.
@@ -11,7 +12,7 @@ import { GameContext } from '../core/GameContext.js';
  *    invece di Math.random(); non rigenera lo stesso goal se fallito di recente
  */
 
-const GOAL_BONUS  = 8;
+const GOAL_BONUS  = cfg.ai.goalBonus;
 const MAX_GOALS   = 3;
 const REGEN_COOL  = 120;
 
@@ -270,8 +271,8 @@ export class GoalSystem {
         return (affordance.verb === 'sleep' || affordance.verb === 'sit' || affordance.verb === 'relax') ? 0.7 : 0;
       case 'avoid_sim':
         if (affordance.targetType === 'sim' && affordance.target?.id === goal.targetId) {
-          if (affordance.verb === 'avoid') return 1.5;  // encourage actual avoidance
-          return -3.0;  // strongly penalise positive contact with target
+          if (affordance.verb === 'avoid') return cfg.ai.avoidVerbBonus;
+          return cfg.ai.avoidMatchScore;
         }
         return 0;
       default:

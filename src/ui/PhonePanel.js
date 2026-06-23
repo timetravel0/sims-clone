@@ -62,7 +62,8 @@ export class PhonePanel {
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button class="ph-btn" data-action="chat"   data-pid="${p.id}" data-pname="${p.name}">💬 Chatta</button>
-              <button class="ph-btn" data-action="invite" data-pid="${p.id}" data-pname="${p.name}">🏠 Invita</button>
+              <button class="ph-btn" data-action="invite"   data-pid="${p.id}" data-pname="${p.name}">🏠 Invita ora</button>
+              <button class="ph-btn" data-action="invite_tomorrow" data-pid="${p.id}" data-pname="${p.name}">📅 Domani</button>
               <button class="ph-btn" data-action="trip"   data-pid="${p.id}" data-pname="${p.name}" ${isHome?'':'style="opacity:.45"'}>🚗 Gita</button>
               <button class="ph-btn" data-action="meal"   data-pid="${p.id}" data-pname="${p.name}" ${isHome?'':'style="opacity:.45"'}>🍽️ Cena fuori</button>
             </div>
@@ -99,6 +100,12 @@ export class PhonePanel {
         } else {
           bus.emit('story:entry', { text: `${targetName} non è disponibile a venire.`, cat: 'neutral' });
         }
+        break;
+      }
+      case 'invite_tomorrow': {
+        const targetTick = (game.tick ?? 0) + 1440; // ~1 game-day
+        game.visitorSystem?.scheduleInvitation?.(targetId, callerSim.id, targetTick, 'invited_call');
+        bus.emit('story:entry', { text: `${callerSim.name} ha invitato ${targetName} per domani.`, cat: 'social' });
         break;
       }
       case 'trip':

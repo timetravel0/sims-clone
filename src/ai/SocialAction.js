@@ -5,6 +5,7 @@ import { INTERACTIONS }        from '../systems/SocialDynamicsSystem.js';
 import { Logger }              from '../utils/Logger.js';
 import { bus }                 from '../core/EventBus.js';
 import { GameContext }         from '../core/GameContext.js';
+import cfg                     from '../config/gameConfig.js';
 
 let _eventCounter = 0;
 
@@ -182,19 +183,18 @@ export class SocialAction extends Action {
     const dynRel = GameContext.socialDynamics?.snapshot?.(this._simB.id, this._simA.id) ?? {};
     const p = this._simB.personality;
     const energy = this._simB.needs.get('energy');
-    // ponytail: centered at energy=40; personality deltas around 0.5 neutral so
-    // strangers face a net-negative score and need familiarity/energy to accept.
+    const sa = cfg.socialAcceptance;
     let score = 0;
-    score += (energy - 40) * 0.4;
-    score += rel.familiarity * 0.2;
-    score += (p.nice    - 0.5) * 16;
-    score += (p.outgoing - 0.5) * 10;
-    score -= Math.max(0, p.neurotic) * 8;
-    if (energy < 25) score -= 8;
-    if ((dynRel.familiarity ?? rel.familiarity ?? 0) < 15 && ['chat', 'joke', 'compliment', 'hug'].includes(this._type)) score -= 12;
-    if (this._type === 'flirt') score -= (dynRel.attraction ?? 0) < 15 ? 24 : 8;
-    if (this._type === 'ask_help' && (dynRel.trust ?? 0) < 10) score -= 8;
-    if ((dynRel.resentment ?? 0) > 20 && !['apologize', 'forgive', 'confront', 'avoid'].includes(this._type)) score -= 12;
+    score += (energy - sa.energyCenter) * sa.energyWeight;
+    score += rel.familiarity * sa.familiarityWeight;
+    score += (p.nice     - 0.5) * sa.niceWeight;
+    score += (p.outgoing - 0.5) * sa.outgoingWeight;
+    score -= Math.max(0, p.neurotic) * sa.neuroticPenalty;
+    if (energy < sa.lowEnergyThreshold) score -= sa.lowEnergyPenalty;
+    if ((dynRel.familiarity ?? rel.familiarity ?? 0) < sa.strangerFamiliarityThreshold && ['chat', 'joke', 'compliment', 'hug'].includes(this._type)) score -= sa.strangerPenalty;
+    if (this._type === 'flirt') score -= (dynRel.attraction ?? 0) < sa.flirtLowAttractionThreshold ? sa.flirtLowAttractionPenalty : sa.flirtHighAttractionPenalty;
+    if (this._type === 'ask_help' && (dynRel.trust ?? 0) < 10) score -= sa.lowTrustAskHelpPenalty;
+    if ((dynRel.resentment ?? 0) > sa.highResentmentThreshold && !['apologize', 'forgive', 'confront', 'avoid'].includes(this._type)) score -= sa.highResentmentPenalty;
     return score;
   }
 

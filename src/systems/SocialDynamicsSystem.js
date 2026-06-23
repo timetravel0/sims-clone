@@ -77,6 +77,20 @@ export class SocialDynamicsSystem {
       - (d.resentment + d.fear * 0.6);
   }
 
+  /**
+   * Reputation: average of how others perceive this Sim.
+   * Returns value in [-100, 100]. Uses existing relationship data — no extra storage.
+   */
+  getReputation(simId) {
+    let sum = 0, count = 0;
+    for (const [key, d] of this._rel) {
+      if (!key.endsWith(`->${simId}`)) continue;
+      sum += d.respect * 0.4 + d.affection * 0.3 - d.resentment * 0.3;
+      count++;
+    }
+    return count ? sum / count : 0;
+  }
+
   // ── Interaction effects ─────────────────────────────────────────────────────
 
   /** Apply a catalogue interaction's deltas to both directions. */

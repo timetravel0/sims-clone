@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Game Config Admin</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #e0e0e0; font: 13px/1.5 'Segoe UI', system-ui, sans-serif; padding: 0; }
+
+  header { background: #0f3460; padding: 16px 24px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid #16213e; }
+  header h1 { font-size: 18px; font-weight: 600; color: #e94560; }
+  header .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  #status { font-size: 12px; color: #aaa; min-width: 160px; text-align: right; }
+  #status.ok  { color: #4caf50; }
+  #status.err { color: #e94560; }
+
+  button { background: #e94560; color: #fff; border: none; border-radius: 4px; padding: 7px 18px; font-size: 13px; cursor: pointer; font-weight: 600; }
+  button:hover { background: #c73652; }
+  button.secondary { background: #16213e; border: 1px solid #0f3460; }
+  button.secondary:hover { background: #0f3460; }
+
+  main { display: flex; gap: 0; }
+
+  nav { width: 200px; min-width: 200px; background: #16213e; height: calc(100vh - 57px); position: sticky; top: 57px; overflow-y: auto; padding: 12px 0; }
+  nav a { display: block; padding: 8px 20px; color: #aaa; text-decoration: none; font-size: 12px; border-left: 3px solid transparent; transition: all 0.15s; }
+  nav a:hover, nav a.active { color: #e0e0e0; background: #0f3460; border-left-color: #e94560; }
+
+  .content { flex: 1; padding: 24px; max-width: 900px; }
+
+  section { margin-bottom: 40px; }
+  section h2 { font-size: 15px; font-weight: 600; color: #e94560; border-bottom: 1px solid #0f3460; padding-bottom: 8px; margin-bottom: 16px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+
+  .field { background: #16213e; border-radius: 6px; padding: 10px 12px; }
+  .field label { display: block; font-size: 11px; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .field .row { display: flex; align-items: center; gap: 8px; }
+  .field input[type=range] { flex: 1; accent-color: #e94560; }
+  .field input[type=number] { width: 72px; background: #0f3460; border: 1px solid #1a4a7a; border-radius: 4px; color: #e0e0e0; padding: 4px 6px; font-size: 12px; }
+  .field input[type=number]:focus { outline: none; border-color: #e94560; }
+
+  .obj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .obj-card { background: #16213e; border-radius: 6px; padding: 12px; }
+  .obj-card h3 { font-size: 12px; font-weight: 600; color: #c8a, margin-bottom: 8px; text-transform: capitalize; border-bottom: 1px solid #0f3460; padding-bottom: 6px; margin-bottom: 8px; }
+  .obj-card h3 { color: #e0a050; }
+  .utility-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0; }
+  .utility-row label { font-size: 11px; color: #888; min-width: 80px; }
+  .utility-row input { width: 64px; background: #0f3460; border: 1px solid #1a4a7a; border-radius: 4px; color: #e0e0e0; padding: 3px 6px; font-size: 12px; }
+  .utility-row input:focus { outline: none; border-color: #e94560; }
+  .positive { color: #4caf50; }
+  .negative { color: #e94560; }
+
+  .search-bar { margin-bottom: 16px; }
+  .search-bar input { width: 100%; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; color: #e0e0e0; padding: 8px 12px; font-size: 13px; }
+  .search-bar input:focus { outline: none; border-color: #e94560; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚙ Game Config</h1>
+  <div class="actions">
+    <span id="status">Caricamento...</span>
+    <button class="secondary" onclick="resetToFile()">Annulla</button>
+    <button onclick="save()">Salva</button>
+  </div>
+</header>
+<main>
+  <nav id="nav"></nav>
+  <div class="content" id="content"></div>
+</main>
+
+<script>
+let cfg = null;
+const LABELS = {
+  needDecay:        'Decadimento Bisogni',
+  decayScale:       'Scala Decadimento',
+  ai:               'AI Planner',
+  socialAcceptance: 'Accettazione Sociale',
+  socialUtility:    'Utilità Azioni Sociali',
+  emotionTierDelta: 'Delta Tier Emozione',
+  drift:            'Drift Relazioni',
+  objects:          'Oggetti',
+};
+
+const RANGES = {
+  needDecay:        { min: 0, max: 10, step: 0.1 },
+  decayScale:       { min: 0.01, max: 1, step: 0.001 },
+  ai:               { min: -10, max: 20, step: 0.1 },
+  socialAcceptance: { min: -30, max: 30, step: 0.5 },
+  socialUtility:    { min: -20, max: 60, step: 1 },
+  emotionTierDelta: { min: -3, max: 3, step: 1 },
+  drift:            { min: -0.2, max: 0.2, step: 0.001 },
+  objects:          { min: -10, max: 100, step: 1 },
+};
+
+async function load() {
+  const r = await fetch('/config/gameConfig.json?t=' + Date.now());
+  cfg = await r.json();
+  render();
+  setStatus('');
+}
+
+function setStatus(msg, type = '') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = type;
+}
+
+function getValue(path) {
+  return path.reduce((o, k) => o?.[k], cfg);
+}
+
+function setValue(path, val) {
+  let o = cfg;
+  for (let i = 0; i < path.length - 1; i++) o = o[path[i]];
+  o[path[path.length - 1]] = val;
+}
+
+function numInput(path, range) {
+  const v = getValue(path);
+  const wrap = document.createElement('div');
+  wrap.className = 'row';
+
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.min = range.min; slider.max = range.max; slider.step = range.step;
+  slider.value = v;
+
+  const num = document.createElement('input');
+  num.type = 'number';
+  num.value = v; num.step = range.step; num.min = range.min; num.max = range.max;
+
+  const sync = (src, dst) => {
+    dst.value = src.value;
+    setValue(path, parseFloat(src.value));
+    setStatus('Modificato — salva per applicare', '');
+  };
+
+  slider.oninput = () => sync(slider, num);
+  num.oninput    = () => sync(num, slider);
+
+  wrap.append(slider, num);
+  return wrap;
+}
+
+function makeField(label, path, range) {
+  const d = document.createElement('div');
+  d.className = 'field';
+  const lbl = document.createElement('label');
+  lbl.textContent = label;
+  d.append(lbl, numInput(path, range));
+  return d;
+}
+
+function renderSimple(section, key, data, range) {
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  for (const [k, v] of Object.entries(data)) {
+    if (typeof v !== 'number') continue;
+    grid.appendChild(makeField(k, [key, k], range));
+  }
+  section.appendChild(grid);
+}
+
+function renderSocialUtility(section, data, key) {
+  const range = RANGES.socialUtility;
+  const grid = document.createElement('div');
+  grid.className = 'obj-grid';
+  for (const [verb, utils] of Object.entries(data)) {
+    const card = document.createElement('div');
+    card.className = 'obj-card';
+    card.innerHTML = `<h3>${verb}</h3>`;
+    for (const [need, val] of Object.entries(utils)) {
+      const row = document.createElement('div');
+      row.className = 'utility-row';
+      const lbl = document.createElement('label');
+      lbl.textContent = need;
+      lbl.className = val >= 0 ? 'positive' : 'negative';
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.value = val; inp.step = 1; inp.min = -20; inp.max = 60;
+      inp.oninput = () => { setValue([key, verb, need], parseFloat(inp.value)); setStatus('Modificato — salva per applicare', ''); };
+      row.append(lbl, inp);
+      card.appendChild(row);
+    }
+    grid.appendChild(card);
+  }
+  section.appendChild(grid);
+}
+
+function renderObjects(section, data) {
+  const range = RANGES.objects;
+  const grid = document.createElement('div');
+  grid.className = 'obj-grid';
+  for (const [id, obj] of Object.entries(data)) {
+    const card = document.createElement('div');
+    card.className = 'obj-card';
+    card.innerHTML = `<h3>${id}</h3>`;
+
+    // price
+    const priceRow = document.createElement('div');
+    priceRow.className = 'utility-row';
+    const priceLabel = document.createElement('label');
+    priceLabel.textContent = '§ Prezzo';
+    const priceInp = document.createElement('input');
+    priceInp.type = 'number'; priceInp.value = obj.price ?? 0; priceInp.step = 50; priceInp.min = 0; priceInp.max = 99999;
+    priceInp.oninput = () => { setValue(['objects', id, 'price'], parseFloat(priceInp.value)); setStatus('Modificato — salva per applicare', ''); };
+    priceRow.append(priceLabel, priceInp);
+    card.appendChild(priceRow);
+
+    // utility values
+    if (obj.utility) {
+      for (const [need, val] of Object.entries(obj.utility)) {
+        const row = document.createElement('div');
+        row.className = 'utility-row';
+        const lbl = document.createElement('label');
+        lbl.textContent = need;
+        lbl.className = val >= 0 ? 'positive' : 'negative';
+        const inp = document.createElement('input');
+        inp.type = 'number'; inp.value = val; inp.step = 1; inp.min = range.min; inp.max = range.max;
+        inp.oninput = () => { setValue(['objects', id, 'utility', need], parseFloat(inp.value)); setStatus('Modificato — salva per applicare', ''); };
+        row.append(lbl, inp);
+        card.appendChild(row);
+      }
+    }
+    grid.appendChild(card);
+  }
+  section.appendChild(grid);
+}
+
+function render() {
+  const content = document.getElementById('content');
+  const nav     = document.getElementById('nav');
+  content.innerHTML = '';
+  nav.innerHTML = '';
+
+  for (const [key, val] of Object.entries(cfg)) {
+    const label = LABELS[key] || key;
+    const id = 'sec-' + key;
+
+    const sec = document.createElement('section');
+    sec.id = id;
+    const h2 = document.createElement('h2');
+    h2.textContent = label;
+    sec.appendChild(h2);
+
+    const range = RANGES[key] || { min: -100, max: 100, step: 0.01 };
+
+    if (key === 'objects') {
+      renderObjects(sec, val);
+    } else if (key === 'socialUtility') {
+      renderSocialUtility(sec, val, key);
+    } else if (typeof val === 'object' && val !== null) {
+      renderSimple(sec, key, val, range);
+    } else if (typeof val === 'number') {
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      grid.appendChild(makeField(key, [key], range));
+      sec.appendChild(grid);
+    }
+
+    content.appendChild(sec);
+
+    const a = document.createElement('a');
+    a.href = '#' + id;
+    a.textContent = label;
+    nav.appendChild(a);
+  }
+}
+
+async function save() {
+  setStatus('Salvataggio...', '');
+  try {
+    const r = await fetch('/admin/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg, null, 2),
+    });
+    const j = await r.json();
+    if (j.ok) setStatus('Salvato ✓ — ricarica il gioco', 'ok');
+    else setStatus('Errore: ' + j.error, 'err');
+  } catch(e) {
+    setStatus('Errore: ' + e.message, 'err');
+  }
+}
+
+function resetToFile() { load(); }
+
+load();
+</script>
+</body>
+</html>

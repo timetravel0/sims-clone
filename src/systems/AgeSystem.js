@@ -74,17 +74,26 @@ export class AgeSystem {
         d.stage = newStage;
         sim._needMult = STAGE_NEED_MULT[newStage] ?? 1.0;
 
-        bus.emit('lifecycle:stageChanged', {
-          sim,
-          oldStage,
-          newStage,
-          age: newDays,
-        });
-
+        bus.emit('lifecycle:stageChanged', { sim, oldStage, newStage, age: newDays });
         bus.emit('story:entry', {
-          text: `${sim.name} became a ${newStage} on day ${newDays}.`,
+          text: `${sim.name} è diventato/a ${newStage} al giorno ${newDays}.`,
           category: 'positive',
         });
+      }
+
+      // Elder death: energy or hunger below 5 for 3+ consecutive days
+      if (d.stage === 'elder') {
+        const energy = sim.needs?.get?.('energy') ?? 100;
+        const hunger = sim.needs?.get?.('hunger') ?? 100;
+        if (energy < 5 || hunger < 5) {
+          d._criticalDays = (d._criticalDays ?? 0) + 1;
+        } else {
+          d._criticalDays = 0;
+        }
+        if (d._criticalDays >= 3) {
+          bus.emit('sim:death', { simId: sim.id, simName: sim.name, cause: 'old_age' });
+          d._criticalDays = 0;
+        }
       }
     }
   }
