@@ -26,9 +26,21 @@ export class NarrativePlanner {
     return this._stateMap.get(simId);
   }
 
+  _isHH(simId) {
+    return window._game?.population?.isHouseholdMember?.(simId) ?? false;
+  }
+
+  _nameFor(simId, fallback) {
+    const valid = n => n && n !== 'undefined';
+    if (valid(fallback)) return fallback;
+    const found = this._sims.find(s => s.id === simId)?.name;
+    return valid(found) ? found : null;
+  }
+
   _registerListeners() {
-    // Social beats
+    // Social beats — both parties must be household
     bus.on('social:interaction', ({ nameA, nameB, type, score, delta, idA, idB }) => {
+      if (!this._isHH(idA) || !this._isHH(idB)) return;
       if (type === 'hug' && score > 60) {
         this._announceIfNew(`${idA}:${idB}`, `${nameA} and ${nameB} are now Best Friends 💚`, 'positive');
       } else if (type === 'insult' && score < -30) {
@@ -40,34 +52,41 @@ export class NarrativePlanner {
       }
     });
 
-    // Emotion beats
-    bus.on('emotion:triggered', ({ simName, type, intensity }) => {
-      if (intensity < 0.6) return; // only strong emotions reach the log
+    // Emotion beats — household only
+    bus.on('emotion:triggered', ({ simId, simName, type, intensity }) => {
+      if (!this._isHH(simId)) return;
+      if (intensity < 0.6) return;
+      const name = this._nameFor(simId, simName);
+      if (!name) return;
       const phrases = {
-        jealousy:   `${simName} feels a sting of jealousy`,
-        grief:      `${simName} is overcome with sadness`,
-        pride:      `${simName} feels a surge of pride`,
-        excitement: `${simName} can barely contain their excitement`,
-        anger:      `${simName} is furious`,
-        loneliness: `${simName} feels utterly alone`,
-        joy:        `${simName} bursts with joy`,
-        hope:       `${simName} feels a spark of hope`,
+        jealousy:   `${name} feels a sting of jealousy`,
+        grief:      `${name} is overcome with sadness`,
+        pride:      `${name} feels a surge of pride`,
+        excitement: `${name} can barely contain their excitement`,
+        anger:      `${name} is furious`,
+        loneliness: `${name} feels utterly alone`,
+        joy:        `${name} bursts with joy`,
+        hope:       `${name} feels a spark of hope`,
       };
       if (phrases[type]) bus.emit('story:entry', { text: phrases[type], cat: this._catForEmotion(type) });
     });
 
-    // Mood tier change
-    bus.on('sim:moodChanged', ({ name, from, to }) => {
-      if (to === 'ecstatic') bus.emit('story:entry', { text: `${name} is absolutely ecstatic! 🌟`, cat: 'positive' });
-      if (to === 'miserable') bus.emit('story:entry', { text: `${name} hits rock bottom 😫`, cat: 'drama' });
+    // Mood tier change — household only; resolve name from simId if missing
+    bus.on('sim:moodChanged', ({ simId, name, from, to }) => {
+      if (!this._isHH(simId)) return;
+      const n = this._nameFor(simId, name);
+      if (!n) return;
+      if (to === 'ecstatic') bus.emit('story:entry', { text: `${n} is absolutely ecstatic! 🌟`, cat: 'positive' });
+      if (to === 'miserable') bus.emit('story:entry', { text: `${n} hits rock bottom 😫`, cat: 'drama' });
       if (from === 'miserable' && (to === 'happy' || to === 'neutral')) {
-        bus.emit('story:entry', { text: `${name} makes a comeback 💪`, cat: 'positive' });
+        bus.emit('story:entry', { text: `${n} makes a comeback 💪`, cat: 'positive' });
       }
     });
 
-    // Memory recorded (only very intense ones)
+    // Memory recorded — household only
     bus.on('memory:recorded', ({ memory }) => {
       if (memory.intensity < 0.75) return;
+      if (!this._isHH(memory.simId)) return;
       if (memory.type === 'need_crisis') {
         const sim = this._sims.find(s => s.id === memory.simId);
         if (sim) bus.emit('story:entry', {
@@ -77,7 +96,8 @@ export class NarrativePlanner {
       }
     });
 
-    bus.on('life:event', ({ simName, type, valence }) => {
+    bus.on('life:event', ({ simId, simName, type, valence }) => {
+      if (!this._isHH(simId)) return;
       const labels = {
         promoted: 'promotion',
         fired: 'firing',
@@ -85,8 +105,10 @@ export class NarrativePlanner {
         windfall: 'windfall',
       };
       if (!labels[type]) return;
+      const name = this._nameFor(simId, simName);
+      if (!name) return;
       bus.emit('story:entry', {
-        text: `${simName}'s ${labels[type]} ripples through the household`,
+        text: `${name}'s ${labels[type]} ripples through the household`,
         cat: valence >= 0 ? 'positive' : 'gossip',
       });
     });
@@ -112,12 +134,13 @@ export class NarrativePlanner {
       const social = sim.needs.get('social');
       if (social < 20) {
         st.loneTimer += dt;
-        if (st.loneTimer > 60) { // isolated for 60+ sim-seconds
-          bus.emit('story:entry', { text: `${sim.name} has been alone for too long…`, cat: 'mood' });
-          st.loneTimer = 0;
+        if (st.loneTimer > 300 && !st.loneNotified) {
+          if (this._isHH(sim.id)) bus.emit('story:entry', { text: `${sim.name} has been alone for too long…`, cat: 'mood' });
+          st.loneNotified = true;
         }
       } else {
         st.loneTimer = 0;
+        st.loneNotified = false;
       }
     }
   }

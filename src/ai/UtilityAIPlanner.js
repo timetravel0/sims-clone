@@ -1,4 +1,5 @@
 import { WalkToAction, UseObjectAction } from './Action.js';
+import { CookMealAction }                from './CookMealAction.js';
 import { SocialAction }                  from './SocialAction.js';
 import { socialManager }                 from '../systems/SocialManager.js';
 import { INTERACTIONS }                  from '../systems/SocialDynamicsSystem.js';
@@ -107,7 +108,8 @@ export class UtilityAIPlanner {
     return [
       { targetType: 'sim', target, verb: 'chat',       label: `Chat with ${target.name}`,  utility: { social: 24, status: 4, energy: -5 }, duration: 4, requirements: { familiarityMin: 10 } },
       { targetType: 'sim', target, verb: 'compliment', label: `Compliment ${target.name}`, utility: { social: 18, status: 8, energy: -4 }, duration: 4, requirements: { affinityMin: -10 } },
-      { targetType: 'sim', target, verb: 'insult',     label: `Insult ${target.name}`,     utility: { status: 16, social: -8, autonomy: 5, energy: -6 }, duration: 3, requirements: { affinityMax: -20 } },
+      { targetType: 'sim', target, verb: 'argue',      label: `Argue with ${target.name}`,  utility: { social: -5, autonomy: 8, energy: -6 }, duration: 4, requirements: { neuroticMin: 0.3, socialMax: 50 } },
+      { targetType: 'sim', target, verb: 'insult',     label: `Insult ${target.name}`,     utility: { status: 16, social: -8, autonomy: 5, energy: -6 }, duration: 3, requirements: { affinityMax: -10 } },
       { targetType: 'sim', target, verb: 'hug',        label: `Hug ${target.name}`,        utility: { social: 30, comfort: 10, energy: -4 }, duration: 4, requirements: { affinityMin: 40 } },
     ].map(a => ({ ...a, relation: rel }));
   }
@@ -126,6 +128,8 @@ export class UtilityAIPlanner {
   _passesRequirements(affordance) {
     const req = affordance.requirements || {};
     if (this._sim.needs.get('energy') <= (req.energyMin ?? 5)) return false;
+    if (req.neuroticMin !== undefined && (this._sim.personality?.neurotic ?? 0) < req.neuroticMin) return false;
+    if (req.socialMax   !== undefined && this._sim.needs.get('social')           > req.socialMax)  return false;
     const rel = affordance.relation;
     if (rel) {
       if (req.familiarityMin !== undefined && rel.familiarity < req.familiarityMin) return false;
@@ -169,6 +173,17 @@ export class UtilityAIPlanner {
         if (verb === 'apologize') score += ba.resentment * 0.18;
         if (verb === 'forgive')   score += ab.resentment * 0.16;
         if (verb === 'confront')  score += ab.resentment * 0.12;
+        // Neurotic sims have a base tendency to argue, amplified by frustration
+        if (verb === 'argue') {
+          const neurotic = this._sim.personality?.neurotic ?? 0;
+          if (neurotic > 0.3) {
+            const social = this._sim.needs?.get?.('social') ?? 100;
+            const fun    = this._sim.needs?.get?.('fun')    ?? 100;
+            score += neurotic * 10;                                 // base tendency
+            score += Math.max(0, (70 - social)) * 0.3;             // frustration amplifier
+            score += Math.max(0, (50 - fun))    * 0.2;
+          }
+        }
         if (verb === 'comfort')   score += ab.affection  * 0.08;
         if (verb === 'avoid')     score += (ab.resentment + ab.fear) * 0.10;
         score -= ab.fear * 0.04;
@@ -210,10 +225,14 @@ export class UtilityAIPlanner {
       score += Math.random() * 2.5;
     }
 
-    // Orario notturno: usa GameContext.hour invece di window._game
+    // Recency penalty: discourage repeating the exact same verb back-to-back
+    if (affordance.verb && this._brain?._lastVerb === affordance.verb) score -= 4;
+
+    // Night-time sleep bonus — gated by energy level to prevent over-sleeping
     const hour = GameContext.hour;
     if (hour >= 22 || hour < 7) {
-      if (affordance.verb === 'sleep') score += 80;
+      const energy = this._sim.needs?.get?.('energy') ?? 100;
+      if (affordance.verb === 'sleep') score += energy < 60 ? 80 : 10;
       else if ((affordance.utility?.energy ?? 0) < 0) score -= 30;
     }
 
@@ -227,6 +246,10 @@ export class UtilityAIPlanner {
     }
     const furniture = affordance.target;
     if (!this._sim._world.reserveFurniture(furniture, this._sim)) return [];
+    // WP3: any hunger-restoring furniture intent routes through the food lifecycle.
+    if ((affordance.utility?.hunger ?? 0) > 0) {
+      return [new CookMealAction(this._sim, this._sim._world, furniture)];
+    }
     const targetGz = furniture.gz + 1 < this._sim._world.tilemap.height
       ? furniture.gz + 1 : furniture.gz - 1;
     return [

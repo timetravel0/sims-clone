@@ -26,16 +26,25 @@ The project is a browser-based Three.js application using vanilla ES modules. Th
 | Relationship graph | Implemented | Directed typed edges for friendship, rivalry, romance and kinship/family are active. |
 | Romance/jealousy | Implemented | Positive interactions and compatibility can create romance; committed cohabiting partners trigger jealousy and penalise monogamy breaches. Committed Sims don't pursue flirts (UtilityAIPlanner penalty) and reject outside flirts ~92% of the time (`SocialAction`), the rare acceptance feeding jealousy. |
 | Health/illness | Implemented | `HealthSystem` cycles healthy→ill→recovering→healthy and applies off-lot incident injuries via `reportIncident`. Starvation path added: hunger < 10 for ≥ 5 health cycles → starvation illness (severity 0.75); ≥ 25 cycles → `_killSim()` (permanent death). |
+| Household planner (WP9) | Implemented | `HouseholdPlanner` (capstone) runs daily: `observe()` → `rank()` interventions by urgency × affordability × personality → `plan()` executes the top one and logs `household:plan {intervention, reason, urgency, day}` + story. Coordinates existing systems: treat_illness→`DoctorService.book`, build_room→`construction.build`, buy_object→`shopping._considerPurchase`, rearrange→`layoutPlanner.autoRearrange`. `construction.build()` self-guards (cap/cooldown/funds) against double-fire. Console: `game.householdPlanner.observe()/.rank()`. Headless summary adds `householdPlans`/`planByType`. Deferred: full routing of all reactive systems through the planner, upgrade/repair interventions, explicit outcome measurement. |
+| Food↔health↔doctor (WP8) | Implemented | Food poisoning arises from real meals: `CookMealAction` emits `food:poisoning` with `poisoningChance(tier, cookSkill)` (worse quality ↑, skill ↓; skill-10 = safe), amplified by a dirty kitchen. `QUALITY_SCORE` feeds `updateNutrition()` (rolling `sim._nutrition`) and a small energy restore; `HealthSystem._illnessChance` adds nutrition + kitchen-hygiene terms (malnourished / dirty kitchen → more illness). `pickTreatment` routes food poisoning → urgent care (fast resolve). Headless summary adds `avgFoodQuality`/`foodPoisonings`. |
+| Kitchen hygiene (WP3/WP8) | Implemented | `World.kitchenHygiene` (0..100) + `dirtyDishes`: `soilKitchen()` on each cooked meal, `washDishes()` (requires a `sink`) restores. Drives food-poisoning multiplier and illness chance. `HouseholdPlanner` `clean_kitchen` intervention washes up when hygiene < 70. State save/loads; headless summary `kitchenHygiene`. |
+| Medical treatment (WP7) | Implemented | `DoctorService` makes illness actionable: manual `book()` (UI 🩺 button in `LifeCyclePanel`) and autonomous booking when a household Sim is ill at severity ≥ 0.45 and can afford it (listens to `health:stateChanged`). Booking → arrival delay → fee debited → `HealthSystem.treat()` resolves/reduces. `config/treatments.js` (consultation/medicine/urgent care/home visit) + `pickTreatment`. Emits `health:treatmentBooked`/`health:treated`; summary adds `treatments`/`treatmentSpend`. Deferred: off-lot clinic travel, treatment quality. |
 | Death | Implemented (starvation only) | `HealthSystem._killSim()`: sets `person.dead`, hides mesh, removes from `game.sims`, calls `population.deactivatePerson()`, emits `sim:died` + `story:entry`. |
-| Food economy | Implemented | `UseObjectAction.enter()` debits `MEAL_COST = §15` for any hunger-restoring object. If budget insufficient, action aborts — Sim cannot eat. |
+| Food economy | Implemented | `CookMealAction.enter()` debits `MEAL_COST = §15` per meal. If budget insufficient, the action aborts (`food:eatAborted`) — Sim cannot eat. |
+| Food lifecycle (WP3) | Implemented | `CookMealAction` (`src/ai/CookMealAction.js`) replaces the fridge's direct hunger fix with a composite phase machine: fridge → counter (prep) → stove (cook) → table → eat. Legs are optional; a failed walk skips the station and hunger is still restored, so it never causes starvation. Fridge affordance is now `cook` (not `eat`); both planners redirect hunger-restoring intents to `CookMealAction` (`NeedDrivenPlanner.planFor` for hunger; `UtilityAIPlanner._actionsFor` when `utility.hunger>0`). Quality (poor/normal/good/excellent) from cooking skill + appliances (raw=poor); scales hunger restore, table adds comfort/social/status, standing costs comfort; poor meals carry 12% food-poisoning risk. Group meals feed present hungry household members from `recipe.servings`. New objects `stove`/`counter`; `config/recipes.js` gates 6 recipes by cooking skill. Emits `food:cooked`/`food:eaten`; headless summary adds `mealsCooked`/`poorMeals`/`mealServings`. Deferred to M12: ingredient depletion, spoilage, dish-washing. |
 | Autonomous objects | Implemented | `AutonomousShoppingSystem` buys/places furniture by need pressure and lets a high-handiness Sim craft custom objects at the workbench. |
+| Autonomous room creation (WP4) | Implemented | `AutonomousConstructionSystem` (day-gated) buys land and builds a bedroom when beds are insufficient (`sims > beds*2`), gated by funds reserve (§5000), land cost (§2500), 2-day cooldown and a 3-room cap. Staged: `World.expandLot('bottom'\|'right')` grows the grid (these append without renumbering tiles), encloses a room with `WallManager` edge-walls + one door, places a bed. `World` tracks wall meshes by key and logs expansions (`serialiseExpansions`/`restoreExpansions`) replayed on load → grown lot + walls + furniture survive save/load. `RoomDetector` flood now stops at doors too, so a doored room is its own room. Emits `household:roomCreated`; headless summary adds `roomsBuilt`. Deferred: multiple shapes, bathroom/privacy triggers, furniture relocation into new rooms. |
 | Episodic memory | Implemented | Global memory and per-Sim autobiographical memory both exist and are persisted. |
 | Narrative log | Implemented | `NarrativePlanner` emits story entries for relevant events. |
 | God Mode | Implemented | Whisper, impose, bless, curse and life-event injection are active. |
 | Life cycle | Implemented | `AgeSystem` tracks age and life stage; children grow from data records and are embodied as teens. |
-| Career system | Implemented | `CareerSystem` tracks job, level, performance, salary, shifts, promotions, firing and player-driven/autonomous job changes. Each sim also tracks `_daysAtLevel`; after `STAGNATION_DAYS=3` without a promotion `_considerCareerChange` fires with `BASE_SWITCH_PROB=0.08` (scaled by ambition trait) and calls `switchCareer`. Emits `career:switched`. All careers share one schedule: weekdays 0–4, 08:00–17:00; weekends off. Headless (20×5000 ticks): career switches appear in 7/20 runs (~2 per run). |
+| Career system | Implemented (WP2) | `CareerSystem` tracks job, level, performance, salary, shifts, promotions, firing, work-stress and player-driven/autonomous job changes. Catalogue: 34 tracks across 10 families in `config/careers.js` with differentiated schedule presets (`DAY/EARLY/SWING/NIGHT/HOSPI/PART/FLEX/EMERG`, including overnight via `_isInShift` and weekend hospitality). Each career has a `stress` factor (0..1): `state.stress` (0..100) drifts per shift around `STRESS_NEUTRAL=0.35`, drains `fun`, and fires `career:burnout` (mood hit) at `BURNOUT_STRESS=80`. Shift end rolls a career event (~15% good day = salary bonus + perf, ~10% bad day = penalty). `_considerCareerChange` fires on stagnation (`STAGNATION_DAYS=3`) OR burnout (3× probability, prefers a calmer job). `getInfo` exposes `stress`; serialised/restored. |
 | Schedule system | Partially implemented | `ScheduleSystem` tracks weekly routine slots; behavior integration is still partial. |
-| Skill system | Partially implemented | Global `SkillSystem` and career-local skills both exist; they are not yet unified. |
+| Skill system | Implemented | `SkillSystem` is the single source of truth; `CareerSystem` delegates to it and no longer maintains its own copy. |
+| Lot expansion | Implemented | `TileMap.expand(direction, tiles)` and `World.expandLot(direction, tiles)` widen the grid in any direction and add floor meshes. `RoomDetector` uses dynamic `this._tileMap.width/height` instead of the old `GRID=16` constant. Purchasable via build toolbar for §1500. |
+| Romance move-in | Implemented | `RomanceSystem._maybeCommitPair()` detects cross-household romantic pairs (romance ≥ 50 both directions) and emits `romance:moveInProposal`; `Game.js` shows a consent dialog. Accepting calls `population.adoptHouseholdSim()` and `setPartner()`. |
+| Household goal | Implemented | `HouseholdGoalSystem` listens to `clock:dayChanged` and awards §500 when all household Sims maintain average needs ≥ 60 for 3 consecutive days; resets after 7 days. Progress bar visible in LifeCyclePanel. |
 | Weather system | Implemented, limited UI | `WeatherSystem` updates weather state and need deltas; no dedicated weather panel is mounted. |
 | Mood engine | Implemented | `MoodEngine` computes additional mood labels and effects. |
 | Experiment logger | Implemented | Logs social, visitor and off-lot events; CSV/JSON export and dashboard views are active. |
@@ -44,7 +53,7 @@ The project is a browser-based Three.js application using vanilla ES modules. Th
 | Build mode | Implemented | Furniture, wall/door tools, room overlay and budget are wired into runtime. |
 | Sim creator | Implemented | Mounted at startup when no save is selected. |
 | Headless research mode | Implemented, separate model | `npm run headless` runs a pure JS social simulation without Three.js/DOM and writes SQLite batch output. |
-| Family model | Implemented, births only | Household membership and autonomous reproduction (same household, mutual romance, opposite sex, non-blood) produce children as data members that grow into teen Sims. Death and inheritance are not implemented. |
+| Family model (WP5) | Implemented | Household membership + autonomous reproduction (same household, mutual romance, opposite sex, non-blood). Births are now gated by explicit constraints (`PopulationSystem._birthBlockedReason` + `config/familyRules.js`): household size, per-couple child limit, dependent cap, funds (§3000), romance stability (≥45), parent health, bed capacity. `seedHouseholdStructure()` seeds spouses/siblings/education at start (gap-fill only). `education` (none/highschool/college/university) is on the person record and biases career entry (`CareerSystem._setCareer`: higher level + skill bump). M9-rich: per-person `fertility {desire, fecundity}` drives birth probability/conception; `FAMILY_RULES.allowAutonomousBirths` master switch; `logRelationship()` records `partnered`/`child_born`/`sibling`; `CareerSystem._recordCareerHistory()` records `joined`/`switched`/`promoted`. Children grow into teen Sims; full family tree + `education`/`fertility`/`relationshipHistory`/`careerHistory` survive save/load. Death (starvation) implemented; inheritance not. |
 
 ## Main Folders
 
@@ -102,7 +111,8 @@ The toolbar supports pause plus `1x`, `2x` and `5x` simulation speed.
 | God panel | `GodPanel` / toolbar | Active. |
 | Build panel | `BuildMode` + `BuildModeWalls` / toolbar | Active. |
 | Room overlay | `RoomOverlay` / toolbar | Active. |
-| Life panel | `LifeCyclePanel` / toolbar | Active; shows age, life stage, career and schedule. |
+| Life panel | `LifeCyclePanel` / toolbar | Active; shows age, life stage, education, location (📍 room/coords/activity/why), career and schedule. |
+| Location detail (WP6) | Implemented | `LocationService.describeLocation(sim, {roomDetector, world})` → `{mode, activity, reason, roomType, objectId, objectLabel, gx, gz, action}`; `locationSummary` gives a one-liner. `Sim.currentAction` exposes the running action label. Surfaced in `LifeCyclePanel` (selected Sim) and `SimSelector` tooltips (roster, throttled). Headless `run()` accumulates per-tick time-by-mode → summary `locationTime` (normalised). Deferred: roomId/lotId/since/until fields, dedicated roster panel, per-Sim debug overlay. |
 | Skill panel | `SkillPanel` / toolbar | Active. |
 | Save slots | `SaveSlotPanel` / toolbar | Active. |
 | Sim creator | `SimCreator` | Active in startup flow. |
@@ -356,4 +366,35 @@ Tutti i parametri numerici tunable sono estratti in `config/gameConfig.json` (un
 | Memory inspection UI | ✅ Implementato | `MemoryInspectorPanel` — tasto `M` apre pannello memorie del Sim selezionato |
 | Family simulation | ✅ Implementato | AgeSystem emette `lifecycle:stageChanged`; blood relation bonus (+4) per comfort/hug/chat; morte elders per vecchiaia dopo 3 giorni critici → `sim:death` gestito in Game.js |
 | Deterministic seeded experiments | ✅ Implementato | `src/core/Rng.js` monkey-patcha `Math.random` da `?seed=` URL; headless usa già Mulberry32 |
-| Automated tests | ✅ Implementato | Vitest, 40 test in 5 suite (`npm test`) |
+| Automated tests | ✅ Implementato | Vitest, 47 test in 6 suite (`npm test`) — include WallManager/Pathfinder |
+| Session diagnostics | ✅ Implementato | `SessionLogger` — localStorage rolling buffer (max 3000 eventi), snapshot bisogni ogni 60 tick, export JSON; nuovi eventi: `food:eatAborted` (motivo + hunger + budget), `health:starvationProgressed` (ciclo + contatore + budget) |
+
+## Evolution Roadmap — WP Status
+
+| WP | Milestones | Status | Note |
+|---|---|---|---|
+| WP1 — Spatial Reliability & Layout Intelligence | M2 (walls/doors), M3 (camera), M4 (obj tags), M5 (LayoutPlanner) | ✅ Completato | Wall/door tests, zoom+rotation camera, function tags catalog, LayoutPlanner score+suggest |
+
+### WP1 — Dettaglio implementato
+
+**Milestone 2 — Walls/doors/rooms:**
+- `tests/WallManager.test.js` (7 test: placeWall, placeDoor, removeEdge, edgeKey canonicità, serialise/restore, Pathfinder con mure/porte)
+- Confermato: Sims non attraversano muri (Pathfinder usa `wallManager.isPassable()`), attraversano porte, RoomDetector BFS rispetta i muri
+
+**Milestone 3 — Camera zoom + rotazione:**
+- `IsometricCamera.js`: aggiunto `_zoom` (default 12, range 5–30) e `_angle` (rotazione snapped 90°)
+- API pubblica: `zoomIn()`, `zoomOut()`, `onWheel(delta)`, `rotateLeft()`, `rotateRight()`
+- `Game.js`: `wheel` listener su canvas (zoom con scroll), `keydown` Q/E per rotazione
+
+**Milestone 4 — Object function tags:**
+- Tutti gli oggetti in `objectCatalog.js` hanno `category`, `functionTags: []`, `roomTags: []`
+- `adjacencyPrefs` aggiunti a desk, bookshelf, tv, dining_table per layout reasoning
+
+**Milestone 5 — LayoutPlanner (score + esecuzione autonoma):**
+- `src/world/LayoutPlanner.js` — esposto via `window._game.layoutPlanner`
+- `score()` → `{ total, zones, issues }` — valuta coesione per zone bedroom/bathroom/kitchen/dining/living/study
+- `suggestMoves()` → `[{ objectId, label, from, to, reason, gain }]` — lista ordinata per guadagno stimato
+- `autoRearrange()` — esegue la miglior mossa valida: verifica `inUse`, check connettività BFS, emette `household:furnitureMoved` + `story:entry`
+- `update(dt)` — chiamato ogni frame; scatta ogni ~1 ora di gioco (3600 game-seconds)
+- `World.moveFurniture(fromGx, fromGz, toGx, toGz)` — primitiva di spostamento: aggiorna tilemap + mesh position
+- `Furniture.js` — aggiunto `label`, `functionTags`, `category`, `roomTags` (letti da `ObjectRegistry` def al costruttore)

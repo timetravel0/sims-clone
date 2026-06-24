@@ -50,6 +50,9 @@ export class Sim {
 
   get id() { return this._id; }
 
+  /** Label of the action currently executing (or null when idle). */
+  get currentAction() { return this.brain?._queue?._current?.label ?? null; }
+
   /**
    * Persistent identity is used by memory, learning, goals and relationship maps.
    * If an id is adopted after construction (load/visitor activation), rebuild the

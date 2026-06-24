@@ -3,6 +3,7 @@ import { TileMap, TILE } from './TileMap.js';
 import { Furniture } from '../entities/Furniture.js';
 import { DoorManager } from './DoorManager.js';
 import { DEFAULT_HOUSE_FURNITURE } from '../config/defaultScenario.js';
+import { bus } from '../core/EventBus.js';
 
 const FLOOR_COLOR = 0x4a3f35;
 const WALL_COLOR  = 0x2e2620;
@@ -15,6 +16,10 @@ export class World {
     this.groundMeshes = [];
     this.furniture    = [];
     this._cellReservations = new Map();
+    this._wallMeshes = new Map();   // "x,z" → mesh (perimeter/grid walls)
+    this._expansions = [];          // {direction, tiles} log, replayed on load
+    this.kitchenHygiene = 100;      // 0..100 — dirtied by cooking, restored by washing
+    this.dirtyDishes = 0;
     this._floorMat = new THREE.MeshLambertMaterial({ color: FLOOR_COLOR });
     this._wallMat  = new THREE.MeshLambertMaterial({ color: WALL_COLOR });
 
@@ -44,18 +49,30 @@ export class World {
   }
 
   _buildWalls() {
-    const geo = new THREE.BoxGeometry(1, 1.5, 1);
     for (let z = 0; z < this.tilemap.height; z++) {
       for (let x = 0; x < this.tilemap.width; x++) {
-        if (this.tilemap.get(x, z) === TILE.WALL) {
-          const mesh = new THREE.Mesh(geo, this._wallMat);
-          mesh.position.set(x, 0.75, z);
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-          this._scene.add(mesh);
-        }
+        if (this.tilemap.get(x, z) === TILE.WALL) this._addWallMesh(x, z);
       }
     }
+  }
+
+  _addWallMesh(x, z) {
+    const key = `${x},${z}`;
+    if (this._wallMeshes.has(key)) return;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1.5, 1), this._wallMat);
+    mesh.position.set(x, 0.75, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this._scene.add(mesh);
+    this._wallMeshes.set(key, mesh);
+  }
+
+  _removeWallMesh(x, z) {
+    const key = `${x},${z}`;
+    const mesh = this._wallMeshes.get(key);
+    if (!mesh) return;
+    this._scene.remove(mesh);
+    this._wallMeshes.delete(key);
   }
 
   _placeFurniture() {
@@ -163,6 +180,17 @@ export class World {
     return true;
   }
 
+  moveFurniture(fromGx, fromGz, toGx, toGz) {
+    const f = this.furniture.find(o => o.gx === fromGx && o.gz === fromGz);
+    if (!f || f.inUse || f.reservedBy) return false;
+    if (!this.tilemap.isWalkable(toGx, toGz)) return false;
+    this.tilemap.set(fromGx, fromGz, TILE.FLOOR);
+    this.tilemap.set(toGx, toGz, TILE.FURNITURE);
+    f.gx = toGx; f.gz = toGz;
+    f.mesh.position.set(toGx, f.mesh.position.y, toGz);
+    return true;
+  }
+
   getFurnitureFor(needKey) {
     return this.furniture.find(f => f.needTarget === needKey) || null;
   }
@@ -174,7 +202,7 @@ export class World {
   _cellKey(gx, gz) { return `${gx},${gz}`; }
 
   isCellOccupied(gx, gz, exceptSimId = null) {
-    const sims = window._game?.sims || [];
+    const sims = globalThis.window?._game?.sims || [];
     return sims.some(sim => {
       if (sim.id === exceptSimId) return false;
       if (sim._atWork) return false;   // away at work — not a blocker
@@ -226,6 +254,61 @@ export class World {
       if (found) return found;
     }
     return null;
+  }
+
+  expandLot(direction, tiles = 8) {
+    // Only 'right'/'bottom' append without shifting existing coords — 'left'/'top'
+    // would renumber all furniture/sim positions, so we reject them here.
+    if (direction !== 'right' && direction !== 'bottom') return false;
+    this.tilemap.expand(direction, tiles);
+    this._expansions.push({ direction, tiles });
+    const geo = new THREE.BoxGeometry(1, 0.1, 1);
+    const floorKeys = new Set(this.groundMeshes.map(m => `${m.position.x},${m.position.z}`));
+    for (let z = 0; z < this.tilemap.height; z++) {
+      for (let x = 0; x < this.tilemap.width; x++) {
+        const key = `${x},${z}`;
+        if (this.tilemap.get(x, z) === TILE.WALL) {
+          this._addWallMesh(x, z);            // new border walls
+        } else {
+          this._removeWallMesh(x, z);          // old border opened to floor
+          if (!floorKeys.has(key)) {
+            const mesh = new THREE.Mesh(geo, this._floorMat);
+            mesh.position.set(x, -0.05, z);
+            mesh.receiveShadow = true;
+            mesh.userData = { gridX: x, gridZ: z, isGround: true };
+            this._scene.add(mesh);
+            this.groundMeshes.push(mesh);
+            floorKeys.add(key);
+          }
+        }
+      }
+    }
+    bus.emit('wall:placed'); // triggers RoomDetector.analyse()
+    return true;
+  }
+
+  // ── Kitchen hygiene (WP3/WP8 dish-washing loop) ─────────────────────────────
+  /** A cooked meal leaves dirty dishes and lowers kitchen hygiene. */
+  soilKitchen(dishes = 1) {
+    this.dirtyDishes += dishes;
+    this.kitchenHygiene = Math.max(0, this.kitchenHygiene - 6 * dishes);
+  }
+  /** Wash up — requires a sink on the lot. Returns true if anything was cleaned. */
+  washDishes() {
+    if (!this.furniture.some(f => f.functionTags?.includes('wash'))) return false;
+    if (this.dirtyDishes === 0 && this.kitchenHygiene >= 100) return false;
+    this.dirtyDishes = 0;
+    this.kitchenHygiene = 100;
+    return true;
+  }
+  serialiseKitchen() { return { hygiene: this.kitchenHygiene, dishes: this.dirtyDishes }; }
+  restoreKitchen(d) { if (d) { this.kitchenHygiene = d.hygiene ?? 100; this.dirtyDishes = d.dishes ?? 0; } }
+
+  /** Lot expansion log → replayed on load to rebuild the grown grid + meshes. */
+  serialiseExpansions() { return this._expansions.map(e => ({ ...e })); }
+  restoreExpansions(list) {
+    if (!Array.isArray(list)) return;
+    for (const e of list) this.expandLot(e.direction, e.tiles);
   }
 
   randomAvailableCell(sim) {

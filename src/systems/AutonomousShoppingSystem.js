@@ -341,6 +341,10 @@ export class AutonomousShoppingSystem {
     const existing = this._equivalentFurniture(def);
     if (existing.length === 0) return true;
 
+    // Cap: never more than ceil(household / 3), minimum 2 — avoids furniture pileups with large families
+    const cap = Math.max(2, Math.ceil(household.length / 3));
+    if (existing.length >= cap) return false;
+
     const free = existing.filter(f => this._isFurnitureFree(f));
     if (free.length === 0) return true;
 

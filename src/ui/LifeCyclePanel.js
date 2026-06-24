@@ -13,6 +13,9 @@
 
 import { bus }     from '../core/EventBus.js';
 import { CAREERS } from '../systems/CareerSystem.js';
+import { educationLabel } from '../config/familyRules.js';
+import { describeLocation } from '../systems/LocationService.js';
+import { pickTreatment } from '../config/treatments.js';
 
 const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const SKILL_LABELS = { creativity:'🎨 Creativity', logic:'🔬 Logic', cooking:'🍳 Cooking', fitness:'💪 Fitness', charisma:'💬 Charisma' };
@@ -36,7 +39,9 @@ export class LifeCyclePanel {
     bus.on('family:childBorn',   () => this._render());
     bus.on('family:partnerChanged',() => this._render());
     bus.on('career:shiftEnd',    () => this._render());
-    bus.on('goal:completed',     () => this._render());
+    bus.on('goal:completed',          () => this._render());
+    bus.on('household:goalProgress',  () => this._render());
+    bus.on('household:goalCompleted', () => this._render());
     bus.on('daynight:update',    () => this._renderSchedule());
   }
 
@@ -89,8 +94,21 @@ export class LifeCyclePanel {
       html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">`;
       html += `<span style="background:${stageColor};color:#111;font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px">${age.stage.label}</span>`;
       html += `<span style="color:#aaa">${age.ageYears} years old</span>`;
+      const edu = this._game.population?.getPerson?.(sim.id)?.education ?? 0;
+      html += `<span style="color:#9fa8da" title="Education level">🎓 ${educationLabel(edu)}</span>`;
       html += `</div>`;
     }
+
+    // ── Location ("where & why") ──
+    const loc = describeLocation(sim, { roomDetector: this._game.roomDetector, world: this._game.world });
+    const whereLabel = loc.mode === 'on_lot'
+      ? `${loc.roomType}${loc.gx != null ? ` (${loc.gx},${loc.gz})` : ''}`
+      : loc.mode;
+    html += `<div style="background:rgba(255,255,255,0.05);border-radius:7px;padding:8px 10px;margin-bottom:10px">`;
+    html += `<div style="color:#80cbc4;font-weight:700">📍 ${whereLabel}</div>`;
+    html += `<div style="color:#aaa">${loc.activity}${loc.reason ? ` · ${loc.reason}` : ''}</div>`;
+    if (loc.objectLabel) html += `<div style="color:#888;font-size:11px">near ${loc.objectLabel}</div>`;
+    html += `</div>`;
 
     // ── Career ──
     if (career) {
@@ -108,6 +126,13 @@ export class LifeCyclePanel {
       if (person?.health) {
         const hp = person.health.state === 'healthy' ? 'Healthy' : `${person.health.state} · ${person.health.illness ?? 'unknown'}`;
         html += `<div style="margin-top:4px;color:${person.health.state === 'healthy' ? '#9ccc65' : '#ffab91'}">Health: ${hp}</div>`;
+        if (person.health.state !== 'healthy') {
+          const tr = pickTreatment(person.health.illness ?? '', person.health.severity ?? 0, this._game.budgetSystem?.funds ?? 0);
+          const booked = this._game.doctor?._pending?.has?.(sim.id);
+          html += booked
+            ? `<div style="margin-top:4px;color:#80cbc4">🩺 Visita medica in arrivo…</div>`
+            : `<button id="lcp-doctor" style="margin-top:6px;background:#2a4a5a;border:1px solid #3a6a7a;color:#cde;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:11px">🩺 Chiama il dottore${tr ? ` (${tr.label} −§${tr.cost})` : ' (fondi insufficienti)'}</button>`;
+        }
       }
       if (person) {
         const partner = this._game.population?.getPerson?.(person.partnerId)?.name ?? '—';
@@ -115,6 +140,18 @@ export class LifeCyclePanel {
         html += `<div style="margin-top:4px;color:#aaa">Family: partner ${partner} · children ${kids}</div>`;
       }
       html += `</div>`;
+
+      // Household goal
+      const hg = this._game.householdGoalSystem?.progress;
+      if (hg) {
+        const pct = Math.round((hg.days / hg.target) * 100);
+        html += `<div style="background:rgba(255,255,255,0.05);border-radius:7px;padding:8px 10px;margin-bottom:10px">`;
+        html += `<div style="color:#888;font-size:10px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Obiettivo Famiglia</div>`;
+        html += `<div style="font-size:10px;color:#aaa;margin-bottom:4px">Benessere ≥${hg.score}% · ${hg.days}/${hg.target} giorni${hg.status === 'completed' ? ' ✓' : ''}</div>`;
+        html += `<div style="height:5px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden">`;
+        html += `<div style="width:${pct}%;height:100%;background:#f0c040;border-radius:3px;transition:width .3s"></div>`;
+        html += `</div></div>`;
+      }
 
       // Skills
       html += `<div style="margin-bottom:10px">`;
@@ -174,6 +211,12 @@ export class LifeCyclePanel {
     this._el.querySelector('#lcp-career-select')?.addEventListener('change', e => {
       const sim = this._game.selectedSim;
       if (sim) this._game.careerSystem?.switchCareer(sim.id, e.target.value);
+    });
+
+    // Bind doctor call
+    this._el.querySelector('#lcp-doctor')?.addEventListener('click', () => {
+      const sim = this._game.selectedSim;
+      if (sim) { this._game.doctor?.book(sim.id); this._render(); }
     });
 
     this._renderSchedule();

@@ -64,18 +64,32 @@ export class SimStatusLog {
       }
     });
 
-    // Story log entries
-    bus.on('story:entry',       e => this._addEntry(e));
-    bus.on('social:interaction', e => this._addEntry({
-      text: `${e.nameA} → ${e.nameB}: ${e.type}${e.accepted === false ? ' rejected' : ''} (${e.score > 0 ? '+' : ''}${Math.round(e.score)})`,
-      cat:  e.accepted === false || e.score < 0 ? 'drama' : 'positive',
-    }));
+    // Story log entries — filter to household members only for per-sim events
+    const isHH = sim => sim && !sim._isVisitor;
+    bus.on('story:entry', e => {
+      // If the event targets a specific sim, skip non-household sims
+      if (e.simId) {
+        const sim = window._game?.sims?.find(s => s.id === e.simId);
+        if (!isHH(sim)) return;
+      }
+      this._addEntry(e);
+    });
+    bus.on('social:interaction', e => {
+      if (!isHH(e.simA) && !isHH(e.simB)) return;
+      this._addEntry({
+        text: `${e.nameA} → ${e.nameB}: ${e.type}${e.accepted === false ? ' rejected' : ''} (${e.score > 0 ? '+' : ''}${Math.round(e.score)})`,
+        cat:  e.accepted === false || e.score < 0 ? 'drama' : 'positive',
+      });
+    });
     bus.on('sim:action', ({ simId, label }) => {
       if (!label) return;
       const sim = window._game?.sims?.find(s => s.id === simId);
-      if (sim) this._addEntry({ text: `${sim.name}: ${label}`, cat: 'action' });
+      if (!isHH(sim)) return;
+      this._addEntry({ text: `${sim.name}: ${label}`, cat: 'action' });
     });
     bus.on('mood:change', ({ simName, tier }) => {
+      const sim = window._game?.sims?.find(s => s.name === simName);
+      if (!isHH(sim)) return;
       this._addEntry({ text: `${simName} feels ${tier}`, cat: 'mood' });
     });
   }

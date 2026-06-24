@@ -27,9 +27,8 @@ export class WalkToAction extends Action {
     this._gx = target.x;
     this._gz = target.z;
     this.label = `WalkTo(${this._gx},${this._gz})`;
-    const pf = new Pathfinder(this._world.tilemap, (x, z) =>
-      this._world.isCellOccupied(x, z, this._sim.id) ||
-      this._world.isCellReserved(x, z, this._sim.id),
+    // ponytail: no isBlocked — other sims are dynamic, blocking on them causes "No path" when corridors are crowded
+    const pf = new Pathfinder(this._world.tilemap, null,
       (x1, z1, x2, z2) => this._world.wallManager?.isPassable(x1, z1, x2, z2) ?? true
     );
     const path = pf.find(this._sim.gx, this._sim.gz, this._gx, this._gz);
@@ -56,11 +55,13 @@ export class UseObjectAction extends Action {
     this._duration = duration; this._elapsed = 0;
     this._affordance = affordance;
     this._using = false;
+    this._wait = 0; // seconds to wait before aborting when object_in_use
   }
   enter() {
     if (this._furniture.inUse || (this._furniture.reservedBy && this._furniture.reservedBy !== this._sim.id)) {
       Logger.warn(`[UseObject] ${this._furniture.id} is already in use`);
-      this.done = true;
+      // Wait 30 game-seconds (≈ 1 meal duration) before replanning — breaks fridge-contention loop
+      this._wait = 30;
       return;
     }
     const dx = this._sim.gx - this._furniture.gx;
@@ -82,6 +83,13 @@ export class UseObjectAction extends Action {
       || this._affordance?.verb === 'eat'
       || this._affordance?.verb === 'dine';
     if (isFood && !budgetSystem.debit(MEAL_COST, 'meal', { simId: this._sim.id, simName: this._sim.name })) {
+      bus.emit('food:eatAborted', {
+        simId: this._sim.id, simName: this._sim.name,
+        reason: 'budget_insufficient',
+        hunger: this._sim.needs?.get?.('hunger') ?? -1,
+        budget: budgetSystem.funds,
+        objectId: this._furniture?.id,
+      });
       this.done = true;
       return;
     }
@@ -91,6 +99,7 @@ export class UseObjectAction extends Action {
     this._using = true;
   }
   update(dt) {
+    if (this._wait > 0) { this._wait -= dt; if (this._wait <= 0) this.done = true; return; }
     this._elapsed += dt;
     if (this._affordance?.utility) {
       for (const [need, amount] of Object.entries(this._affordance.utility)) {

@@ -1,5 +1,6 @@
 import { bus } from '../core/EventBus.js';
 import { DEFAULT_EXTERNALS } from '../config/defaultPopulation.js';
+import { FAMILY_RULES, EDUCATION, defaultFertility } from '../config/familyRules.js';
 
 /**
  * PopulationSystem — separates the *people* who exist in the world from the
@@ -45,10 +46,10 @@ function babyName(gender) {
 // ponytail: child growth time is decoupled from AgeSystem (whose 86400 s/day
 // scale makes aging effectively never fire in a session). Upgrade path: tie to
 // AgeSystem once its day-scale is reconciled with DayNightCycle.
-const CHILD_GROW_SECONDS = 600;   // scaled-time before a newborn appears as a teen
+const CHILD_GROW_SECONDS = 3000;  // scaled-time before a newborn appears as a teen (~500 ticks)
 const BIRTH_CHECK_SECONDS = 60;   // how often reproduction is evaluated
-const MAX_HOUSEHOLD = 8;
-const BIRTH_COOLDOWN_SECONDS = 1200;
+const MAX_HOUSEHOLD = FAMILY_RULES.maxHouseholdSize;
+const BIRTH_COOLDOWN_SECONDS = 7200; // ~1200 ticks between births (was 200 — too frequent)
 
 export class PopulationSystem {
   constructor(game, initialHousehold = []) {
@@ -60,6 +61,49 @@ export class PopulationSystem {
 
     for (const sim of initialHousehold) this._registerHouseholdSim(sim);
     if (this.offLotPeople().length === 0) this._seedExternals();
+    this.seedHouseholdStructure();
+  }
+
+  /**
+   * Seed a structured starting household (M9): the first two adults become
+   * spouses, the third becomes a sibling of the first, and everyone gets an
+   * education level. Only fills gaps — never overwrites an existing partner,
+   * family link or education (so loaded saves and custom households are safe).
+   */
+  seedHouseholdStructure() {
+    const members = this.householdMembers();
+    if (members.length < 2) return;
+    const [a, b, c] = members;
+
+    // Spouses: a ↔ b (only if both single). Seed graph romance so they qualify
+    // for autonomous children once they've spent time together.
+    if (a && b && !a.partnerId && !b.partnerId) {
+      this.setPartner(a.id, b.id);
+      const graph = this._game?.relationshipGraph;
+      if (graph?.adjust) {
+        graph.adjust(a.id, b.id, 'romance', 55);
+        graph.adjust(b.id, a.id, 'romance', 55);
+      }
+    }
+
+    // Sibling: c shares a's family line (blood relation → no romance, +family bonus).
+    if (c && a) {
+      const famId = a.familyId ?? `fam_${a.id}`;
+      a.familyId = famId;
+      if (!c.familyId) {
+        c.familyId = famId;
+        this.logRelationship(a.id, 'sibling', { withId: c.id, withName: c.name });
+        this.logRelationship(c.id, 'sibling', { withId: a.id, withName: a.name });
+      }
+    }
+
+    // Education: vary across the founding adults (deterministic by index).
+    const ladder = [EDUCATION.university, EDUCATION.college, EDUCATION.highschool];
+    members.forEach((p, i) => {
+      if (p.education == null || p.education === EDUCATION.highschool) {
+        p.education = ladder[i % ladder.length];
+      }
+    });
   }
 
   // ── Construction helpers ─────────────────────────────────────────────────
@@ -96,6 +140,10 @@ export class PopulationSystem {
       childIds: uniqueIds(def.childIds),
       familyId: def.familyId ?? null,
       monogamous: def.monogamous ?? true,
+      education: def.education ?? EDUCATION.highschool,
+      fertility: def.fertility ?? defaultFertility(),
+      careerHistory: Array.isArray(def.careerHistory) ? [...def.careerHistory] : [],
+      relationshipHistory: Array.isArray(def.relationshipHistory) ? [...def.relationshipHistory] : [],
       createdAt: def.createdAt ?? (this._game?.tick ?? 0),
       activeSimId: def.activeSimId ?? null,
       // Unborn children exist as data only (embodied:false) and grow until they
@@ -181,6 +229,8 @@ export class PopulationSystem {
 
     if (parentA) parentA.childIds = uniqueIds([...(parentA.childIds ?? []), child.id]);
     if (parentB) parentB.childIds = uniqueIds([...(parentB.childIds ?? []), child.id]);
+    this.logRelationship(parentAId, 'child_born', { childId: child.id, childName: child.name });
+    this.logRelationship(parentBId, 'child_born', { childId: child.id, childName: child.name });
 
     // Born as data only — no Sim is spawned. The child grows in the background
     // (PopulationSystem.update) and is embodied on the lot once it reaches teen.
@@ -232,8 +282,10 @@ export class PopulationSystem {
   _embodyChild(person) {
     person.embodied = true;
     const parentSim = this._game?.sims?.find(s => person.parentIds?.includes(s.id) && !s._atWork && !s._outing);
-    const gx = parentSim ? parentSim.gx + 1 : null;
-    const gz = parentSim ? parentSim.gz : null;
+    // ponytail: use randomAvailableCell — parent+1 often lands in furniture
+    const spawnCell = this._game?.world?.randomAvailableCell?.({}) ?? null;
+    const gx = spawnCell?.x ?? null;
+    const gz = spawnCell?.z ?? null;
     const sim = this._game?._spawnSim?.({
       id: person.id, name: person.name, color: person.color, traits: person.traits, gender: person.gender,
     }, gx, gz);
@@ -245,23 +297,80 @@ export class PopulationSystem {
     });
     this._game?.ageSystem?.registerAt?.(sim, 13); // appears as a teen, ages onward
     bus.emit('story:entry', {
+      simId: person.id,
       text: `${person.name} grew up and joined the household as a teen.`,
       cat: 'family', category: 'family',
     });
   }
 
   _considerBirths() {
+    if (!FAMILY_RULES.allowAutonomousBirths) return;
     if (this.householdMembers().length >= MAX_HOUSEHOLD) return;
     for (const [aId, bId] of this._committedHouseholdCouples()) {
       const key = [aId, bId].sort().join(':');
       if (this._birthCooldown.has(key)) continue;
       if (!this.canHaveChild(aId, bId)) continue;
-      if (Math.random() < 0.18) {
+      if (this._birthBlockedReason(aId, bId)) continue;
+      // Birth probability is driven by the couple's fertility profile (desire),
+      // and conception by their fecundity — both 0..1, defaulting to ~0.18 base.
+      const a = this.getPerson(aId), b = this.getPerson(bId);
+      const desire = ((a?.fertility?.desire ?? 0.5) + (b?.fertility?.desire ?? 0.5)) / 2;
+      const fecundity = ((a?.fertility?.fecundity ?? 0.7) + (b?.fertility?.fecundity ?? 0.7)) / 2;
+      if (Math.random() < 0.28 * desire && Math.random() < fecundity) {
         this.createChild(aId, bId);
         this._birthCooldown.set(key, BIRTH_COOLDOWN_SECONDS);
         if (this.householdMembers().length >= MAX_HOUSEHOLD) return;
       }
     }
+  }
+
+  /** Append a dated entry to a person's relationship-history log (M9 rich). */
+  logRelationship(personId, type, detail = {}) {
+    const person = this.getPerson(personId);
+    if (!person) return;
+    person.relationshipHistory.push({ type, day: this._game?.clock?.day ?? 0, ...detail });
+  }
+
+  /**
+   * Explicit household constraints on autonomous births (M9). Returns a reason
+   * string when a birth is blocked, or null when the couple may reproduce.
+   */
+  _birthBlockedReason(aId, bId) {
+    const r = FAMILY_RULES;
+    if (this.householdMembers().length >= r.maxHouseholdSize) return 'household_full';
+    if (this._childrenOf(aId, bId).length >= r.maxChildrenPerCouple) return 'child_limit';
+    if (this._dependentChildren().length >= r.maxDependentChildren) return 'too_many_dependents';
+    if ((this._game?.budgetSystem?.funds ?? 0) < r.birthFundsThreshold) return 'not_affordable';
+    const graph = this._game?.relationshipGraph;
+    if (graph?.score) {
+      const romance = Math.max(graph.score(aId, bId, 'romance'), graph.score(bId, aId, 'romance'));
+      if (romance < r.minRomanceForChild) return 'unstable_relationship';
+    }
+    if (!this._bothHealthy(aId, bId)) return 'poor_health';
+    if (!this._hasBedCapacity()) return 'no_room';
+    return null;
+  }
+
+  /** Children whose parents are exactly this couple. */
+  _childrenOf(aId, bId) {
+    return this.allPeople().filter(p =>
+      p.parentIds?.includes(aId) && p.parentIds?.includes(bId));
+  }
+
+  /** Household child records (born to household parents, any age). */
+  _dependentChildren() {
+    return this.householdMembers().filter(p => (p.parentIds?.length ?? 0) > 0);
+  }
+
+  _bothHealthy(aId, bId) {
+    const ok = id => (this.getPerson(id)?.health?.state ?? 'healthy') === 'healthy';
+    return ok(aId) && ok(bId);
+  }
+
+  /** A new child needs sleeping capacity: 2 sims per bed. */
+  _hasBedCapacity() {
+    const beds = (this._game?.world?.furniture ?? []).filter(f => /bed/.test(f.id)).length;
+    return beds * 2 > this.householdMembers().length;
   }
 
   _committedHouseholdCouples() {
@@ -290,6 +399,8 @@ export class PopulationSystem {
     a.partnerId = b.id;
     b.partnerId = a.id;
     a.monogamous = b.monogamous = true;
+    this.logRelationship(a.id, 'partnered', { withId: b.id, withName: b.name });
+    this.logRelationship(b.id, 'partnered', { withId: a.id, withName: a.name });
     bus.emit('family:partnerChanged', {
       personId: a.id,
       partnerId: b.id,

@@ -74,11 +74,12 @@ export class EmoteRenderer {
     /** @type {Map<string, {sprite: THREE.Sprite, ttl: number}>} */
     this._active  = new Map();
 
-    bus.on('mood:changed',        ({ sim, next })        => this._show(sim, MOOD_EMOJI[next] ?? '😐', 3.0));
-    bus.on('social:interaction',  ({ simA, type })       => this._show(simA, INTERACTION_EMOJI[type] ?? '💬', 2.5));
-    bus.on('skill:levelUp',       ({ sim, skill })       => this._show(sim, (SKILL_EMOJI[skill] ?? '⬆') + '⬆', 2.0));
+    const isHH = sim => sim && !sim._isVisitor;
+    bus.on('mood:changed',        ({ sim, next })        => { if (isHH(sim)) this._show(sim, MOOD_EMOJI[next] ?? '😐', 3.0); });
+    bus.on('social:interaction',  ({ simA, type })       => { if (isHH(simA)) this._show(simA, INTERACTION_EMOJI[type] ?? '💬', 2.5); });
+    bus.on('skill:levelUp',       ({ sim, skill })       => { if (isHH(sim)) this._show(sim, (SKILL_EMOJI[skill] ?? '⬆') + '⬆', 2.0); });
     bus.on('weather:changed',     ({ next })             => {
-      for (const s of this._sims) this._show(s, WEATHER_EMOJI[next] ?? '🌤', 2.0);
+      for (const s of this._sims) if (isHH(s)) this._show(s, WEATHER_EMOJI[next] ?? '🌤', 2.0);
     });
   }
 

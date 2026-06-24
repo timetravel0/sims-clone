@@ -1,5 +1,6 @@
 import { bus } from '../core/EventBus.js';
 import { memorySystem } from './MemorySystem.js';
+import { budgetSystem } from './BudgetSystem.js';
 
 const ILLNESSES = [
   { id: 'cold', label: 'cold' },
@@ -69,6 +70,21 @@ export class HealthSystem {
     return this._game.population?.getPerson?.(personId)?.health ?? null;
   }
 
+  /**
+   * Apply a medical treatment outcome (M11). Either resolves the illness or
+   * reduces its severity. Returns true if anything changed.
+   */
+  treat(personId, { resolve = true, drop = 0.4 } = {}) {
+    const person = this._game.population?.getPerson?.(personId);
+    if (!person || (person.health?.state ?? 'healthy') === 'healthy') return false;
+    if (resolve) {
+      this._recover(person, { cause: 'treatment' });
+      return true;
+    }
+    person.health.severity = Math.max(0, (person.health.severity ?? 0) - drop);
+    return true;
+  }
+
   serialise() {
     return {
       timer: this._timer,
@@ -92,6 +108,11 @@ export class HealthSystem {
       if (hunger < STARVE_HUNGER_MAX) {
         person._starveCycles = (person._starveCycles ?? 0) + 1;
         const c = person._starveCycles;
+        bus.emit('health:starvationProgressed', {
+          simId: person.id, simName: person.name,
+          cycles: c, maxCycles: STARVE_DEATH_CYCLES,
+          hunger, budget: budgetSystem.funds,
+        });
         if (c >= STARVE_DEATH_CYCLES) {
           this._killSim(person, sim);
           return;
@@ -181,6 +202,7 @@ export class HealthSystem {
     person.health = next ?? person.health;
     if (prev !== 'ill') {
       bus.emit('story:entry', {
+        simId: person.id,
         text: `${person.name} came down with ${illness}.`,
         cat: 'drama',
         category: 'drama',
@@ -212,7 +234,13 @@ export class HealthSystem {
     const energyPressure = this._pressure(needs.energy);
     const hungerPressure = this._pressure(needs.hunger);
     const weatherBoost = this._game._weather?.current === 'rain' ? 0.01 : 0;
-    return Math.min(0.08, 0.005 + hygienePressure * 0.03 + energyPressure * 0.02 + hungerPressure * 0.01 + weatherBoost);
+    // Nutrition (M12): well-fed Sims resist illness; poor nutrition raises risk.
+    const nutrition = sim?._nutrition ?? 0.6;
+    const nutritionBoost = (1 - nutrition) * 0.02;
+    // Kitchen hygiene (WP8): a dirty kitchen breeds illness.
+    const kh = this._game?.world?.kitchenHygiene ?? 100;
+    const kitchenBoost = (100 - kh) / 100 * 0.015;
+    return Math.min(0.1, 0.005 + hygienePressure * 0.03 + energyPressure * 0.02 + hungerPressure * 0.01 + nutritionBoost + kitchenBoost + weatherBoost);
   }
 
   _pressure(value = 50) {

@@ -39,6 +39,7 @@ import { CareerSystem }        from '../systems/CareerSystem.js';
 import { ScheduleSystem }      from '../systems/ScheduleSystem.js';
 import { PartySystem }         from '../systems/PartySystem.js';
 import { HealthSystem }        from '../systems/HealthSystem.js';
+import { DoctorService }       from '../systems/DoctorService.js';
 // Sprint 4
 import { skillSystem }         from '../systems/SkillSystem.js';
 import { weatherSystem }       from '../systems/WeatherSystem.js';
@@ -51,6 +52,11 @@ import { SIM_DEFS, TRAIT_AXIS, STARTER_CAREERS } from '../config/defaultPopulati
 import { ObjectRegistry }      from '../systems/ObjectRegistry.js';
 import { GameContext }         from './GameContext.js';
 import { initRng }            from './Rng.js';
+import { HouseholdGoalSystem } from '../systems/HouseholdGoalSystem.js';
+import { AutonomousConstructionSystem } from '../systems/AutonomousConstructionSystem.js';
+import { HouseholdPlanner }   from '../systems/HouseholdPlanner.js';
+import { LayoutPlanner }      from '../world/LayoutPlanner.js';
+import { SessionLogger }      from '../systems/SessionLogger.js';
 
 function creatorDefToSimDef(def) {
   const traits = {};
@@ -237,6 +243,7 @@ export class Game {
     this.relationshipGraph.setPopulation?.(this.population);
     this.careerSystem._game = this;
     this.healthSystem    = new HealthSystem(this);
+    this.doctor          = new DoctorService(this);
     this.visitorSystem   = new VisitorSystem(this);
     this.offLotSimulation = new OffLotSimulationSystem(this);
     this.autonomousShopping = new AutonomousShoppingSystem(this);
@@ -264,6 +271,12 @@ export class Game {
 
     this._lifecyclePanel    = new LifeCyclePanel(this);
     this._memoryInspector   = new MemoryInspectorPanel();
+    this.householdGoalSystem = new HouseholdGoalSystem(this);
+    this.construction        = new AutonomousConstructionSystem(this);
+    this.layoutPlanner       = new LayoutPlanner(this.world);
+    this.householdPlanner    = new HouseholdPlanner(this);
+    this.sessionLog          = new SessionLogger(this);
+    window._game = this; // expose for console access to sessionLog
     this._lifecycleNotifier = new LifecycleNotifier('lifecycle-toast');
     this._skillPanel    = new SkillPanel(this);
     // BuildPanel is created by UIManager — don't duplicate it here.
@@ -288,6 +301,18 @@ export class Game {
     window.addEventListener('resize', () => {
       this._renderer.setSize(window.innerWidth, window.innerHeight);
       this._camera.onResize(window.innerWidth / window.innerHeight);
+    });
+
+    // ── Camera zoom (mouse wheel) + rotation (Q/E) ────────────────────────
+    this._renderer.domElement.addEventListener('wheel', e => {
+      e.preventDefault();
+      this._camera.onWheel(e.deltaY);
+    }, { passive: false });
+
+    window.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.key === 'q' || e.key === 'Q') this._camera.rotateLeft();
+      if (e.key === 'e' || e.key === 'E') this._camera.rotateRight();
     });
   }
 
@@ -318,6 +343,7 @@ export class Game {
     this.world.update(scaled);
     this.ageSystem.update(scaled);
     this.healthSystem?.update?.(scaled);
+    this.doctor?.update?.();
     this.careerSystem.update(scaled);
     this.scheduleSystem.update(scaled);
     this.partySystem.update(scaled);
@@ -326,6 +352,8 @@ export class Game {
     this.offLotSimulation.update(scaled);
     this.visitorSystem.update(scaled);
     this.autonomousShopping.update(scaled);
+    this.layoutPlanner?.update(scaled);
+    this.sessionLog?.update(scaled);
 
     // Sprint 4 systems
     this._weather.update(scaled);
@@ -476,6 +504,7 @@ export class Game {
       if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
       q('btn-rel')?.classList.toggle('active');
     });
+    q('btn-export-log')?.addEventListener('click', () => this.sessionLog?.export());
     q('btn-save')?.addEventListener('click', () => this._saveSlotPanel?.open('save'));
     q('btn-load')?.addEventListener('click', () => this._saveSlotPanel?.open('load'));
 
@@ -511,6 +540,8 @@ export class Game {
     renderFunds(this.budgetSystem.funds);
     bus.on('budget:changed', ({ next }) => renderFunds(next));
 
+    q('btn-expand-lot')?.addEventListener('click', () => this._showExpandMenu());
+
     // Party: host = selected Sim, guests = everyone else
     const partyBtn = q('btn-party');
     partyBtn?.addEventListener('click', () => {
@@ -535,8 +566,88 @@ export class Game {
       bus.emit('story:entry', { text: `${simName} è morto/a di ${cause === 'old_age' ? 'vecchiaia' : cause}.`, cat: 'life_event' });
     });
 
+    bus.on('romance:moveInProposal', e => this._showMoveInDialog(e));
+
     // Social Core 2.0 — experiment dashboard (opens in its own window)
     q('btn-lab')?.addEventListener('click', () => this._openLab());
+  }
+
+  _showExpandMenu() {
+    if (document.getElementById('expand-menu')) return;
+    const el = document.createElement('div');
+    el.id = 'expand-menu';
+    Object.assign(el.style, {
+      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+      background: 'rgba(15,20,40,0.97)', border: '1px solid #1a4a7a', borderRadius: '10px',
+      zIndex: '250', padding: '20px', textAlign: 'center', color: '#ddd', fontFamily: 'monospace',
+    });
+    // Only right/bottom append without renumbering existing tiles (see World.expandLot).
+    const dirs = [['right', '→ Est'], ['bottom', '↓ Sud']];
+    el.innerHTML = `<div style="font-weight:bold;margin-bottom:14px;color:#e94560">🏗️ Espandi lotto (§1500)</div>` +
+      dirs.map(([d, label]) =>
+        `<button data-dir="${d}" style="display:block;width:100%;margin:4px 0;padding:8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#ddd;border-radius:6px;cursor:pointer">${label}</button>`
+      ).join('') +
+      `<button id="expand-cancel" style="margin-top:10px;background:none;border:none;color:#666;cursor:pointer">Annulla</button>`;
+    document.body.appendChild(el);
+    el.querySelectorAll('[data-dir]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dir = btn.dataset.dir;
+        const labels = { right: 'Est', bottom: 'Sud' };
+        if (budgetSystem.funds < 1500) {
+          bus.emit('story:entry', { text: 'Fondi insufficienti per espandere il lotto.', cat: 'neutral' });
+          el.remove(); return;
+        }
+        if (this.world?.expandLot?.(dir)) {
+          budgetSystem.debit(1500, 'lot_expansion');
+          bus.emit('story:entry', { text: `Lotto espanso verso ${labels[dir]}! Nuove stanze disponibili.`, cat: 'family' });
+        }
+        el.remove();
+      });
+    });
+    el.querySelector('#expand-cancel')?.addEventListener('click', () => el.remove());
+  }
+
+  _showMoveInDialog({ householdId, householdName, visitorId, visitorName }) {
+    if (document.getElementById('movein-dialog')) return;
+    const el = document.createElement('div');
+    el.id = 'movein-dialog';
+    Object.assign(el.style, {
+      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+      background: 'rgba(15,20,40,0.97)', border: '1px solid #e94560', borderRadius: '10px',
+      zIndex: '250', padding: '22px 26px', textAlign: 'center', color: '#ddd', fontFamily: 'monospace', maxWidth: '320px',
+    });
+    el.innerHTML = `
+      <div style="font-size:22px;margin-bottom:10px">💕</div>
+      <div style="margin-bottom:14px">${householdName} e ${visitorName} si amano.<br><strong>${visitorName}</strong> vuole trasferirsi.</div>
+      <button id="movein-yes" style="margin:4px;padding:8px 18px;background:#e94560;border:none;color:#fff;border-radius:6px;cursor:pointer">Accetta</button>
+      <button id="movein-no"  style="margin:4px;padding:8px 18px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#ddd;border-radius:6px;cursor:pointer">Rifiuta</button>`;
+    document.body.appendChild(el);
+    el.querySelector('#movein-yes').addEventListener('click', () => {
+      // Adopt via population record first (works even if visitor is off-lot)
+      const rec = this.population._people?.get(visitorId);
+      if (rec) {
+        rec.role = 'household';
+        rec.householdId = 'home';
+        rec.homeLotId   = 'home';
+        this.population._active?.add(visitorId);
+      }
+      let vSim = this.sims?.find(s => s.id === visitorId);
+      if (vSim) {
+        // Already on-lot: just flip the flag
+        vSim._isVisitor = false;
+      } else {
+        // Off-lot: spawn them now as household member
+        vSim = this.population.activatePerson(visitorId);
+      }
+      this.population.setPartner?.(householdId, visitorId);
+      bus.emit('story:entry', { text: `${visitorName} si è unito/a alla famiglia!`, cat: 'family' });
+      el.remove();
+    });
+    el.querySelector('#movein-no').addEventListener('click', () => {
+      this.relationshipGraph?.adjust?.(householdId, visitorId, 'romance', -10);
+      bus.emit('story:entry', { text: `${householdName} ha rifiutato ${visitorName}.`, cat: 'drama' });
+      el.remove();
+    });
   }
 
   /** Open the rich dashboard in a separate window; fall back to inline panel. */
@@ -579,6 +690,10 @@ export class Game {
       // Sprint 5/6 — build
       budget:   this.budgetSystem.serialise(),
       walls:    this.wallManager.serialise(),
+      lot:      this.world.serialiseExpansions(),
+      kitchen:  this.world.serialiseKitchen?.() ?? null,
+      construction: this.construction?.serialise?.() ?? null,
+      householdPlanner: this.householdPlanner?.serialise?.() ?? null,
     };
   }
 
@@ -594,6 +709,11 @@ export class Game {
       this.clock.weekday = this.clock.day % 7;
     }
     if (state.customObjects)      this.objectRegistry?.restoreCustom?.(state.customObjects);
+    // Replay lot expansions BEFORE furniture/walls so the grown grid exists.
+    if (state.lot)                this.world.restoreExpansions(state.lot);
+    if (state.kitchen)            this.world.restoreKitchen?.(state.kitchen);
+    if (state.construction)       this.construction?.restore?.(state.construction);
+    if (state.householdPlanner)   this.householdPlanner?.restore?.(state.householdPlanner);
     if (state.furniture) this.world.restoreFurniture(state.furniture);
     // Roster was rebuilt from state.sims in _startFromSave, so match by index
     // and adopt the saved id (subsystems below are keyed by Sim id).

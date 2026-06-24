@@ -1,4 +1,5 @@
 import { WalkToAction, UseObjectAction } from './Action.js';
+import { CookMealAction }                from './CookMealAction.js';
 import { memorySystem }                  from '../systems/MemorySystem.js';
 import { Logger }                        from '../utils/Logger.js';
 import { bus }                           from '../core/EventBus.js';
@@ -63,6 +64,11 @@ export class NeedDrivenPlanner {
 
     this.lastNeedLabel = NEED_EMOJI[needKey] || needKey;
     Logger.info(`[Planner] "${needKey}" (${Math.round(value)}) → ${furniture.id}`);
+
+    // WP3: hunger is solved by the food lifecycle, not a direct fridge use.
+    if (needKey === 'hunger') {
+      return [new CookMealAction(this._sim, this._sim._world, furniture)];
+    }
 
     const targetGz = furniture.gz + 1 < 16 ? furniture.gz + 1 : furniture.gz - 1;
     return [

@@ -56,12 +56,16 @@ export class CareerPanel {
       const firstShift = c.shifts?.[0];
       const ws = firstShift?.start ?? 0;
       const we = firstShift?.end ?? 0;
+      const stress = state.stress ?? 0;
+      const stressColor = stress >= 80 ? '#e57373' : stress >= 50 ? '#ffb74d' : '#81c784';
       return `
         <div class="cp-current">
           <div class="cp-career-name">${c.icon} ${c.label} — Level ${state.level} / ${c.levels}</div>
           <div class="cp-meta">Daily salary: <b>§${sal.toLocaleString()}</b> &bull; Hours: ${ws}:00-${we}:00 &bull; Skill: ${c.skillRequired ?? 'none'}</div>
           <div class="cp-perf-bar"><div class="cp-perf-fill" style="width:${perf}%"></div></div>
           <div class="cp-perf-label">Performance: ${perf}%</div>
+          <div class="cp-perf-bar"><div class="cp-perf-fill" style="width:${stress}%;background:${stressColor}"></div></div>
+          <div class="cp-perf-label">Work stress: ${stress}%</div>
           <button class="cp-quit-btn">Quit Job</button>
         </div>`;
     })() : '<div class="cp-unemployed">📋 Unemployed — choose a career below.</div>';

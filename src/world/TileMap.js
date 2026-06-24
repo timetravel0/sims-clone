@@ -25,6 +25,43 @@ export class TileMap {
   isWalkable(x, z) { return this.get(x, z) === TILE.FLOOR; }
   worldToGrid(wx, wz) { return { x: Math.round(wx), z: Math.round(wz) }; }
   gridToWorld(gx, gz) { return { x: gx, y: 0, z: gz }; }
+  expand(direction, tiles = 8) {
+    if (direction === 'right') {
+      const newW = this.width + tiles;
+      for (let z = 1; z < this.height - 1; z++) this._grid[z][this.width - 1] = TILE.FLOOR;
+      for (let z = 0; z < this.height; z++)
+        for (let x = this.width; x < newW; x++)
+          this._grid[z].push((z === 0 || z === this.height - 1 || x === newW - 1) ? TILE.WALL : TILE.FLOOR);
+      this.width = newW;
+    } else if (direction === 'bottom') {
+      const newH = this.height + tiles;
+      for (let x = 1; x < this.width - 1; x++) this._grid[this.height - 1][x] = TILE.FLOOR;
+      for (let z = this.height; z < newH; z++) {
+        const isEdge = z === newH - 1;
+        this._grid.push(Array.from({ length: this.width }, (_, x) =>
+          (isEdge || x === 0 || x === this.width - 1) ? TILE.WALL : TILE.FLOOR));
+      }
+      this.height = newH;
+    } else if (direction === 'left') {
+      const newW = this.width + tiles;
+      for (let z = 1; z < this.height - 1; z++) this._grid[z][0] = TILE.FLOOR;
+      for (let z = 0; z < this.height; z++) {
+        const newRow = Array.from({ length: tiles }, (_, i) =>
+          (z === 0 || z === this.height - 1 || i === 0) ? TILE.WALL : TILE.FLOOR);
+        this._grid[z].unshift(...newRow);
+      }
+      this.width = newW;
+    } else if (direction === 'top') {
+      const newH = this.height + tiles;
+      for (let x = 1; x < this.width - 1; x++) this._grid[0][x] = TILE.FLOOR;
+      const newRows = Array.from({ length: tiles }, (_, i) =>
+        Array.from({ length: this.width }, (__, x) =>
+          (i === 0 || x === 0 || x === this.width - 1) ? TILE.WALL : TILE.FLOOR));
+      this._grid.unshift(...newRows);
+      this.height = newH;
+    }
+  }
+
   randomWalkable() {
     const walkable = [];
     for (let z = 0; z < this.height; z++) {

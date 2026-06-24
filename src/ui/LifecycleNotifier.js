@@ -98,50 +98,51 @@ export class LifecycleNotifier {
   // ── private: event subscriptions ────────────────────────────────
 
   _subscribe() {
+    const isHH = sim => sim && !sim._isVisitor;
+
     bus.on('lifecycle:stageChanged', ({ sim, oldStage, newStage, age }) => {
+      if (!isHH(sim)) return;
       const emoji = STAGE_EMOJI[newStage] ?? '✨';
-      const name  = sim?.name ?? 'Sim';
       this._enqueue(
-        `${emoji} <b>${name}</b> is now a <b>${newStage}</b> — day ${age}`,
+        `${emoji} <b>${sim.name}</b> is now a <b>${newStage}</b> — day ${age}`,
         CAT_CLASS.stage
       );
     });
 
     bus.on('career:promoted', ({ sim, career, oldLevel, newLevel, salary }) => {
-      const name = sim?.name ?? 'Sim';
+      if (!isHH(sim)) return;
       this._enqueue(
-        `🏆 <b>${name}</b> promoted to <b>${career} Lv.${newLevel}</b> — §${salary}/shift`,
+        `🏆 <b>${sim.name}</b> promoted to <b>${career} Lv.${newLevel}</b> — §${salary}/shift`,
         CAT_CLASS.promote
       );
     });
 
     bus.on('career:fired', ({ sim, career }) => {
-      const name = sim?.name ?? 'Sim';
+      if (!isHH(sim)) return;
       this._enqueue(
-        `💼❌ <b>${name}</b> was fired from <b>${career}</b>`,
+        `💼❌ <b>${sim.name}</b> was fired from <b>${career}</b>`,
         CAT_CLASS.fire
       );
     });
 
     bus.on('career:skillGain', ({ sim, skill, value }) => {
+      if (!isHH(sim)) return;
       // throttle: only show on integer milestones (1, 2, 3 …)
       const floor = Math.floor(value);
       if (Math.floor(value - 0.01) < floor) {
         const emoji = SKILL_EMOJI[skill] ?? '⭐';
-        const name  = sim?.name ?? 'Sim';
         this._enqueue(
-          `${emoji} <b>${name}</b> reached <b>${skill} ${floor}</b>`,
+          `${emoji} <b>${sim.name}</b> reached <b>${skill} ${floor}</b>`,
           CAT_CLASS.skill
         );
       }
     });
 
     bus.on('schedule:slotChanged', ({ sim, slot }) => {
-      if (!slot) return;
+      if (!isHH(sim) || !slot) return;
       const emoji = SLOT_EMOJI[slot.type] ?? '📅';
-      const name  = sim?.name ?? 'Sim';
       this._enqueue(
-        `${emoji} <b>${name}</b> — ${slot.label ?? slot.type}`,
+        `${emoji} <b>${sim.name}</b> — ${slot.label ?? slot.type}`,
         CAT_CLASS.schedule
       );
     });

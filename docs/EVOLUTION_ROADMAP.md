@@ -327,6 +327,8 @@ Sims should move furniture when the home layout is inefficient.
 - It makes sense to put a bed near a desk/bookshelf.
 - It makes sense to put a shower near a toilet.
 - Sims should be able to reposition furniture according to function.
+- Sims should be able to erase/send furniture
+- Sims should be able to create doors and position them to connect rooms
 
 ### Required concepts
 
@@ -362,7 +364,6 @@ move object A from tile X to tile Y because:
 4. A move must preserve path connectivity.
 5. A move should emit `household:furnitureMoved`.
 6. Furniture movement should cost time and optionally energy.
-7. Heavy furniture may require higher fitness/handiness or multiple Sims later.
 
 ### Initial implementation strategy
 
@@ -895,23 +896,164 @@ The correct order is:
 
 ---
 
-## Immediate next work package
+## Work Package Status
 
-The next concrete development package should be:
+| WP | Description | Status | Date |
+|---|---|---|---|
+| WP1 | Spatial Reliability and Layout Intelligence | ✅ Completato | 2026-06-23 |
+| WP2 | Careers Expansion (Milestone 8) | ✅ Completato | 2026-06-23 |
+| WP3 | Food Lifecycle (Milestone 7) | ✅ Completato | 2026-06-23 |
+| WP4 | Autonomous Room Creation & Land Purchase (Milestone 6) | ✅ Completato | 2026-06-23 |
+| WP5 | Family Generation & Household Constraints (Milestone 9) | ✅ Completato | 2026-06-23 |
+| WP6 | Sim Location Detail (Milestone 10) | ✅ Completato | 2026-06-23 |
+| WP7 | Paid Medical Treatment (Milestone 11) | ✅ Completato | 2026-06-23 |
+| WP8 | Food–Health–Doctor Integration (Milestone 12) | ✅ Completato | 2026-06-23 |
+| WP9 | Autonomous Home Planning Loop (Milestone 13) | ✅ Completato | 2026-06-23 |
 
-```text
-WP1 — Spatial Reliability and Layout Intelligence
-```
+---
 
-Scope:
+## WP1 — Spatial Reliability and Layout Intelligence ✅ COMPLETATO
 
-- Wall/door tests and bug fixes.
-- Camera zoom and rotation.
-- Object function tags.
-- LayoutPlanner score-only mode.
-- FurnitureMovePlanner suggestion-only mode.
-- Headless metrics for layout score and blocked paths.
+**Completed 2026-06-23**
 
-Only after WP1 should the project move to autonomous room creation or full food simulation.
+Delivered:
+- Wall/door tests (`tests/WallManager.test.js`, 7 tests passing). Confirmed: Sims cannot walk through walls, can walk through doors, serialise/restore preserves all edges.
+- Camera zoom (`wheel` scroll, range 5–30) and rotation (`Q`/`E`, snapped 90°) — `IsometricCamera.js` extended with `_zoom` and `_angle` state.
+- Object function tags: all objects in `objectCatalog.js` have `category`, `functionTags`, `roomTags`, and selected `adjacencyPrefs`. `Furniture.js` copies these from `ObjectRegistry` at construction.
+- LayoutPlanner (`src/world/LayoutPlanner.js`): `score()`, `suggestMoves()`, and `autoRearrange()` (autonomous execution with BFS connectivity check). Fires every ~1 game-hour. `World.moveFurniture()` added as the primitive.
 
-This is the most important sequencing decision: if spatial reliability is not solved first, autonomous rooms, food routing and furniture rearrangement will all be unstable.
+---
+
+## WP2 — Careers Expansion ✅ COMPLETATO
+
+**Completed 2026-06-23**
+
+Delivered:
+- 34 career tracks across 10 families in `src/config/careers.js` (culinary, science/medicine, tech, education, business, art, fitness, public service, craft, freelance). Starter ids preserved.
+- Differentiated schedules via presets (`DAY/EARLY/SWING/NIGHT/HOSPI/PART/FLEX/EMERG`) including overnight and weekend shifts — handled by existing `_isInShift`.
+- Per-career `stress` factor (0..1). `CareerSystem` accumulates `state.stress` per shift (net drift around `STRESS_NEUTRAL`), drains `fun`, and fires `career:burnout` at high stress.
+- Career events on shift end: ~15% good day (salary bonus + perf), ~10% bad day (perf/fun penalty).
+- Career autonomy extended: Sims switch not only on stagnation but on burnout, preferring a calmer job (`_considerCareerChange`).
+- Metrics: `career:burnout` / `career:callInSick` tracked in headless; summary adds `careerBurnouts`, `callInSick`, `avgWorkStress`.
+- UI: `CareerPanel` shows a work-stress bar. `Careers.test.js` (6 tests) guards catalogue integrity.
+
+Education-driven starting level is deferred to **Milestone 9** (granular household generation owns the `educationLevel` field).
+
+## WP3 — Food Lifecycle ✅ COMPLETATO
+
+**Completed 2026-06-23**
+
+Delivered:
+- `CookMealAction` (`src/ai/CookMealAction.js`): one composite action with an internal phase machine running fridge → counter (prep) → stove (cook) → table → eat. Each leg is optional; a failed walk skips that station and hunger is still restored at the end, so a bare/crowded lot never causes starvation.
+- Fridge no longer solves hunger directly: its affordance is now `cook` (label "Cook a meal"). Both planners redirect any hunger-restoring furniture intent to `CookMealAction` (`NeedDrivenPlanner.planFor` for the need/crisis path; `UtilityAIPlanner._actionsFor` when `utility.hunger > 0`).
+- New kitchen objects `stove` (cook) and `counter` (prep) plus `dining_table` added to the default lot. `RecipeCatalog` (`src/config/recipes.js`): 6 recipes gated by cooking skill, with servings.
+- Meal quality (poor/normal/good/excellent) from cooking skill + appliances; raw (no appliance) = poor. Quality scales hunger restore; eating at a table adds comfort/social/status, eating standing costs comfort. Poor meals carry a 12% food-poisoning risk (`HealthSystem.reportIncident`). Cooking grants cooking skill.
+- Group meals: a served meal feeds other present, hungry household members from its servings.
+- Metrics: `food:cooked` / `food:eaten` tracked in headless; summary adds `mealsCooked`, `poorMeals`, `mealServings`. Validated: 2500-tick run cooks 16 meals, 17 servings, **0 starvation deaths**.
+- `tests/Food.test.js` (7 tests) covers recipe gating and kitchen object tags.
+
+Deferred to Milestone 12 (food↔health↔doctor integration): ingredient inventory depletion, meal spoilage over time, dish-washing/cleanup actions, and nutrition affecting long-term health. The current pipeline models the cook→serve→eat loop and quality→poisoning link without persistent ingredient/dish entities.
+
+## WP4 — Autonomous Room Creation & Land Purchase ✅ COMPLETATO
+
+**Completed 2026-06-23**
+
+Delivered:
+- `AutonomousConstructionSystem` (`src/systems/AutonomousConstructionSystem.js`): on each day-change the household checks a functional reason (currently: beds insufficient for household, `sims > beds*2`) and, gated by a funds reserve (§5000), land cost (§2500), a 2-day cooldown and a hard cap (3 rooms), buys land and builds a bedroom. Every build emits a logged reason (`household:roomCreated` + story entry) — no reasonless growth.
+- Construction is staged: `World.expandLot('bottom')` grows the grid (only `right`/`bottom` allowed — they append without renumbering existing tiles) → the new patch is enclosed with `WallManager` edge-walls leaving one door → a bed is placed at the room centre.
+- `World` now tracks wall meshes by key (adds new border walls, removes opened ones on expansion) and logs expansions (`serialiseExpansions`/`restoreExpansions`), replayed on load so the grown lot + walls + furniture survive save/load.
+- `RoomDetector` flood-fill now stops at doors as well as walls, so a doored room is its own room (the intuitive notion) rather than merging with the area beyond the door. Default lot detection is unchanged.
+- Manual expand menu restricted to Est/Sud and only debits on success.
+- Headless: emits `clock:dayChanged` (so day-gated systems run), tracks `household:roomCreated`, summary adds `roomsBuilt`. Validated: 4000-tick run builds 1 room, 0 starvation deaths.
+- `tests/Construction.test.js` (5 tests): functional-need detection, full build (lot grows, land debited, bed added, room detected), reachable door, funds reserve gate, serialise/restore.
+
+Deferred (later stages of M6): multiple expansion shapes, bathroom/privacy triggers, moving furniture into new rooms, and room-function assignment beyond bedrooms.
+
+## WP5 — Family Generation & Household Constraints ✅ COMPLETATO
+
+**Completed 2026-06-23**
+
+Delivered:
+- `src/config/familyRules.js`: explicit `FAMILY_RULES` (maxHouseholdSize 6, maxChildrenPerCouple 3, maxDependentChildren 4, birthFundsThreshold §3000, minRomanceForChild 45) and an `EDUCATION` ladder (none/highschool/college/university).
+- Gated autonomous births: `PopulationSystem._birthBlockedReason` enforces household size, per-couple child limit, dependent-children cap, financial readiness, relationship stability (romance ≥ 45) and parent health, plus bed capacity (2 sims/bed). Replaces the bare `MAX_HOUSEHOLD` check. Headless: births dropped from ~6/4000-ticks (uncontrolled) to 1 (gated).
+- Structured household seeding: `PopulationSystem.seedHouseholdStructure()` makes the first two adults spouses (with a romance seed), the third a sibling of the first (shared `familyId`), and assigns varied education. Gap-filling only — never overwrites loaded/custom partners, family links or education. Parent/child come from births; ex/rivals from external `relationshipSeeds` (e.g. Vic's rivalry).
+- Education → career: `CareerSystem._setCareer` starts higher-educated Sims at a higher level (`1 + max(0, education-1)`) and grants a starting skill bump in the career's required fields. **Unlocks the WP2-deferred education link.**
+- `education` added to the person record (defaults preserved through save/load alongside `parentIds`/`childIds`/`familyId`). Shown in `LifeCyclePanel` (🎓).
+- `tests/Family.test.js` (10 tests): education labels, structure seeding (spouse/sibling/no-overwrite), each birth constraint, and family-tree persistence.
+
+**M9 rich (added 2026-06-23):**
+- **Fertility profiles** — every person has `fertility {desire, fecundity}` (`defaultFertility()`); autonomous birth probability now scales with the couple's average desire and conception with fecundity (replacing the flat 0.18 roll). The young-adult/adult age gate remains the fertility window.
+- **`allowAutonomousBirths`** master switch in `FAMILY_RULES`, checked first in `_considerBirths`.
+- **Relationship-history log** — `PopulationSystem.logRelationship()` appends dated entries (`partnered`/`child_born`/`sibling`) on `setPartner`, `createChild` and `seedHouseholdStructure`; stored on the person record.
+- **Career-history** — `CareerSystem._recordCareerHistory()` appends `joined`/`switched`/`promoted` entries (careerId, level, day) to the person record on career change and promotion.
+- All new fields (`fertility`, `relationshipHistory`, `careerHistory`) round-trip through save/load. `tests/Family.test.js` extended to 14 tests.
+
+Still deferred: career-history for the *initial* starter assignment (person record doesn't exist yet at seed time), and explicit ex-partner seeding inside the founding household (ex/rival currently come from external `relationshipSeeds`).
+
+## WP6 — Sim Location Detail ✅ COMPLETATO
+
+**Completed 2026-06-23**
+
+Delivered:
+- `src/systems/LocationService.js`: pure `describeLocation(sim, ctx)` → `{ mode, activity, reason, roomType, objectId, objectLabel, gx, gz, action }` (modes: on_lot/work/outing/visiting/medical/unknown), plus `describeActivity` (maps action labels → sleeping/cooking & eating/walking/…) and `locationSummary` (one-line "in the kitchen, cooking & eating"). No state/subscriptions.
+- `Sim.currentAction` getter exposes the running action label cleanly.
+- UI: `LifeCyclePanel` shows a 📍 block for the selected Sim (room + coords + activity + reason + nearby object) — answers "where & why". `SimSelector` portrait tooltips show live per-Sim location (throttled ~2/s), so the household roster reads at a glance.
+- Headless: per-tick time-by-location accumulation → summary `locationTime` (normalised fractions per mode). Validated: a 2000-tick run reports work/on_lot/outing split.
+- `tests/Location.test.js` (9 tests): activity mapping, each mode (work/outing/medical/on-lot with room+object), and one-line summaries.
+
+Deferred (richer M10): explicit `roomId`/`lotId`/`sinceTick`/`untilTick` fields, a dedicated always-on roster panel, and a debug overlay with tile coordinates + action for every Sim.
+
+## WP7 — Paid Medical Treatment ✅ COMPLETATO
+
+**Completed 2026-06-23**
+
+Delivered:
+- `src/config/treatments.js`: `TREATMENTS` (consultation §120 / medicine §80 / urgent care §450 / home visit §700) with `pickTreatment(illness, severity, funds)` that routes severe/trauma → urgent care, mild common → medicine, else consultation, gated by affordability.
+- `src/systems/DoctorService.js`: illness is now actionable. Manual `book(personId, treatmentId?)` (player) and autonomous booking — when a household Sim becomes ill at severity ≥ 0.45 and can afford care (listens to `health:stateChanged`). A booking models a visit as a short arrival delay; on `update()` the fee is debited and `HealthSystem.treat()` resolves the illness or reduces severity. Emits `health:treatmentBooked` / `health:treated` + story entries.
+- `HealthSystem.treat(personId, {resolve, drop})` applies the cure (recover or severity drop).
+- UI: `LifeCyclePanel` shows a 🩺 "Chiama il dottore (treatment − §cost)" button when the selected Sim is ill, and "visita in arrivo…" while pending.
+- Metrics: `health:treated` watched; `ExperimentLogger` health rows now carry `treatmentId`/`cost`/`resolved`; summary adds `treatments` and `treatmentSpend`. Validated headless: treatments occur, fees debited, illnesses resolved.
+- `tests/Doctor.test.js` (9 tests): treatment selection, booking, funds gate, delayed resolve (fee + cure), immediate `treatNow`, autonomous booking on illness.
+
+Deferred: real off-lot clinic travel (visits are modelled as a delay; the Sim stays on-lot — `medical` location mode exists for the outing variant), and treatment quality/specialisation.
+
+## WP8 — Food–Health–Doctor Integration ✅ COMPLETATO
+
+**Completed 2026-06-23**
+
+Delivered:
+- **Food poisoning from real meals**: `CookMealAction` now emits `food:poisoning` and reports the incident with a probability from `poisoningChance(tier, cookSkill)` — worse quality → higher risk, higher cooking skill → lower (a skill-10 cook never poisons). Replaces the flat poor-only 12% roll.
+- **Nutrition model**: `QUALITY_SCORE` per tier feeds `updateNutrition(sim, score)` (rolling average on `sim._nutrition`); better meals also restore a little energy. `HealthSystem._illnessChance` adds a nutrition term — well-fed Sims resist illness, malnourished ones get sick more.
+- **Doctor resolves food poisoning faster**: `pickTreatment` already routes `food poisoning` → urgent care (instant resolve on arrival vs slow natural recovery) — the M11 path now fired by real food events.
+- **Headless correlation**: `food:poisoning` watched; summary adds `avgFoodQuality` (numeric 0..1) and `foodPoisonings`. Validated run: avgFoodQuality 0.34 (novice cooks) → 7 food poisonings → doctor treatments, showing the quality→health→care chain.
+- Pure helpers `QUALITY_SCORE`/`poisoningChance`/`updateNutrition` exported; `tests/Food.test.js` extended (+4) covering risk ordering, skill effect, nutrition average and the illness-chance link.
+
+Deferred: explicit kitchen-hygiene state (dirty counters/dishes raising risk) — needs the dish-washing/cleanup loop deferred from WP3.
+
+## WP9 — Autonomous Home Planning Loop ✅ COMPLETATO
+
+**Completed 2026-06-23**
+
+Delivered:
+- `src/systems/HouseholdPlanner.js` — the capstone coordination layer. Once per day: `observe()` (funds, ill members, per-need pressure, household ambition) → `rank()` candidate interventions by urgency, gated by affordability and nudged by personality → `plan()` executes the single most-urgent one and logs the reason.
+- Coordinates existing systems instead of reimplementing them: `treat_illness` → `DoctorService.book`, `build_room` → `AutonomousConstructionSystem.build`, `buy_object` → `AutonomousShoppingSystem._considerPurchase`, `rearrange` → `LayoutPlanner.autoRearrange`. Every chosen intervention emits `household:plan {intervention, reason, urgency, day}` + a story entry — household improvements are now explainable, ranked plans, not isolated reactions.
+- Safety: `AutonomousConstructionSystem.build()` now self-guards (cap/cooldown/funds) so the planner and the subsystem's own day tick can't double-build.
+- Console: `window._game.householdPlanner.observe()` / `.rank()`.
+- Headless: `household:plan` watched; summary adds `householdPlans` and `planByType`. Validated 5000-tick run: 3 plans across rearrange/buy/treat, 0 starvation deaths.
+- `tests/HouseholdPlanner.test.js` (8 tests): observation, ranking (illness over routine), execution+logging, build affordability gate, buy-for-top-need, urgency floor, serialise/restore.
+
+Deferred: routing *every* reactive subsystem purely through the planner (subsystems retain their own autonomy as fallback), upgrade/repair-object interventions, and outcome-measurement feedback (the "measure outcome" step is currently implicit).
+
+## Refinements — deferred items implemented (2026-06-23)
+
+After completing M1–M13, a pass implemented the highest-value deferred items:
+
+- **Kitchen hygiene & dish-washing (WP3 + WP8 keystone):** `World.kitchenHygiene`/`dirtyDishes` + `soilKitchen()`/`washDishes()` (requires a `sink`, now in catalog + default lot). Cooking dirties the kitchen; a dirty kitchen multiplies food-poisoning chance (`CookMealAction`) and raises illness chance (`HealthSystem._illnessChance`). `HouseholdPlanner` gained a `clean_kitchen` intervention (delegates to `washDishes()`). Kitchen state save/loads; headless summary adds `kitchenHygiene`. This closes the explicit food↔health hygiene link.
+- **Bathroom construction trigger (WP4):** `AutonomousConstructionSystem._needReason()` now also returns `'bathroom'` when fixtures are short (`sims > baths*3`), and `build('bathroom')` furnishes a toilet instead of a bed.
+- **Location fields (WP6):** `describeLocation` now includes `lotId`, `roomId`, and `untilTick` (for outings).
+
+Still deferred (lower value): off-lot clinic travel & treatment quality (WP7), upgrade/repair-object & full subsystem routing & outcome-measurement (WP9), multiple expansion shapes & furniture relocation into new rooms (WP4), dedicated roster panel & per-Sim debug overlay & `sinceTick` (WP6), ingredient depletion & meal spoilage (WP3).
+
+## Status
+
+All 13 roadmap milestones are implemented (WP1–WP9 cover M1–M13). The simulation runs the same systems in browser and headless, with save/load and headless metrics covering every feature, and the food→hygiene→health→doctor loop is now fully closed and coordinated by the household planner. Remaining work is low-value polish of the items listed above.

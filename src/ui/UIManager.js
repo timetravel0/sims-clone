@@ -63,6 +63,7 @@ export class UIManager {
   updateOverlays() {
     this._emotionBadge.update();
     this._moodRing.update();
+    this._selector.update?.();
   }
 
   destroy() {

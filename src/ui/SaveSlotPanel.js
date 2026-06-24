@@ -62,26 +62,29 @@ export class SaveSlotPanel {
 
     const slotCards = slots.map(s => {
       const isAuto = s.slot === 0;
-      const label  = isAuto ? '🔄 Auto-Save' : `Slot ${s.slot}`;
+      const label  = isAuto ? '🔄 Auto-Save' : `Save ${s.slot}`;
       const info   = s.empty
         ? '<span style="color:#5a5957">Empty</span>'
         : `<span>${s.householdName}</span><span style="color:#7a7974"> &mdash; Day ${s.day ?? 1} &bull; ${s.simCount} Sim${s.simCount !== 1 ? 's' : ''} &bull; ${this._formatDate(s.timestamp)}</span>`;
 
-      const canSave   = isSave && (!isAuto);  // don't manually save over auto-slot
+      const canSave   = isSave && !isAuto;
       const canLoad   = !s.empty;
-      const canDelete = !s.empty && (!isAuto || !isSave);
+      const canDelete = !s.empty && !isAuto;
 
       return `
         <div class="ss-card" data-slot="${s.slot}">
           <div class="ss-label">${label}</div>
           <div class="ss-info">${info}</div>
           <div class="ss-actions">
-            ${ canSave   ? `<button class="ss-btn ss-save"   data-slot="${s.slot}">&#128190; Save</button>` : '' }
+            ${ canSave   ? `<button class="ss-btn ss-save"   data-slot="${s.slot}">&#128190; ${s.empty ? 'Save' : 'Overwrite'}</button>` : '' }
             ${ canLoad   ? `<button class="ss-btn ss-load"   data-slot="${s.slot}">&#9654; Load</button>` : '' }
             ${ canDelete ? `<button class="ss-btn ss-delete" data-slot="${s.slot}">&#128465;</button>` : '' }
           </div>
         </div>`;
     }).join('');
+    const newSaveBtn = isSave
+      ? `<button id="ss-new-save" class="ss-btn" style="width:100%;margin-bottom:8px;background:#2a4a2a;color:#8fbc8f">+ New Save</button>`
+      : '';
     const storage = await this._storageHTML();
 
     this._el.innerHTML = `
@@ -94,7 +97,7 @@ export class SaveSlotPanel {
             <button id="ss-close">✕</button>
           </div>
         </div>
-        <div class="ss-body">${storage}${slotCards}</div>
+        <div class="ss-body">${storage}${newSaveBtn}${slotCards}</div>
         <div class="ss-footer" style="color:#5a5957;font-size:11px;padding:8px 16px">Auto-Save runs every 5 minutes to Slot 0.</div>
       </div>`;
 
@@ -135,6 +138,11 @@ export class SaveSlotPanel {
       b.addEventListener('click', async () => { if (confirm('Load this save? Unsaved progress will be lost.')) await this._sl.load(+b.dataset.slot); }));
     this._el.querySelectorAll('.ss-delete').forEach(b =>
       b.addEventListener('click', async () => { if (confirm('Delete this save?')) await this._sl.deleteSlot(+b.dataset.slot); }));
+    document.getElementById('ss-new-save')?.addEventListener('click', async () => {
+      const slot = await this._sl.nextSlot();
+      await this._sl.save(slot);
+      await this._render();
+    });
     this._el.querySelector('#ss-db-open')?.addEventListener('click', async () => {
       const adapter = this._sl.adapter;
       if (!confirm('Use an existing SQLite file? Current in-memory slots will be replaced by that file.')) return;

@@ -27,6 +27,11 @@ import { RoomDetector } from '../world/RoomDetector.js';
 import { SIM_DEFS, STARTER_CAREERS } from '../config/defaultPopulation.js';
 import { ObjectRegistry } from '../systems/ObjectRegistry.js';
 import { GameContext }    from '../core/GameContext.js';
+import { LayoutPlanner }  from '../world/LayoutPlanner.js';
+import { AutonomousConstructionSystem } from '../systems/AutonomousConstructionSystem.js';
+import { describeLocation } from '../systems/LocationService.js';
+import { DoctorService }    from '../systems/DoctorService.js';
+import { HouseholdPlanner } from '../systems/HouseholdPlanner.js';
 
 // Fidelity: the browser advances on a fixed 20 Hz timestep (GameLoop TICK_MS),
 // i.e. dt=0.05s per frame. Movement (step = SPEED·dt), path-block timers and the
@@ -45,6 +50,14 @@ const HEADLESS_METRIC_EVENTS = [
   'career:switched',
   'career:salary',
   'career:shiftEnd',
+  'career:burnout',
+  'career:callInSick',
+  'food:cooked',
+  'food:eaten',
+  'food:poisoning',
+  'household:roomCreated',
+  'household:plan',
+  'health:treated',
   'story:entry',
   'household:crafted',
 ];
@@ -107,9 +120,13 @@ export class HeadlessRuntime {
     this.romanceSystem = new RomanceSystem(this.sims, this.relationshipGraph, this.population);
     this.relationshipGraph.setPopulation?.(this.population);
     this.healthSystem = new HealthSystem(this);
+    this.doctor = new DoctorService(this);
     this.visitorSystem = new VisitorSystem(this);
     this.offLotSimulation = new OffLotSimulationSystem(this);
     this.autonomousShopping = new AutonomousShoppingSystem(this);
+    this.layoutPlanner      = new LayoutPlanner(this.world);
+    this.construction       = new AutonomousConstructionSystem(this);
+    this.householdPlanner   = new HouseholdPlanner(this);
     this._weather = weatherSystem;
     this._moodEngine = moodEngine;
 
@@ -119,9 +136,15 @@ export class HeadlessRuntime {
   run({ ticks = 2000, snapshotEvery = 100 } = {}) {
     // `ticks` counts game-minutes (external semantics unchanged). Each is advanced
     // through SUBSTEPS browser-sized frames so movement/brain behave faithfully.
+    this._locationTime = {};
     for (let i = 0; i < ticks; i++) {
       this.tick += 1;
       for (let s = 0; s < SUBSTEPS; s++) this.update(SUBSTEP_DT);
+      for (const sim of this.sims) {
+        if (sim._isVisitor) continue;
+        const mode = describeLocation(sim, { roomDetector: this.roomDetector, world: this.world }).mode;
+        this._locationTime[mode] = (this._locationTime[mode] ?? 0) + 1;
+      }
       if (snapshotEvery > 0 && this.tick % snapshotEvery === 0) this.relationshipSnapshots.push(this.relationshipSnapshot());
     }
     return this.summary();
@@ -134,7 +157,9 @@ export class HeadlessRuntime {
     this.dayNight.update(scaled);
     this.clock.hour = this.dayNight.time * 24;
     this.clock.weekday = Math.floor(this.dayNight.totalDays ?? 0) % 7;
-    this.clock.day = Math.floor(this.dayNight.totalDays ?? 0);
+    const newDay = Math.floor(this.dayNight.totalDays ?? 0);
+    if (newDay > this.clock.day) { this.clock.day = newDay; bus.emit('clock:dayChanged', { day: newDay }); }
+    else this.clock.day = newDay;
 
     for (const sim of this.sims) {
       if (sim._atWork || sim._outing) {
@@ -151,6 +176,7 @@ export class HeadlessRuntime {
     this.world.update(scaled);
     this.ageSystem.update(scaled);
     this.healthSystem?.update?.(scaled);
+    this.doctor?.update?.();
     this.careerSystem.update(scaled);
     this.scheduleSystem.update(scaled);
     this.partySystem.update(scaled);
@@ -159,6 +185,7 @@ export class HeadlessRuntime {
     this.offLotSimulation.update(scaled);
     this.visitorSystem.update(scaled);
     this.autonomousShopping.update(scaled);
+    this.layoutPlanner.update(scaled);
 
     this._weather.update(scaled);
     const deltas = this._weather.getMoodDeltas();
@@ -231,6 +258,31 @@ export class HeadlessRuntime {
     const romanceEdges = this.relationshipGraph.strongest('romance', 25).length;
     const promotionEvents = events.filter(e => e.type === 'career:promoted').length;
     const careerSwitchEvents = events.filter(e => e.type === 'career:switched').length;
+    const burnoutEvents = events.filter(e => e.type === 'career:burnout').length;
+    const sickEvents = events.filter(e => e.type === 'career:callInSick').length;
+    const stresses = household.map(p => this.careerSystem.getState(p.id)?.stress ?? 0);
+    const avgWorkStress = stresses.length ? +(stresses.reduce((a, b) => a + b, 0) / stresses.length).toFixed(1) : 0;
+    const cookedEvents = events.filter(e => e.type === 'food:cooked');
+    const mealsCooked = cookedEvents.length;
+    const poorMeals = cookedEvents.filter(e => e.quality === 'poor').length;
+    const totalServings = events.filter(e => e.type === 'food:eaten').reduce((a, e) => a + (e.servings ?? 1), 0);
+    const QSCORE = { poor: 0.25, normal: 0.55, good: 0.8, excellent: 1.0 };
+    const avgFoodQuality = mealsCooked
+      ? +(cookedEvents.reduce((a, e) => a + (QSCORE[e.quality] ?? 0), 0) / mealsCooked).toFixed(3) : 0;
+    const foodPoisonings = events.filter(e => e.type === 'food:poisoning').length;
+    const roomsBuilt = events.filter(e => e.type === 'household:roomCreated').length;
+    const planEvents = events.filter(e => e.type === 'household:plan');
+    const householdPlans = planEvents.length;
+    const planByType = planEvents.reduce((m, e) => {
+      const k = e.intervention ?? 'unknown';
+      m[k] = (m[k] ?? 0) + 1; return m;
+    }, {});
+    const treatedEvents = events.filter(e => e.type === 'health:treated');
+    const treatments = treatedEvents.length;
+    const treatmentSpend = treatedEvents.reduce((a, e) => a + (e.cost ?? 0), 0);
+    const locTotal = Object.values(this._locationTime ?? {}).reduce((a, b) => a + b, 0) || 1;
+    const locationTime = Object.fromEntries(
+      Object.entries(this._locationTime ?? {}).map(([k, v]) => [k, +(v / locTotal).toFixed(3)]));
     const craftedEvents = events.filter(e => e.type === 'household:crafted').length;
     const levelUpEvents = events.filter(e => e.type === 'skill:levelUp').length;
     const sparkEvents = events.filter(e => e.type === 'story:entry' && /romantic spark/i.test(String(e.text ?? ''))).length;
@@ -246,6 +298,21 @@ export class HeadlessRuntime {
       visitAcceptanceRate: visits.length ? +(acceptedVisits / visits.length).toFixed(3) : 0,
       promotions: promotionEvents,
       careerSwitches: careerSwitchEvents,
+      careerBurnouts: burnoutEvents,
+      callInSick: sickEvents,
+      avgWorkStress,
+      mealsCooked,
+      poorMeals,
+      mealServings: totalServings,
+      avgFoodQuality,
+      foodPoisonings,
+      kitchenHygiene: Math.round(this.world?.kitchenHygiene ?? 100),
+      roomsBuilt,
+      householdPlans,
+      planByType,
+      treatments,
+      treatmentSpend,
+      locationTime,
       crafted: craftedEvents,
       careerActiveRate: household.length ? +(activeCareers / household.length).toFixed(3) : 0,
       skillLevelUps: levelUpEvents,
@@ -260,6 +327,8 @@ export class HeadlessRuntime {
     for (const off of this._unsubscribers) off?.();
     this._unsubscribers = [];
     this.experimentLogger?.dispose?.();
+    this.doctor?.dispose?.();
+    this.householdPlanner?.dispose?.();
     for (const sim of this.sims) {
       sim.brain?.destroy?.();
       this.world?.releaseCellFor?.(sim.id);
@@ -271,9 +340,15 @@ export class HeadlessRuntime {
     bus.clear();  // remove all child-system listeners registered during this run
   }
 
+  _isHHPayload(p) {
+    const ids = [p?.simId, p?.personId, p?.sim?.id, p?.simA?.id, p?.simB?.id, p?.idA, p?.idB].filter(Boolean);
+    if (!ids.length) return true;
+    return ids.some(id => this.population?.isHouseholdMember?.(id));
+  }
+
   _registerMetricEvents() {
     this._unsubscribers.push(...HEADLESS_METRIC_EVENTS.map(type =>
-      bus.on(type, payload => this.experimentLogger.record(type, payload))
+      bus.on(type, payload => { if (this._isHHPayload(payload)) this.experimentLogger.record(type, payload); })
     ));
   }
 

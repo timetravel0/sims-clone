@@ -90,7 +90,7 @@ export class SocialAction extends Action {
     add('confront',  ab.resentment >= 12 ? 22 + Math.max(0, -p.nice) * 25 + Math.max(0, p.neurotic) * 15 : 0);
     add('insult',    (ab.resentment >= 20 && p.nice < -0.2) ? 18 : 0);
     add('avoid',     (ab.resentment >= 15 || ab.fear >= 20) ? 16 : 0);
-    add('argue',     (p.nice < -0.2 && ab.resentment > 5) ? 10 : 0);
+    add('argue',     (p.nice < -0.2 || (p.neurotic > 0.4 && ab.resentment > 3)) ? 10 + Math.max(0, p.neurotic) * 12 : 0);
     // Care
     add('comfort',   ctx.targetMoodLow ? 30 + Math.max(0, p.nice) * 22 + ab.affection * 0.2 : 0);
     add('offer_help',ctx.targetNeedLow ? 24 + Math.max(0, p.nice) * 18 : 0);

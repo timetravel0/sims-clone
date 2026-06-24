@@ -37,7 +37,16 @@ export class LocalStorageAdapter extends PersistenceAdapter {
   deleteSlot(slot) { localStorage.removeItem(this._key(slot)); return true; }
 
   listSlots() {
-    return Array.from({ length: this._slots }, (_, slot) => ({ slot, data: this.readSlot(slot) }));
+    // Always show slots 0-2; also include any extra slots already saved
+    const found = new Set([0, 1, 2]);
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(SAVE_PREFIX)) {
+        const n = Number(k.slice(SAVE_PREFIX.length));
+        if (!isNaN(n)) found.add(n);
+      }
+    }
+    return [...found].sort((a, b) => a - b).map(slot => ({ slot, data: this.readSlot(slot) }));
   }
 
   // ── Event log & snapshots (for experiments / future SQLite parity) ──────────

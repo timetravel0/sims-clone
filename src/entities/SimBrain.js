@@ -95,8 +95,16 @@ export class SimBrain {
       }
     }
 
+    // Track last completed verb for recency penalty in UtilityAIPlanner
+    const prevAction = this._queue._current;
+
     // Tick all subsystems
     this._queue.update(dt);
+
+    if (prevAction?.done) {
+      const v = prevAction._affordance?.verb ?? prevAction.label;
+      if (v) this._lastVerb = v;
+    }
     if (this._socialCooldown > 0) this._socialCooldown -= dt;
     if (this._bondCooldown > 0)   this._bondCooldown -= dt;
     this.expBias.update(dt);

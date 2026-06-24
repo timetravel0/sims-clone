@@ -21,9 +21,12 @@ export class RomanceSystem {
     bus.on('social:interaction', event => this._onSocial(event));
   }
 
+  _isHH(id) { return window._game?.population?.isHouseholdMember?.(id) ?? false; }
+
   _onSocial(event) {
     const { idA, idB, nameA, nameB, type, delta, accepted } = event;
     if (!idA || !idB) return;
+    if (!this._isHH(idA) && !this._isHH(idB)) return; // suppress if no household member involved
 
     const isWarm = POSITIVE.has(type) && (delta ?? 0) > 0;
     const isRomantic = ROMANTIC.has(type) && accepted !== false;
@@ -132,12 +135,27 @@ export class RomanceSystem {
   }
 
   _maybeCommitPair(idA, idB) {
-    if (!this._population?.sameHousehold?.(idA, idB)) return;
-    if (this._population.getPerson?.(idA)?.partnerId && this._population.getPerson?.(idA)?.partnerId !== idB) return;
-    if (this._population.getPerson?.(idB)?.partnerId && this._population.getPerson?.(idB)?.partnerId !== idA) return;
-    const a = this._graph.score(idA, idB, 'romance');
-    const b = this._graph.score(idB, idA, 'romance');
-    if (a >= 35 && b >= 35) this._population.setPartner?.(idA, idB);
+    if (this._population?.sameHousehold?.(idA, idB)) {
+      if (this._population.getPerson?.(idA)?.partnerId && this._population.getPerson?.(idA)?.partnerId !== idB) return;
+      if (this._population.getPerson?.(idB)?.partnerId && this._population.getPerson?.(idB)?.partnerId !== idA) return;
+      const a = this._graph.score(idA, idB, 'romance');
+      const b = this._graph.score(idB, idA, 'romance');
+      if (a >= 35 && b >= 35) this._population.setPartner?.(idA, idB);
+      return;
+    }
+    // Cross-household: propose move-in if romance is high enough
+    const aH = this._population?.isHouseholdMember?.(idA);
+    const bH = this._population?.isHouseholdMember?.(idB);
+    if (!aH && !bH) return;
+    const [hId, vId] = aH ? [idA, idB] : [idB, idA];
+    if (this._graph.score(hId, vId, 'romance') < 50 || this._graph.score(vId, hId, 'romance') < 50) return;
+    const key = `${[hId, vId].sort().join(':')}:movein`;
+    if (this._announced.has(key)) return;
+    this._announced.add(key);
+    bus.emit('romance:moveInProposal', {
+      householdId: hId, householdName: this._name(hId),
+      visitorId:   vId, visitorName:   this._name(vId),
+    });
   }
 
   _gameSim(id) {

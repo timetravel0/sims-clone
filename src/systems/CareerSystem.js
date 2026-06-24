@@ -14,6 +14,11 @@ const PROMOTION_PERFORMANCE = 100;
 // game-days without a promotion, they reconsider their career.
 const STAGNATION_DAYS  = 3;    // game-days at same level before reconsidering
 const BASE_SWITCH_PROB = 0.08;
+// Work stress (0..100). Jobs above STRESS_NEUTRAL push stress up each shift;
+// calmer jobs let it drift down. High stress drains fun and can cause burnout.
+const STRESS_NEUTRAL   = 0.35;
+const STRESS_PER_SHIFT = 22;   // points per shift scaled by (career.stress - neutral)
+const BURNOUT_STRESS   = 80;   // stress at/above which burnout can fire
 
 // Object→skill mapping lives in ObjectRegistry (single source of truth).
 
@@ -122,13 +127,21 @@ export class CareerSystem {
 
     // Entry into a career is open (like The Sims). Skill requirements gate
     // promotions/performance, not joining — see _performanceGain().
+    // M9: education gives a head start — higher schooling starts at a higher
+    // level and grants a small skill bump in the career's required fields.
+    const education = this._game?.population?.getPerson?.(sim.id)?.education ?? 0;
     state.careerId = career.id;
-    state.level = 1;
+    state.level = Math.min(MAX_LEVEL, 1 + Math.max(0, education - 1));
     state.performance = 50;
     state.daysWorked = 0;
     state._daysAtLevel = 0;
     state.atWork = false;
     sim._atWork = false;
+    if (education > 1) {
+      for (const skill of Object.keys(career.skillReq ?? {})) {
+        skillSystem.gain(sim, skill, (education - 1) * 0.5);
+      }
+    }
     if (wasUnemployed || mode === 'assign') {
       bus.emit('career:assigned', { simId: sim.id, sim, careerId: career.id, previousCareerId: previousCareer?.id ?? null });
     } else {
@@ -140,6 +153,7 @@ export class CareerSystem {
       previousCareer,
       mode: wasUnemployed ? 'assigned' : mode === 'switch' ? 'switched' : 'changed',
     });
+    this._recordCareerHistory(sim, wasUnemployed ? 'joined' : mode === 'switch' ? 'switched' : 'changed', career.id, state.level);
     return true;
   }
 
@@ -168,6 +182,7 @@ export class CareerSystem {
       performance: state.performance,
       daysWorked: state.daysWorked,
       simoleons: state.simoleons,
+      stress: Math.round(state.stress ?? 0),
       atWork: state.atWork,
       skills: skillSystem.getSkills(this._findSim(simId)) ?? {},
     };
@@ -206,6 +221,7 @@ export class CareerSystem {
         performance: saved.performance ?? 50,
         daysWorked: saved.daysWorked ?? 0,
         simoleons: saved.simoleons ?? 0,
+        stress: saved.stress ?? 0,
         atWork: saved.atWork ?? false,
         _shiftStarted: saved._shiftStarted ?? false,
         _sickNotifiedAt: saved._sickNotifiedAt ?? null,
@@ -231,6 +247,7 @@ export class CareerSystem {
       performance: 50,
       daysWorked: 0,
       simoleons: 0,
+      stress: 0,
       atWork: false,
       _shiftStarted: false,
       _sickNotifiedAt: null,
@@ -243,6 +260,14 @@ export class CareerSystem {
 
   _findSim(simId) {
     return this._sims.find(s => s.id === simId) ?? null;
+  }
+
+  /** Append a dated entry to a Sim's career history (M9 rich). Persisted on the person record. */
+  _recordCareerHistory(sim, event, careerId, level) {
+    const person = this._game?.population?.getPerson?.(sim.id);
+    if (!person) return;
+    if (!Array.isArray(person.careerHistory)) person.careerHistory = [];
+    person.careerHistory.push({ event, careerId, level, day: this._clock?.day ?? 0 });
   }
 
   _career(careerId) {
@@ -278,20 +303,50 @@ export class CareerSystem {
     if (!state._shiftStarted) return;
     state._shiftStarted = false;
 
-    const salary = this._salaryFor(career, state.level);
-    state.simoleons += salary;
+    const baseSalary = this._salaryFor(career, state.level);
     state.daysWorked += 1;
     state._daysAtLevel = (state._daysAtLevel ?? 0) + 1;
-    state.performance = Math.min(PROMOTION_PERFORMANCE, state.performance + this._performanceGain(state, career));
+
+    // ── Work stress: net drift by career intensity, drains fun ──────────────
+    const stressDelta = (career.stress - STRESS_NEUTRAL) * STRESS_PER_SHIFT;
+    state.stress = Math.max(0, Math.min(100, (state.stress ?? 0) + stressDelta));
+    sim.needs?.decay?.('fun', career.stress * 10);
     sim.needs?.restore?.('status', 12);
 
+    // ── Career event: good/bad day affects performance and pay ──────────────
+    let perfGain = this._performanceGain(state, career);
+    let bonus = 0;
+    const roll = Math.random();
+    if (roll < 0.15) {
+      bonus = Math.round(baseSalary * 0.5);
+      perfGain += 5;
+      bus.emit('story:entry', { simId: sim.id, text: `${sim.name} had a great day as ${career.label} (+§${bonus} bonus).`, cat: 'positive', category: 'positive' });
+    } else if (roll > 0.90) {
+      perfGain = Math.max(0, perfGain - 8);
+      sim.needs?.decay?.('fun', 6);
+      bus.emit('story:entry', { simId: sim.id, text: `${sim.name} had a rough day at ${career.label}.`, cat: 'drama', category: 'drama' });
+    }
+
+    const salary = baseSalary + bonus;
+    state.simoleons += salary;
+    state.performance = Math.min(PROMOTION_PERFORMANCE, state.performance + perfGain);
+
     bus.emit('career:salary', { simId: sim.id, sim, amount: salary });
-    bus.emit('career:shiftEnd', { sim, career: career.label, salary });
+    bus.emit('career:shiftEnd', { sim, simId: sim.id, career: career.label, salary, stress: Math.round(state.stress) });
     bus.emit('story:entry', {
+      simId: sim.id,
       text: `${sim.name} finished a shift as ${career.label} and earned §${salary}.`,
       cat: 'positive',
       category: 'positive',
     });
+
+    // ── Burnout: sustained high stress hits mood and pushes a job change ─────
+    if (state.stress >= BURNOUT_STRESS && Math.random() < 0.3) {
+      sim.needs?.decay?.('fun', 20);
+      sim.emotions?.trigger?.('anger', 0.6);
+      bus.emit('career:burnout', { simId: sim.id, sim, career: career.label, stress: Math.round(state.stress) });
+      bus.emit('story:entry', { simId: sim.id, text: `${sim.name} is burning out as ${career.label}.`, cat: 'drama', category: 'drama' });
+    }
 
     if (state.performance >= PROMOTION_PERFORMANCE && state.level < MAX_LEVEL) {
       this._promote(sim, 'performance');
@@ -317,11 +372,21 @@ export class CareerSystem {
   }
 
   _considerCareerChange(sim, state) {
-    if ((state._daysAtLevel ?? 0) < STAGNATION_DAYS) return;
     if (state.level >= MAX_LEVEL) return;
+    const stressed = (state.stress ?? 0) >= BURNOUT_STRESS;
+    const stagnant = (state._daysAtLevel ?? 0) >= STAGNATION_DAYS;
+    if (!stressed && !stagnant) return;
     const ambitious = sim.personality?.ambitious ?? 0;
-    if (Math.random() >= BASE_SWITCH_PROB * (1 + Math.max(0, ambitious))) return;
-    const options = CAREERS.filter(c => c.id !== 'unemployed' && c.id !== state.careerId);
+    // Burnout multiplies the urge to leave; ambition drives stagnation-led moves.
+    const prob = BASE_SWITCH_PROB * (1 + Math.max(0, ambitious)) * (stressed ? 3 : 1);
+    if (Math.random() >= prob) return;
+    const current = this._career(state.careerId);
+    let options = CAREERS.filter(c => c.id !== 'unemployed' && c.id !== state.careerId);
+    // When burning out, prefer a calmer job than the current one.
+    if (stressed) {
+      const calmer = options.filter(c => c.stress < (current?.stress ?? 1) - 0.1);
+      if (calmer.length) options = calmer;
+    }
     const next = options[Math.floor(Math.random() * options.length)];
     if (!next) return;
     this._setCareer(sim, next.id, { mode: 'switch' });
@@ -339,6 +404,7 @@ export class CareerSystem {
     sim.needs?.restore?.('status', 20);
     bus.emit('career:promoted', { sim, career: career.label, oldLevel, newLevel: state.level, salary, source });
     bus.emit('career:levelUp', { simId: sim.id, careerId: state.careerId, newLevel: state.level });
+    this._recordCareerHistory(sim, 'promoted', state.careerId, state.level);
     bus.emit('story:entry', {
       text: `${sim.name} was promoted to ${career.label} Lv.${state.level}.`,
       cat: 'positive',

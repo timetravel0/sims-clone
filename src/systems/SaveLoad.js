@@ -105,6 +105,13 @@ export class SaveLoad {
     });
   }
 
+  /** Returns the next unused manual slot number (slot > 0). */
+  async nextSlot() {
+    const list = await this.slotList();
+    const used = list.filter(s => s.slot > 0).map(s => s.slot);
+    return used.length === 0 ? 1 : Math.max(...used) + 1;
+  }
+
   async deleteSlot(slot) {
     await this._adapter.deleteSlot(slot);
     bus.emit('save:deleted', { slot });

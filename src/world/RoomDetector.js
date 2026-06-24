@@ -24,7 +24,6 @@
  */
 import { bus } from '../core/EventBus.js';
 
-const GRID = 16;
 const SIZE_THRESHOLDS = [
   { max: 4,  type: 'closet',     moodBonus: -5 },
   { max: 9,  type: 'small room', moodBonus:  2 },
@@ -62,8 +61,8 @@ export class RoomDetector {
     const visited = new Set();
     const regions = [];
 
-    for (let x = 0; x < GRID; x++) {
-      for (let z = 0; z < GRID; z++) {
+    for (let x = 0; x < this._tileMap.width; x++) {
+      for (let z = 0; z < this._tileMap.height; z++) {
         const k = tileKey(x, z);
         if (visited.has(k)) continue;
         if (!this._tileMap?.isWalkable(x, z)) { visited.add(k); continue; }
@@ -108,12 +107,13 @@ export class RoomDetector {
       ];
 
       for (const [nx, nz] of neighbours) {
-        if (nx < 0 || nx >= GRID || nz < 0 || nz >= GRID) continue;
+        if (nx < 0 || nx >= this._tileMap.width || nz < 0 || nz >= this._tileMap.height) continue;
         const nk = tileKey(nx, nz);
         if (visited.has(nk)) continue;
-        // Wall between (x,z) and (nx,nz) blocks the flood
-        if (this._wm && !this._wm.isPassable(x, z, nx, nz)) {
-          // Don't cross walls (but mark as visited to avoid re-queuing)
+        // Any edge — wall OR door — bounds a room. Doors block the flood too, so
+        // a room connected to the rest of the house by a door is still its own
+        // room (the intuitive notion), not merged with the area beyond the door.
+        if (this._wm && (this._wm.hasWall(x, z, nx, nz) || this._wm.hasDoor(x, z, nx, nz))) {
           continue;
         }
         if (!this._tileMap?.isWalkable(nx, nz)) { visited.add(nk); continue; }
@@ -127,7 +127,7 @@ export class RoomDetector {
   _touchesBoundary(region) {
     for (const k of region) {
       const { x, z } = keyToCoord(k);
-      if (x === 0 || x === GRID - 1 || z === 0 || z === GRID - 1) return true;
+      if (x === 0 || x === this._tileMap.width - 1 || z === 0 || z === this._tileMap.height - 1) return true;
     }
     return false;
   }

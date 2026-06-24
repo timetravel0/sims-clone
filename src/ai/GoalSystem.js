@@ -46,7 +46,7 @@ export class GoalSystem {
       if (currentDay > goal.deadline) {
         goal.status = 'failed';
         bus.emit('goal:failed', { simId: this._sim.id, goal });
-        bus.emit('story:entry', { text: `${this._sim.name} non ha raggiunto l'obiettivo: ${goal.label}`, cat: 'mood' });
+        bus.emit('story:entry', { simId: this._sim.id, text: `${this._sim.name} non ha raggiunto l'obiettivo: ${goal.label}`, cat: 'mood' });
       }
     }
 
@@ -75,7 +75,7 @@ export class GoalSystem {
     goal.status   = 'completed';
     goal.progress = 1;
     bus.emit('goal:completed', { simId: this._sim.id, goal });
-    bus.emit('story:entry', { text: `${this._sim.name} ha raggiunto il suo obiettivo: ${goal.label} 🎯`, cat: 'positive' });
+    bus.emit('story:entry', { simId: this._sim.id, text: `${this._sim.name} ha raggiunto il suo obiettivo: ${goal.label} 🎯`, cat: 'positive' });
   }
 
   serialise()  { return this._goals.map(g => ({ ...g })); }
@@ -102,7 +102,7 @@ export class GoalSystem {
     const goal = this._weightedPick(filtered);
     this._goals.push(goal);
     bus.emit('goal:created', { simId: this._sim.id, goal });
-    bus.emit('story:entry', { text: `${this._sim.name} si pone un nuovo obiettivo: ${goal.label}`, cat: 'neutral' });
+    bus.emit('story:entry', { simId: this._sim.id, text: `${this._sim.name} si pone un nuovo obiettivo: ${goal.label}`, cat: 'neutral' });
   }
 
   _buildCandidates(currentDay) {

@@ -3,7 +3,7 @@ import { ObjectRegistry }       from '../systems/ObjectRegistry.js';
 import { FurnitureMeshFactory, addSocialRing } from './FurnitureMeshFactory.js';
 
 export class Furniture {
-  constructor({ id, gx, gz, color, needTarget, restoreRate, social, affordances }) {
+  constructor({ id, gx, gz, color, needTarget, restoreRate, social, affordances, functionTags, category, roomTags, label }) {
     this.id          = id;
     this.gx          = gx;
     this.gz          = gz;
@@ -14,6 +14,10 @@ export class Furniture {
     this.social      = social ?? false;
 
     const def = ObjectRegistry.get(id);
+    this.label        = label        ?? def?.label        ?? id;
+    this.functionTags = functionTags ?? def?.functionTags ?? [];
+    this.category     = category     ?? def?.category     ?? null;
+    this.roomTags     = roomTags     ?? def?.roomTags     ?? [];
     this._onUse       = def?.onUse || null;
     this._affordances = affordances || def?.affordances || null;
 

@@ -229,6 +229,20 @@ completamento dell'azione; poi il Sim riprende l'autonomia.
 Gli oggetti possono essere **riservati** da un solo Sim alla volta
 (`world.reserveFurniture`). Se occupato, l'AI sceglie un'alternativa.
 
+**Casa di partenza (set minimo ma completo).** Una nuova partita parte già con un
+set di arredo **minimo ma completo**, organizzato per **zone funzionali**, così la
+famiglia può soddisfare ogni bisogno e allenare ogni abilità fin da subito:
+- **Camera**: letto (energia) + lampada (ambiente/stanza)
+- **Studio**: scrivania (logica)
+- **Cucina** (ciclo completo del cibo): frigo → piano di lavoro → fornelli →
+  lavandino
+- **Sala da pranzo**: tavolo (mangiare + carisma)
+- **Soggiorno**: divano (comfort) + TV (divertimento/social)
+- **Bagno**: WC (vescica) + doccia (igiene)
+- **Hobby/abilità**: piano (creatività), tapis roulant (fitness), banco da lavoro
+  (manualità)
+- **Comunicazione**: telefono (chiamate/inviti)
+
 Gli oggetti disponibili, i costi d'acquisto autonomo, gli skill source e la
 dotazione iniziale della casa sono configurati in `src/config/*`, non sparsi nei
 sistemi runtime.
@@ -244,21 +258,92 @@ delle crisi nel tempo.
 
 ## Lavoro, salute, famiglia e uscite
 
+**Carriere.** Esistono **34 professioni** in 10 famiglie (cucina, scienza/medicina,
+tecnologia, istruzione, business, arte, fitness, servizi pubblici, artigianato,
+freelance), ciascuna con orari, skill richieste, stipendio e livello di stress
+propri. Entrare in una carriera è libero; le skill richieste contano per
+promozioni e performance, non per l'assunzione.
+
 **Cambio lavoro.** Ogni Sim può cambiare carriera dal pannello Lifecycle/Career
 (`switchCareer`) oppure **autonomamente**: se dopo 3 giorni lavorativi consecutivi
-il Sim non è stato promosso, valuta spontaneamente se cambiare settore (probabilità
-base 8%, amplificata dal tratto Ambitious). In ogni caso lascia la carriera attuale
-e ne inizia un'altra ripartendo dal livello base.
+non viene promosso, **oppure se è in burnout**, valuta spontaneamente se cambiare
+settore (probabilità base 8%, amplificata dal tratto Ambitious e triplicata in
+caso di burnout). In burnout sceglie preferibilmente un lavoro meno stressante.
 
-**Orario di lavoro.** Tutte le carriere lavorano **dal lunedì al venerdì
-(giorni 0–4), 08:00–17:00**; nel weekend (giorni 5–6) i Sim sono a casa. Durante
-il turno il Sim è fuori dal lotto (nascosto) e rientra a fine giornata.
+**Orario di lavoro.** Gli orari ora variano per professione: turni diurni
+standard, mattine presto, pomeriggi/sere, **turni notturni** (es. medico,
+chirurgo), **lavoro nel weekend** (ristorazione), part-time e orari flessibili
+(creativi/freelance). Durante il turno il Sim è fuori dal lotto (nascosto) e
+rientra a fine turno.
+
+**Stress lavorativo e burnout.** Ogni turno accumula o smaltisce stress in base
+all'intensità del lavoro; i lavori stressanti consumano divertimento. Oltre una
+soglia il Sim va in **burnout** (calo d'umore, scatto di rabbia) e tende a
+cambiare lavoro. A fine turno può capitare una **bella giornata** (bonus in
+stipendio) o una **giornata storta** (penalità). Il pannello Carriera mostra una
+barra di stress.
+
+**Mangiare (preparazione del cibo).** La fame non si risolve più "aprendo il
+frigo": quando un Sim ha fame avvia un vero **ciclo del cibo** — va al frigo
+(ingredienti), al **piano di lavoro** (preparazione), ai **fornelli** (cottura) e
+infine **mangia a tavola**. La ricetta scelta dipende dall'abilità in cucina
+(cuochi migliori sbloccano piatti più ricchi e con più porzioni). La **qualità**
+del pasto (scarso/normale/buono/eccellente) dipende da abilità ed
+elettrodomestici disponibili: senza fornelli si mangia crudo (scarso). Mangiare a
+tavola dà comfort, socialità e status; mangiare in piedi costa comfort. Un pasto
+scarso può causare **intossicazione alimentare**. Un pasto servito a tavola
+**sfama anche gli altri membri della famiglia** presenti e affamati (pasto di
+gruppo). Se mancano cucina o tavolo il Sim mangia comunque (versione di ripiego):
+nessuno muore di fame per un percorso bloccato.
+
+**Pianificazione domestica autonoma.** Una volta al giorno la famiglia fa il
+punto della situazione e decide **un intervento prioritario**: osserva fondi,
+malattie, bisogni sotto pressione e ambizione, classifica le possibili azioni per
+urgenza (tenendo conto di ciò che può permettersi) e mette in atto quella più
+importante — **curare un malato**, **costruire una stanza**, **comprare un
+oggetto** o **riorganizzare i mobili**. Ogni decisione è annunciata nello story
+log come un "🏠 Piano di famiglia" con il motivo, così i miglioramenti della casa
+sono scelte spiegabili e coordinate, non reazioni isolate.
+
+**Costruzione autonoma di stanze.** Quando la famiglia non ha abbastanza letti
+per i suoi membri, **acquista terreno e costruisce autonomamente una nuova
+stanza** (camera da letto): il lotto si espande, viene racchiusa una stanza con
+una **porta** e arredata con un letto. La decisione è gated da un motivo
+funzionale, una riserva di fondi, un costo del terreno, un cooldown e un tetto
+massimo di stanze — niente costruzioni senza motivo. Ogni costruzione è annunciata
+nello story log. Il giocatore può anche espandere il lotto manualmente (Est/Sud)
+dal menu di costruzione.
 
 **Malattia e guarigione.** I Sim possono ammalarsi (raffreddore, influenza,
-spossatezza, intossicazione) con probabilità legata a igiene, energia, fame e
-meteo. Una malattia passa da `ill` a `recovering` e infine a `healthy`, con un
-costo temporaneo su energia, divertimento e socialità. Gli incidenti fuori casa
-provocano un infortunio.
+spossatezza, intossicazione alimentare) con probabilità legata a igiene, energia,
+fame, qualità del cibo e meteo. Una malattia passa da `ill` a `recovering` e
+infine a `healthy`, con un costo temporaneo su energia, divertimento e socialità.
+Gli incidenti fuori casa provocano un infortunio.
+
+**Cure mediche a pagamento.** La malattia non si risolve più solo aspettando: un
+**dottore può curare a pagamento**. Quando un Sim della famiglia si ammala in modo
+abbastanza grave e la famiglia può permetterselo, **prenota da solo una visita**;
+in alternativa il giocatore può premere 🩺 **"Chiama il dottore"** nel pannello
+Lifecycle del Sim selezionato. Dopo un breve tempo di arrivo, la **tariffa viene
+pagata** dal budget e la malattia **guarisce** (o si attenua, per la semplice
+consulenza). Le cure disponibili vanno dalla consulenza base (§120) e dai farmaci
+(§80) fino al pronto intervento (§450) e alla visita medica a domicilio (§700),
+scelte in base al tipo e alla gravità della malattia.
+
+**Igiene della cucina e piatti sporchi.** Ogni pasto cucinato **sporca la cucina**
+e lascia piatti da lavare. Una cucina sporca **aumenta il rischio di
+intossicazione e di malattia**. Per pulire serve un **lavandino**: la
+pianificazione domestica programma il **lavaggio dei piatti** quando l'igiene
+scende troppo, riportando la cucina pulita.
+
+**Cibo, salute e cure collegati.** Un pasto di **bassa qualità** può causare
+**intossicazione alimentare**: il rischio cresce con la scarsa qualità e cala con
+l'**abilità in cucina** (un cuoco esperto cucina in sicurezza). La **qualità della
+nutrizione** nel tempo influenza la salute: chi mangia bene si ammala di meno, chi
+si nutre male di più (e i pasti migliori ridanno anche un po' di energia). Quando
+arriva un'intossicazione, il **dottore può risolverla rapidamente** col pronto
+intervento, invece di aspettare la guarigione naturale. Questo crea un ciclo
+coerente: cucinare bene → meno malattie → meno spese mediche.
 
 **Uscite dal lotto (con motivo chiaro).** Oltre al lavoro, i Sim della famiglia
 escono autonomamente per un **pranzo/cena fuori**, una **gita**, una **visita a
@@ -271,13 +356,38 @@ bisogno critico (fame/energia/bisogno fisiologico): in quel caso restano a casa.
 **Incidenti fuori casa.** Mentre sono fuori (uscita o lavoro) i Sim possono avere
 un incidente, che li fa rientrare/risultare infortunati (vedi Salute).
 
-**Figli.** Una coppia può avere figli solo se: vivono nella **stessa famiglia
-(household)**, hanno una **relazione amorosa reciproca** abbastanza forte, sono
-**maschio e femmina** e **non sono consanguinei**. Il figlio nasce come **membro
-della famiglia a livello di dati** (non un Sim sul lotto); cresce sullo sfondo e
-**compare come Sim adolescente** quando è abbastanza grande, dopodiché continua a
-invecchiare normalmente. Esiste un tetto alla dimensione del nucleo e un cooldown
-tra una nascita e l'altra.
+**Figli e limiti familiari.** Una coppia può avere figli solo se: vivono nella
+**stessa famiglia (household)**, hanno una **relazione amorosa reciproca**
+abbastanza forte, sono **maschio e femmina** e **non sono consanguinei**. Le
+nascite autonome rispettano ora **limiti espliciti**: dimensione massima del
+nucleo, **numero massimo di figli per coppia**, tetto ai figli a carico,
+**disponibilità economica** (budget minimo), **stabilità della relazione**
+(romance sufficiente), **salute** di entrambi i genitori e **capacità di posti
+letto**. Il figlio nasce come membro della famiglia a livello di dati (non un Sim
+sul lotto); cresce sullo sfondo e **compare come Sim adolescente**, poi invecchia
+normalmente. Un cooldown separa le nascite. Ogni Sim ha inoltre un **profilo di
+fertilità** (desiderio di figli + fecondità): la probabilità di una nascita
+dipende dal desiderio medio della coppia e il concepimento dalla fecondità. Esiste
+un interruttore globale che può **disattivare del tutto le nascite autonome**.
+La storia familiare di ciascuno (essere diventati partner, aver avuto un figlio,
+legami tra fratelli) e la **storia di carriera** (assunzioni, cambi, promozioni)
+vengono registrate e salvate.
+
+**Dove si trova ogni Sim (e perché).** Il pannello Lifecycle del Sim selezionato
+mostra un riquadro 📍 con **dove si trova** (stanza e coordinate sul lotto, oppure
+"al lavoro"/"in visita"/"fuori"/"dal dottore"), **cosa sta facendo** (dorme,
+cucina e mangia, socializza, cammina, ecc.), il **motivo** e l'oggetto vicino. I
+ritratti dei Sim in alto a sinistra mostrano lo **stato live** passandoci sopra il
+mouse, così si capisce a colpo d'occhio dove sono tutti i membri della famiglia.
+
+**Struttura familiare iniziale e istruzione.** All'avvio la famiglia viene
+generata con una struttura: i primi due adulti sono **sposi**, il terzo è
+**fratello/sorella** del primo (stessa linea familiare → niente romance, bonus
+familiare). Ogni Sim ha un **livello di istruzione** (nessuna/superiori/college/
+università), mostrato nel pannello Lifecycle (🎓): un'istruzione più alta fa
+**iniziare la carriera a un livello superiore** e dà un bonus iniziale alle skill
+richieste. L'albero genealogico (genitori, figli, fratelli, istruzione)
+sopravvive al salvataggio/caricamento.
 
 **Creazione di oggetti.** Un Sim con **handiness ≥ 2** (raggiungibile dopo ~8 usi
 del workbench), usando il **workbench**, può fabbricare autonomamente un **nuovo
@@ -394,6 +504,17 @@ Il pannello mostra tutti i parametri numerici del gioco organizzati in sezioni:
 
 Ogni valore ha uno slider e un campo numerico sincronizzati. Clicca **Salva** per scrivere le modifiche su `config/gameConfig.json`; Vite rileva il cambiamento e ricarica il gioco automaticamente nella scheda del browser.
 
+## Nuove funzionalità (NEW_FEATURES.md)
+
+### Espansione lotto
+In Build Mode appare il pulsante **🏗️ Espandi §1500**. Cliccandolo si apre un overlay con quattro direzioni (Nord, Est, Sud, Ovest). Il gioco scala il lotto di 8 tile nella direzione scelta, aggiunge il pavimento corrispondente, e il rilevatore di stanze si aggiorna automaticamente. Il costo (§1500) viene detratto dal budget; se insufficiente compare un avviso.
+
+### Trasloco romantico
+Quando un visitatore e un membro del nucleo raggiungono entrambi romance ≥ 50 (reciproco), appare un dialog modale: **Accetta** trasferisce il visitatore nel nucleo e li segna come partner; **Rifiuta** applica una penalità romance di −10.
+
+### Obiettivo condiviso: benessere familiare
+Ogni volta che cambia il giorno di gioco (`clock:dayChanged`), il sistema controlla se tutti i Sims del nucleo (non in lavoro, non visitatori) hanno media bisogni ≥ 60. Se la condizione tiene per 3 giorni di fila: +§500 al budget e story entry. Il ciclo ricomincia dopo 7 giorni. Il progresso è visibile nel LifeCyclePanel sotto "Obiettivo Famiglia".
+
 ## Funzionalità recenti
 
 ### Inviti programmati (Telefono)
@@ -410,3 +531,68 @@ Gli anziani (elder) esposti a energy o hunger sotto 5 per 3 giorni consecutivi m
 
 ### Seeding deterministico (browser)
 Aggiungere `?seed=42` all'URL della partita fa sì che tutte le chiamate a `Math.random()` usino Mulberry32 con quel seed — identico all'headless runner. Due sessioni con lo stesso seed producono la stessa sequenza di azioni.
+
+---
+
+## Diagnostica sessione interattiva
+
+Il gioco ora registra automaticamente ogni partita in `localStorage` (chiave `sims-session-log`, max 3000 eventi). Dalla console del browser:
+
+```js
+// Riassunto testuale di cosa è successo
+_game.sessionLog.summary()
+
+// Ultimi 30 eventi in formato strutturato
+_game.sessionLog.tail(30)
+
+// Scarica sims-log-YYYY-MM-DD...json
+_game.sessionLog.export()
+
+// Cancella il log salvato
+_game.sessionLog.clear()
+```
+
+**Eventi catturati:**
+- `sim:needsSnapshot` ogni 60 ticks — hunger/energy/hygiene/bladder/social di tutti i Sim + budget
+- `food:eatAborted` — quando un Sim tenta di mangiare ma fallisce: `{ simName, reason, hunger, budget, objectId }`. `reason` può essere `budget_insufficient` (soldi insufficienti) o `object_in_use` (frigo occupato)
+- `health:starvationProgressed` — ogni ciclo di fame (`STARVE_HUNGER_MAX=10`): `{ simName, cycles, maxCycles, hunger, budget }`. La morte avviene al ciclo 25 (~12 minuti di gioco)
+- `budget:insufficient` — ogni tentativo di acquisto fallito (incluso cibo)
+- `story:entry`, `sim:died`, `career:promoted`, `skill:levelUp`, ecc.
+
+**Come diagnosticare la morte per fame:**
+Se i Sim muoiono nonostante i soldi, il log mostrerà: se `food:eatAborted.reason = object_in_use` → il frigo è rimasto bloccato (`inUse=true` senza reset); se `reason = budget_insufficient` → il budget era davvero esaurito in quel momento; se nessun `food:eatAborted` → il planner non ha mai proposto di mangiare (bug nel priority override dei bisogni critici).
+
+---
+
+## WP1 — Spatial Reliability & Layout Intelligence
+
+### Camera zoom e rotazione
+La camera è ora interattiva: **scroll del mouse** fa zoom in/out (range 5–30 unità, default 12). I tasti **Q** ed **E** ruotano la vista di 90° snappati (NW → NE → SE → SW → NW). I limiti prevengono un ingrandimento eccessivo o un campo visivo troppo stretto. Il raycasting sul suolo e la selezione dei Sim rimangono corretti dopo la rotazione perché la camera orthografica aggiorna posizione e lookAt coerentemente.
+
+### Muri, porte e stanze verificati
+I test automatizzati (`tests/WallManager.test.js`) confermano tutti gli invarianti:
+- Un Sim non può attraversare un muro (il Pathfinder controlla `wallManager.isPassable()` per ogni edge)
+- Un Sim può attraversare una porta
+- Rimuovere una porta ripristina la passabilità corretta
+- serialise/restore preserva l'intera configurazione muri/porte
+- Il rilevatore di stanze BFS rispetta i muri e riclassifica al cambio
+
+### Object function tags
+Ogni oggetto nel catalogo ha ora `category`, `functionTags` e `roomTags`. Questa informazione permette all'AutonomousShoppingSystem di ragionare per funzione invece di sola `needTarget`, e al LayoutPlanner di valutare la coerenza zonale. `adjacencyPrefs` documenta quali oggetti beneficiano di vicinanza.
+
+### LayoutPlanner — score, suggerimenti e riorganizzazione autonoma
+`window._game.layoutPlanner` è disponibile in console e attivo nel game loop:
+- **`score()`** → `{ total, zones, issues }` — punteggio per zona funzionale (bedroom, bathroom, kitchen, dining, living, study). Include violazioni (sparsi, prossimità indesiderata).
+- **`suggestMoves()`** → lista spostamenti consigliati ordinati per guadagno stimato. Non esegue nulla.
+- **`autoRearrange()`** — esegue autonomamente la mossa migliore se: l'oggetto non è in uso, la mossa migliora il punteggio di almeno 5 punti, e la connettività del lotto è preservata (BFS check).
+
+Il sistema si attiva automaticamente ogni ~1 ora di gioco. Ogni spostamento emette una voce nella storia ("Il nucleo riorganizza la casa: TV spostato più vicino al Piano").
+
+Esempio console:
+```js
+_game.layoutPlanner.score()
+// { total: 42, zones: { bedroom: { score: 20, objectCount: 1 }, ... }, issues: [...] }
+_game.layoutPlanner.suggestMoves()
+// [{ objectId: 'tv', from: {gx:8,gz:5}, to: {gx:2,gz:7}, reason: 'move closer to Piano (6 tiles away)', gain: 14 }]
+_game.layoutPlanner.autoRearrange() // esegue subito la mossa migliore
+```

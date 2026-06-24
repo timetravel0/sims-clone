@@ -161,6 +161,9 @@ export class ExperimentLogger {
         severity: payload.severity ?? '',
         cause: payload.cause ?? '',
         location: payload.location ?? '',
+        treatmentId: payload.treatmentId ?? '',
+        cost: payload.cost ?? 0,
+        resolved: payload.resolved === true,
       };
     } else if (type.startsWith('family:')) {
       row = {
