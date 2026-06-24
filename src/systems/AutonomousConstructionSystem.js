@@ -1,4 +1,5 @@
 import { bus } from '../core/EventBus.js';
+import { craftCapFor } from './AutonomousShoppingSystem.js';
 
 /**
  * AutonomousConstructionSystem — WP4 / Milestone 6.
@@ -32,15 +33,52 @@ export class AutonomousConstructionSystem {
   get roomsBuilt() { return this._roomsBuilt; }
 
   _consider() {
-    if (this._roomsBuilt >= MAX_AUTO_ROOMS) return;
     const day = this._game.clock?.day ?? 0;
+    const world = this._game.world;
+
+    // Keep handcrafted clutter within its count cap every day — scrap the oldest
+    // beyond it. Count-based, so it works regardless of WHERE the objects sit (a
+    // global free-tile metric missed objects clustered in the house core) and
+    // regardless of funds (scrapping is free), unlike buying land — which a
+    // bankrupt household can't afford and which only appends tiles at the lot
+    // edge, never reopening the original house. Also heals already-cluttered
+    // saves on the next in-game day (2026-06-24 logs).
+    this._declutterCrafted(craftCapFor(world));
+
     if (day - this._lastBuildDay < BUILD_COOLDOWN_DAYS) return;
     const budget = this._game.budgetSystem;
     if (!budget || budget.funds < RESERVE + LAND_COST) return;
+    if (this._roomsBuilt >= MAX_AUTO_ROOMS) return;
 
     const reason = this._needReason();
-    if (!reason) return;
-    this.build(reason);
+    if (reason) this.build(reason);
+  }
+
+  /**
+   * Scrap the oldest handcrafted (`custom_object_*`) furniture beyond `keep`,
+   * skipping items in use/reserved. Free of charge — never depends on funds.
+   */
+  _declutterCrafted(keep) {
+    const world = this._game.world;
+    if (!world?.removeFurniture) return 0;
+    let count = world.furniture.filter(f => String(f.id).startsWith('custom_object_')).length;
+    if (count <= keep) return 0;
+    const scrappable = world.furniture.filter(f =>
+      String(f.id).startsWith('custom_object_') && !f.inUse && !f.reservedBy);
+    let removed = 0;
+    for (const f of scrappable) {
+      if (count <= keep) break;
+      if (world.removeFurniture(f.gx, f.gz)) { removed++; count--; }
+    }
+    if (removed) {
+      this._game.roomDetector?.analyse?.();
+      bus.emit('household:decluttered', { removed });
+      bus.emit('story:entry', {
+        text: `La famiglia ha rottamato ${removed} oggett${removed === 1 ? 'o' : 'i'} fatti a mano per liberare il passaggio.`,
+        cat: 'family', category: 'family',
+      });
+    }
+    return removed;
   }
 
   /** Returns a functional reason string, or null if no room is needed. */
@@ -98,7 +136,7 @@ export class AutonomousConstructionSystem {
     this._lastBuildDay = this._game.clock?.day ?? 0;
     this._game.roomDetector?.analyse?.();
 
-    bus.emit('household:roomCreated', { reason, roomsBuilt: this._roomsBuilt, doorX, z0, z1 });
+    bus.emit('household:roomCreated', { reason, roomsBuilt: this._roomsBuilt, doorX, x0, x1, z0, z1 });
     bus.emit('story:entry', {
       text: `La famiglia ha acquistato terreno e costruito una nuova stanza (${reason}). −§${LAND_COST}`,
       cat: 'family', category: 'family',

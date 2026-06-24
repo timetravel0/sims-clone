@@ -442,7 +442,7 @@ export class CareerSystem {
 
   _shouldCallInSick(sim) {
     const health = this._healthState(sim);
-    return health?.stage === 'sick' && (health.severity ?? 0) > 0.5;
+    return health?.state === 'ill' && (health.severity ?? 0) > 0.5;
   }
 
   _healthState(sim) {

@@ -7,6 +7,10 @@ import { pickRecipe }   from '../config/recipes.js';
 const MEAL_COST = 15; // § per meal — parity with the old fridge eat
 // Hunger restored by meal quality tier.
 const QUALITY_HUNGER = { poor: 30, normal: 45, good: 55, excellent: 65 };
+// A completed meal never leaves the cook below this hunger — even a low-skill
+// "poor" meal (+30) fully feeds, so a Sim that successfully cooks can't keep
+// spiralling to starvation (2026-06-24 log: cooked repeatedly yet stayed at 0).
+const SATIETY_FLOOR = 75;
 // Nutrition score per quality tier (0..1) — feeds energy and long-term health (M12).
 export const QUALITY_SCORE = { poor: 0.25, normal: 0.55, good: 0.8, excellent: 1.0 };
 
@@ -112,7 +116,8 @@ export class CookMealAction extends Action {
     const gain = QUALITY_HUNGER[tier];
     const score = QUALITY_SCORE[tier];
 
-    this._sim.needs?.restore?.('hunger', gain);
+    const hungerNow = this._sim.needs?.get?.('hunger') ?? 0;
+    this._sim.needs?.restore?.('hunger', Math.max(gain, SATIETY_FLOOR - hungerNow));
     this._sim.needs?.restore?.('energy', score * 5); // nutrition → a little energy (M12)
     updateNutrition(this._sim, score);
     if (this._table) {
@@ -138,7 +143,8 @@ export class CookMealAction extends Action {
         (s.needs?.get?.('hunger') ?? 100) < 60);
       for (const o of others) {
         if (served >= this._recipe.servings) break;
-        o.needs?.restore?.('hunger', gain * 0.8);
+        const oHunger = o.needs?.get?.('hunger') ?? 0;
+        o.needs?.restore?.('hunger', Math.max(gain * 0.8, SATIETY_FLOOR - oHunger));
         o.needs?.restore?.('social', 6);
         updateNutrition(o, score);
         served++;

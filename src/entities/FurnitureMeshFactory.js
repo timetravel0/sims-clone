@@ -517,6 +517,179 @@ function buildWorkbench(accentColor) {
   return g;
 }
 
+/** COUNTER — kitchen base cabinet + countertop slab + drawer seams */
+function buildCounter(accent) {
+  const g = new THREE.Group();
+  add(g, box(0.92, 0.7, 0.5, accent ?? 0xcfd8dc), 0, 0.35, 0);
+  add(g, box(0.98, 0.06, 0.56, 0xeceff1), 0, 0.71, 0);
+  for (const dy of [0.5, 0.32]) add(g, box(0.8, 0.01, 0.012, 0x90a4ae), 0, dy, 0.255);
+  return g;
+}
+
+/** STOVE — body + cooktop with 4 burners + oven door + knobs */
+function buildStove(accent) {
+  const g = new THREE.Group();
+  const c = accent ?? 0xb0bec5;
+  add(g, box(0.9, 0.7, 0.5, c), 0, 0.35, 0);
+  add(g, box(0.94, 0.06, 0.54, 0x90a4ae), 0, 0.71, 0);
+  for (const [bx, bz] of [[-0.2,-0.12],[0.2,-0.12],[-0.2,0.14],[0.2,0.14]])
+    add(g, cyl(0.1, 0.1, 0.02, 12, 0x37474f), bx, 0.75, bz);
+  add(g, box(0.7, 0.36, 0.02, 0x607d8b), 0, 0.3, 0.255);
+  add(g, box(0.5, 0.04, 0.04, 0xcccccc), 0, 0.5, 0.27);
+  for (const kx of [-0.3,-0.1,0.1,0.3]) add(g, cyl(0.03, 0.03, 0.03, 8, 0x37474f), kx, 0.56, 0.255);
+  return g;
+}
+
+/** SINK — cabinet + basin block with inset + faucet */
+function buildSink(accent) {
+  const g = new THREE.Group();
+  const c = accent ?? 0xcfd8dc;
+  add(g, box(0.5, 0.5, 0.4, c), 0, 0.25, 0);
+  add(g, box(0.56, 0.12, 0.46, 0xeceff1), 0, 0.56, 0);
+  add(g, box(0.4, 0.04, 0.3, 0x90a4ae), 0, 0.6, 0);
+  add(g, cyl(0.02, 0.02, 0.18, 6, 0xbbbbbb), 0, 0.68, -0.12);
+  const spout = cyl(0.02, 0.02, 0.12, 6, 0xbbbbbb); spout.rotation.x = Math.PI / 2;
+  add(g, spout, 0, 0.76, -0.06);
+  return g;
+}
+
+/** DINING TABLE — top + 4 legs + 2 simple chairs */
+function buildDiningTable(accent) {
+  const g = new THREE.Group();
+  const wood = accent ?? 0x8d6e63;
+  add(g, box(0.95, 0.06, 0.6, wood), 0, 0.6, 0);
+  for (const [lx, lz] of [[-0.4,-0.24],[0.4,-0.24],[-0.4,0.24],[0.4,0.24]]) {
+    const leg = cyl(0.04, 0.04, 0.58, 6, 0x5d4037); leg.position.set(lx, 0.29, lz); g.add(leg);
+  }
+  for (const cz of [-0.42, 0.42]) {
+    add(g, box(0.3, 0.04, 0.3, 0x6d4c41), 0, 0.34, cz);
+    add(g, box(0.3, 0.3, 0.04, 0x6d4c41), 0, 0.5, cz + (cz < 0 ? -0.13 : 0.13));
+  }
+  return g;
+}
+
+/** BAR — base cabinet + overhang top + foot rail + 2 stools */
+function buildBar(accent) {
+  const g = new THREE.Group();
+  const wood = accent ?? 0x6d4c41;
+  add(g, box(0.9, 0.7, 0.4, wood), 0, 0.35, -0.05);
+  add(g, box(1.0, 0.06, 0.56, 0x8d6e63), 0, 0.71, 0.02);
+  const rail = cyl(0.02, 0.02, 0.9, 6, 0xbbbbbb); rail.rotation.z = Math.PI / 2;
+  add(g, rail, 0, 0.12, 0.22);
+  for (const sx of [-0.28, 0.28]) {
+    add(g, cyl(0.12, 0.12, 0.05, 12, 0x333333), sx, 0.46, 0.3);
+    add(g, cyl(0.03, 0.03, 0.44, 6, 0x777777), sx, 0.23, 0.3);
+  }
+  return g;
+}
+
+/** CHESS TABLE — pedestal + checkered top + a few pieces */
+function buildChess(accent) {
+  const g = new THREE.Group();
+  add(g, cyl(0.06, 0.1, 0.4, 8, 0x5d4037), 0, 0.2, 0);
+  add(g, box(0.5, 0.05, 0.5, accent ?? 0x8d6e63), 0, 0.43, 0);
+  add(g, box(0.46, 0.012, 0.46, 0xf0f0e0), 0, 0.46, 0);
+  for (const [px, pz, col] of [[-0.15,-0.15,0x222222],[0.12,0.1,0xeeeeee],[0.0,-0.05,0x222222]])
+    add(g, cyl(0.03, 0.04, 0.1, 8, col), px, 0.51, pz);
+  return g;
+}
+
+/** LAMP — base disc + pole + conical shade + glowing bulb */
+function buildLamp(accent) {
+  const g = new THREE.Group();
+  add(g, cyl(0.14, 0.16, 0.04, 12, 0x444444), 0, 0.02, 0);
+  add(g, cyl(0.02, 0.02, 0.9, 6, 0x888888), 0, 0.47, 0);
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.22, 12, 1, true),
+    mat(accent ?? 0xffe082, { side: THREE.DoubleSide })); shade.position.y = 0.98; shade.castShadow = true;
+  g.add(shade);
+  add(g, sphere(0.06, 8, 8, 0xfff59d, { emissive: 0xffee58, emissiveIntensity: 0.9 }), 0, 0.92, 0);
+  return g;
+}
+
+/** PHONE — small side table + upright handset with a glowing screen */
+function buildPhone(accent) {
+  const g = new THREE.Group();
+  add(g, cyl(0.08, 0.1, 0.5, 8, 0x5d4037), 0, 0.25, 0);
+  add(g, box(0.3, 0.04, 0.3, 0x6d4c41), 0, 0.5, 0);
+  add(g, box(0.1, 0.22, 0.03, accent ?? 0x263238), 0, 0.63, 0);
+  add(g, box(0.08, 0.16, 0.01, 0x4fc3f7, { emissive: 0x0277bd, emissiveIntensity: 0.4 }), 0, 0.64, 0.02);
+  return g;
+}
+
+/** FIRE PIT — stone ring + crossed logs + emissive flame */
+function buildFirePit(accent) {
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.08, 8, 16), mat(accent ?? 0x757575));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.08; ring.castShadow = true; g.add(ring);
+  for (const rot of [0.5, -0.5]) {
+    const log = cyl(0.04, 0.04, 0.4, 6, 0x6d4c41); log.rotation.z = Math.PI / 2; log.rotation.y = rot;
+    log.position.y = 0.1; g.add(log);
+  }
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.3, 8),
+    mat(0xff7043, { emissive: 0xff5722, emissiveIntensity: 0.8 })); flame.position.y = 0.28; g.add(flame);
+  return g;
+}
+
+/** HOT TUB — round tub + rim + glowing water surface */
+function buildHotTub(accent) {
+  const g = new THREE.Group();
+  add(g, cyl(0.46, 0.46, 0.4, 16, accent ?? 0x6d4c41), 0, 0.2, 0);
+  add(g, cyl(0.5, 0.5, 0.06, 16, 0x8d6e63), 0, 0.4, 0);
+  add(g, cyl(0.42, 0.42, 0.04, 16, 0x4dd0e1, { transparent: true, opacity: 0.85, emissive: 0x0097a7, emissiveIntensity: 0.2 }), 0, 0.39, 0);
+  return g;
+}
+
+// ─── Crafted-object shapes (keyed by needTarget; one silhouette per craft type) ─
+
+/** GADGET (fun) — boxy device + screen + antenna */
+function buildGadget(accent) {
+  const g = new THREE.Group();
+  const c = accent ?? 0x8d6e63;
+  add(g, box(0.4, 0.3, 0.4, c), 0, 0.2, 0);
+  add(g, box(0.3, 0.12, 0.02, 0x4fc3f7, { emissive: 0x0277bd, emissiveIntensity: 0.5 }), 0, 0.26, 0.205);
+  add(g, cyl(0.01, 0.01, 0.3, 5, 0x999999), 0.12, 0.5, 0);
+  add(g, sphere(0.04, 6, 6, 0xff5252, { emissive: 0xd32f2f, emissiveIntensity: 0.6 }), 0.12, 0.66, 0);
+  return g;
+}
+
+/** STOOL (comfort) — round seat + 4 legs */
+function buildStool(accent) {
+  const g = new THREE.Group();
+  const c = accent ?? 0x8d6e63;
+  add(g, cyl(0.2, 0.2, 0.07, 16, c), 0, 0.45, 0);
+  for (const [lx, lz] of [[-0.13,-0.13],[0.13,-0.13],[-0.13,0.13],[0.13,0.13]]) {
+    const leg = cyl(0.02, 0.02, 0.42, 6, 0x5d4037); leg.position.set(lx, 0.21, lz); g.add(leg);
+  }
+  return g;
+}
+
+/** SCULPTURE (room) — pedestal + column + abstract orb & ring */
+function buildSculpture(accent) {
+  const g = new THREE.Group();
+  const c = accent ?? 0x8d6e63;
+  add(g, box(0.3, 0.1, 0.3, 0x9e9e9e), 0, 0.05, 0);
+  add(g, cyl(0.08, 0.1, 0.3, 8, 0x9e9e9e), 0, 0.25, 0);
+  add(g, sphere(0.16, 12, 12, c), 0, 0.56, 0);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.03, 8, 16), mat(c));
+  ring.position.y = 0.56; ring.rotation.x = 0.6; ring.castShadow = true; g.add(ring);
+  return g;
+}
+
+/** RECLINER (energy) — seat + reclined back + footrest + armrests */
+function buildRecliner(accent) {
+  const g = new THREE.Group();
+  const c = accent ?? 0x8d6e63;
+  add(g, box(0.6, 0.16, 0.6, c), 0, 0.22, 0.05);
+  const back = box(0.6, 0.5, 0.14, c); back.rotation.x = -0.4; add(g, back, 0, 0.45, -0.28);
+  add(g, box(0.6, 0.12, 0.25, c), 0, 0.16, 0.42);
+  for (const [lx, lz] of [[-0.26,-0.2],[0.26,-0.2],[-0.26,0.28],[0.26,0.28]]) {
+    const leg = cyl(0.03, 0.03, 0.16, 6, 0x4e342e); leg.position.set(lx, 0.08, lz); g.add(leg);
+  }
+  add(g, box(0.1, 0.3, 0.5, c), -0.34, 0.3, 0);
+  add(g, box(0.1, 0.3, 0.5, c), 0.34, 0.3, 0);
+  return g;
+}
+
 // ─── Social indicator ring (unchanged from original Furniture.js) ─────────────
 export function addSocialRing(group) {
   const ringGeo = new THREE.RingGeometry(0.38, 0.44, 20);
@@ -531,29 +704,51 @@ export function addSocialRing(group) {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 const BUILDERS = {
-  bed        : buildBed,
-  fridge     : buildFridge,
-  toilet     : buildToilet,
-  couch      : buildCouch,
-  tv         : buildTV,
-  shower     : buildShower,
-  bookshelf  : buildBookshelf,
-  desk       : buildDesk,
-  piano      : buildPiano,
-  treadmill  : buildTreadmill,
-  workbench  : buildWorkbench,
+  bed          : buildBed,
+  fridge       : buildFridge,
+  toilet       : buildToilet,
+  couch        : buildCouch,
+  tv           : buildTV,
+  shower       : buildShower,
+  bookshelf    : buildBookshelf,
+  desk         : buildDesk,
+  piano        : buildPiano,
+  treadmill    : buildTreadmill,
+  workbench    : buildWorkbench,
+  counter      : buildCounter,
+  stove        : buildStove,
+  sink         : buildSink,
+  dining_table : buildDiningTable,
+  bar          : buildBar,
+  chess        : buildChess,
+  lamp         : buildLamp,
+  phone        : buildPhone,
+  fire_pit     : buildFirePit,
+  hot_tub      : buildHotTub,
+};
+
+// Crafted objects share a single id space (`custom_object_*`), so they pick a
+// silhouette by the need they serve — one shape per craft type (CRAFT_NOUNS).
+const CRAFT_BUILDERS = {
+  fun     : buildGadget,
+  comfort : buildStool,
+  room    : buildSculpture,
+  energy  : buildRecliner,
 };
 
 export class FurnitureMeshFactory {
   /**
-   * @param {string} id       — furniture type id (e.g. 'bed', 'fridge')
-   * @param {number} color    — accent color hex (optional — builder picks a default)
+   * @param {string} id         — furniture type id (e.g. 'bed', 'fridge')
+   * @param {number} color      — accent color hex (optional — builder picks a default)
+   * @param {string} [needTarget] — for crafted objects, selects the craft shape
    * @returns {THREE.Group}
    */
-  static build(id, color) {
-    const builder = BUILDERS[id];
+  static build(id, color, needTarget) {
+    let builder = BUILDERS[id];
+    // Crafted objects (and any other id without its own builder) get a shape from
+    // the need they serve, so they're never a featureless cube.
+    if (!builder) builder = CRAFT_BUILDERS[needTarget];
     if (!builder) {
-      // Fallback: labelled coloured box
       const g = new THREE.Group();
       const fallback = new THREE.Mesh(
         new THREE.BoxGeometry(0.8, 0.6, 0.8),

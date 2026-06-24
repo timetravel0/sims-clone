@@ -25,11 +25,56 @@ const ZONES = {
 const CLUSTER_RADIUS  = 3;     // tiles — objects this close are "near"
 const AUTO_INTERVAL   = 3600;  // ~1 game-hour of game-seconds between moves
 const MIN_GAIN        = 5;     // minimum score gain to justify a move
+const MAX_FURNISH     = 2;     // items relocated into a freshly-built room
+// The function tag the construction system already satisfied with the room's
+// anchor object — we don't pull more of the same (no piling beds in a bedroom).
+const ANCHOR_TAG      = { bedroom: 'sleep', bathroom: 'toilet' };
 
 export class LayoutPlanner {
   constructor(world) {
     this._world  = world;
     this._timer  = AUTO_INTERVAL; // start with a full delay so new games settle
+    bus.on('household:roomCreated', e => this.furnishNewRoom(e));
+  }
+
+  /**
+   * WP4: make a freshly-built room a real functional zone by relocating
+   * existing furniture that belongs in it (by roomTags) into its interior.
+   * Skips the anchor's own function (so a new bedroom doesn't accumulate beds),
+   * in-use items, and any move that would break path connectivity.
+   */
+  furnishNewRoom({ reason, x0, x1, z0, z1 } = {}) {
+    if (![x0, x1, z0, z1].every(Number.isFinite)) return 0;
+    const skipTag = ANCHOR_TAG[reason];
+    const inRect = (f) => f.gx >= x0 && f.gx <= x1 && f.gz >= z0 && f.gz <= z1;
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+
+    const candidates = (this._world.furniture ?? [])
+      .filter(f => f.roomTags?.includes(reason) && !inRect(f)
+        && !f.inUse && !f.reservedBy
+        && !(skipTag && f.functionTags?.includes(skipTag)))
+      // nearest to the new room first — shortest, least disruptive relocation
+      .sort((a, b) => this._distance(a, { gx: cx, gz: cz }) - this._distance(b, { gx: cx, gz: cz }));
+
+    let moved = 0;
+    for (const obj of candidates) {
+      if (moved >= MAX_FURNISH) break;
+      const target = this._freeTileInRect(x0, x1, z0, z1, obj);
+      if (!target) break; // room full
+      const from = { gx: obj.gx, gz: obj.gz };
+      if (!this._connectivityOk(from, target)) continue;
+      if (!this._world.moveFurniture(from.gx, from.gz, target.gx, target.gz)) continue;
+      moved++;
+      bus.emit('household:furnitureMoved', {
+        objectId: obj.id, label: obj.label ?? obj.id,
+        from, to: target, reason: `furnish new ${reason}`, gain: 0,
+      });
+      bus.emit('story:entry', {
+        text: `La famiglia arreda la nuova stanza: ${obj.label ?? obj.id} spostato nel nuovo ${reason}.`,
+        cat: 'household',
+      });
+    }
+    return moved;
   }
 
   // ── Public ─────────────────────────────────────────────────────────────────
@@ -253,6 +298,20 @@ export class LayoutPlanner {
         count++;
       }
     return count ? sum / count : 0;
+  }
+
+  /** First walkable, unoccupied tile inside the room rectangle. */
+  _freeTileInRect(x0, x1, z0, z1, excludeObj) {
+    const tilemap = this._world.tilemap;
+    const furniture = this._world.furniture ?? [];
+    for (let z = z0; z <= z1; z++) {
+      for (let x = x0; x <= x1; x++) {
+        if (!tilemap?.isWalkable(x, z)) continue;
+        if (furniture.some(f => f !== excludeObj && f.gx === x && f.gz === z)) continue;
+        return { gx: x, gz: z };
+      }
+    }
+    return null;
   }
 
   _freeTileNear(gx, gz, excludeObj) {

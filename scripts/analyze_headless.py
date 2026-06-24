@@ -78,6 +78,10 @@ keys_scalar = [
     'socialInteractions','conflictRate','finalMeanAffinity','negativeRelationshipRate',
     'totalVisits','visitAcceptanceRate','promotions','careerSwitches','crafted',
     'careerActiveRate','skillLevelUps','avgSkillTotal','romanceSparks','romanceActivationRate',
+    # food / kitchen (WP3/WP8), doctor (WP7), household (WP9), construction (WP4), career-health
+    'mealsCooked','poorMeals','mealServings','avgFoodQuality','foodPoisonings','kitchenHygiene',
+    'treatments','treatmentSpend','householdPlans','roomsBuilt',
+    'avgWorkStress','callInSick','careerBurnouts',  # locationTime/planByType are dicts → shown in §14/§13
 ]
 
 run_rows = []
@@ -430,9 +434,171 @@ if scheduled:
     print(f"\n  Entry rate: {pct(entered, scheduled)}   Rejection rate: {pct(rejected, scheduled)}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  11. ALGORITHMIC QUALITY SUMMARY
+#  11. FOOD & KITCHEN  (WP3 / WP8)
 # ─────────────────────────────────────────────────────────────────────────────
-section("11. ALGORITHMIC QUALITY SUMMARY")
+section("11. FOOD & KITCHEN")
+
+cooked = jcol(q("SELECT event_json FROM event_log WHERE event_type='food:cooked'"))
+eaten  = jcol(q("SELECT event_json FROM event_log WHERE event_type='food:eaten'"))
+poison = jcol(q("SELECT event_json FROM event_log WHERE event_type='food:poisoning'"))
+print(f"  Meals cooked: {len(cooked):,}  ({len(cooked)/n_runs:.1f}/run)")
+print(f"  Meals eaten:  {len(eaten):,}  ({len(eaten)/n_runs:.1f}/run)")
+
+if cooked:
+    qual = Counter(c.get('quality') for c in cooked if c.get('quality'))
+    print(f"\n  Meal quality distribution:")
+    print(fmt_dist(qual, total=len(cooked)))
+    recipes = Counter(c.get('recipe') for c in cooked if c.get('recipe'))
+    print(f"\n  Recipes cooked ({len(recipes)} distinct):")
+    print(fmt_dist(recipes, total=len(cooked)))
+
+n_poison = len(poison)
+poison_rate = n_poison / len(eaten) if eaten else 0
+print(f"\n  Food poisonings: {n_poison}  ({n_poison/n_runs:.1f}/run, {pct(n_poison, len(eaten))} of meals eaten)")
+if eaten and poison_rate > 0.15:
+    print("  ⚠  >15% of meals cause poisoning — cooking skill ramp or hygiene may be too punishing")
+kh_vals = [s['kitchenHygiene'] for s in summaries if 'kitchenHygiene' in s]
+if kh_vals:
+    print(f"  Final kitchen hygiene (0-100): {stats_line(kh_vals)}")
+
+write_csv('11_food', [
+    {'metric': 'meals_cooked', 'value': len(cooked)},
+    {'metric': 'meals_eaten', 'value': len(eaten)},
+    {'metric': 'poisonings', 'value': n_poison},
+    *[{'metric': f'quality_{k}', 'value': v} for k, v in Counter(c.get('quality') for c in cooked if c.get('quality')).items()],
+])
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  12. HEALTH & DOCTOR  (WP7 / WP8)
+# ─────────────────────────────────────────────────────────────────────────────
+section("12. HEALTH & DOCTOR")
+
+ill     = jcol(q("SELECT event_json FROM event_log WHERE event_type='health:ill'"))
+recover = jcol(q("SELECT event_json FROM event_log WHERE event_type='health:recover'"))
+treated = jcol(q("SELECT event_json FROM event_log WHERE event_type='health:treated'"))
+state   = jcol(q("SELECT event_json FROM event_log WHERE event_type='health:stateChanged'"))
+print(f"  Illness onsets: {len(ill):,}  ({len(ill)/n_runs:.1f}/run)")
+print(f"  Recoveries:     {len(recover):,}  ({len(recover)/n_runs:.1f}/run)")
+print(f"  Treatments:     {len(treated):,}  ({len(treated)/n_runs:.1f}/run)")
+
+# Illness types & severity from state changes that enter an ill state
+ill_states = [s for s in state if s.get('state') == 'ill' and s.get('illness')]
+if ill_states:
+    illness_types = Counter(s['illness'] for s in ill_states)
+    print(f"\n  Illness types ({len(illness_types)} distinct):")
+    print(fmt_dist(illness_types, total=len(ill_states)))
+    sev = [s['severity'] for s in ill_states if isinstance(s.get('severity'), (int, float))]
+    if sev:
+        print(f"\n  Illness severity at onset: {stats_line(sev)}")
+    causes = Counter(s.get('cause') for s in ill_states if s.get('cause'))
+    if causes:
+        print(f"\n  Illness cause:")
+        print(fmt_dist(causes, total=len(ill_states)))
+
+# Treatment routing & spend
+if treated:
+    tx = Counter(t.get('treatmentId') for t in treated if t.get('treatmentId'))
+    print(f"\n  Treatment routing:")
+    print(fmt_dist(tx, total=len(treated)))
+    costs = [t['cost'] for t in treated if isinstance(t.get('cost'), (int, float))]
+    if costs:
+        print(f"\n  Treatment cost: total §{sum(costs):,}  ({sum(costs)/n_runs:.0f}/run)  per-treatment {stats_line(costs)}")
+    resolved = sum(1 for t in treated if t.get('resolved'))
+    print(f"  Resolved by treatment: {pct(resolved, len(treated))}")
+
+# Cross-check: are illnesses being resolved at all?
+if ill and recover:
+    print(f"\n  Recovery ratio (recoveries / onsets): {len(recover)/len(ill):.2f}")
+    if len(recover) / len(ill) < 0.5:
+        print("  ⚠  <50% of illnesses recover — health may be a one-way trap")
+
+write_csv('12_health', [
+    {'metric': 'illness_onsets', 'value': len(ill)},
+    {'metric': 'recoveries', 'value': len(recover)},
+    {'metric': 'treatments', 'value': len(treated)},
+    *[{'metric': f'illness_{k}', 'value': v} for k, v in Counter(s.get('illness') for s in ill_states).items()],
+    *[{'metric': f'treatment_{k}', 'value': v} for k, v in Counter(t.get('treatmentId') for t in treated if t.get('treatmentId')).items()],
+])
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  13. HOUSEHOLD ECONOMY  (WP4 / WP9)
+# ─────────────────────────────────────────────────────────────────────────────
+section("13. HOUSEHOLD ECONOMY")
+
+purchases = jcol(q("SELECT event_json FROM event_log WHERE event_type='household:purchase'"))
+plans     = jcol(q("SELECT event_json FROM event_log WHERE event_type='household:plan'"))
+crafted   = jcol(q("SELECT event_json FROM event_log WHERE event_type='household:crafted'"))
+rooms     = jcol(q("SELECT event_json FROM event_log WHERE event_type='household:roomCreated'"))
+print(f"  Purchases: {len(purchases):,}  ({len(purchases)/n_runs:.1f}/run)")
+print(f"  Crafted:   {len(crafted):,}  ({len(crafted)/n_runs:.1f}/run)")
+print(f"  Rooms built: {len(rooms):,}  ({len(rooms)/n_runs:.1f}/run)")
+
+if purchases:
+    bought = Counter(p.get('objectLabel') or p.get('objectId') for p in purchases)
+    print(f"\n  Objects bought ({len(bought)} distinct):")
+    print(fmt_dist(bought, total=len(purchases)))
+    spend = [p['cost'] for p in purchases if isinstance(p.get('cost'), (int, float))]
+    if spend:
+        print(f"\n  Purchase spend: total §{sum(spend):,}  ({sum(spend)/n_runs:.0f}/run)  per-item {stats_line(spend)}")
+    reasons = Counter(p.get('reasonNeed') for p in purchases if p.get('reasonNeed'))
+    if reasons:
+        print(f"\n  Purchase trigger (need):")
+        print(fmt_dist(reasons, total=len(purchases)))
+
+if plans:
+    interventions = Counter(p.get('intervention') for p in plans if p.get('intervention'))
+    print(f"\n  HouseholdPlanner interventions ({len(plans)} total):")
+    print(fmt_dist(interventions, total=len(plans)))
+
+write_csv('13_household', [
+    {'metric': 'purchases', 'value': len(purchases)},
+    {'metric': 'crafted', 'value': len(crafted)},
+    {'metric': 'rooms_built', 'value': len(rooms)},
+    *[{'metric': f'plan_{k}', 'value': v} for k, v in Counter(p.get('intervention') for p in plans if p.get('intervention')).items()],
+])
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  14. FAMILY, CAREER INCOME & OFF-LOT  (WP5 / WP2)
+# ─────────────────────────────────────────────────────────────────────────────
+section("14. FAMILY, INCOME & OFF-LOT")
+
+births   = q("SELECT COUNT(*) AS n FROM event_log WHERE event_type='family:childBorn'")[0]['n']
+partners = q("SELECT COUNT(*) AS n FROM event_log WHERE event_type='family:partnerChanged'")[0]['n']
+print(f"  Children born: {births}  ({births/n_runs:.2f}/run)")
+print(f"  Partner changes: {partners}  ({partners/n_runs:.2f}/run)")
+
+salaries = jcol(q("SELECT event_json FROM event_log WHERE event_type='career:salary'"))
+if salaries:
+    pay = [s['amount'] for s in salaries if isinstance(s.get('amount'), (int, float))]
+    print(f"\n  Salary payouts: {len(salaries)}  total §{sum(pay):,}  ({sum(pay)/n_runs:.0f}/run)  per-cheque {stats_line(pay)}")
+burnouts = [s.get('careerBurnouts', 0) for s in summaries]
+sick     = [s.get('callInSick', 0) for s in summaries]
+stress   = [s['avgWorkStress'] for s in summaries if 'avgWorkStress' in s]
+if any(burnouts) or any(sick):
+    print(f"  Career burnouts: {sum(burnouts)} total ({mean(burnouts):.2f}/run)   "
+          f"call-in-sick: {sum(sick)} total ({mean(sick):.2f}/run)")
+if stress:
+    print(f"  Avg work stress: {stats_line(stress)}")
+
+# Off-lot life (external people simulated abstractly)
+incidents = jcol(q("SELECT event_json FROM event_log WHERE event_type='offlot:incident'"))
+if incidents:
+    inc_cause = Counter(i.get('cause') for i in incidents if i.get('cause'))
+    print(f"\n  Off-lot incidents: {len(incidents)}  ({len(incidents)/n_runs:.1f}/run)")
+    print(fmt_dist(inc_cause, total=len(incidents)))
+
+write_csv('14_family_income', [
+    {'metric': 'births', 'value': births},
+    {'metric': 'partner_changes', 'value': partners},
+    {'metric': 'salary_total', 'value': sum(s.get('amount', 0) for s in salaries)},
+    {'metric': 'burnouts', 'value': sum(burnouts)},
+    {'metric': 'call_in_sick', 'value': sum(sick)},
+])
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  15. ALGORITHMIC QUALITY SUMMARY
+# ─────────────────────────────────────────────────────────────────────────────
+section("15. ALGORITHMIC QUALITY SUMMARY")
 
 checks = []
 
@@ -479,10 +645,18 @@ checks.append(("Romance activation rate", round(mean_rom, 4),
 checks.append(("Career promotions/run", round(promo_rows/n_runs, 2),
     "⚠ zero" if promo_rows == 0 else "ok"))
 
-STATUS_ICON = {"ok": "✓", "⚠ always 0": "✗", "⚠ near 0": "⚠", "⚠ near 100%": "⚠",
-               "⚠ very low": "⚠", "⚠ very high": "⚠", "⚠ low": "⚠",
-               "⚠ no growth": "⚠", "⚠ declining": "⚠", "⚠ zero": "⚠",
-               "low": "⚠", "high": "⚠"}
+# Food poisoning rate (WP8)
+if eaten:
+    checks.append(("Food poisoning rate", f"{poison_rate:.1%}",
+        "⚠ very high" if poison_rate > 0.15 else "ok"))
+
+# Illness recovery (WP7)
+if ill:
+    rec_ratio = len(recover) / len(ill) if ill else 0
+    checks.append(("Illness recovery ratio", round(rec_ratio, 2),
+        "⚠ low" if rec_ratio < 0.5 else "ok"))
+
+STATUS_ICON = defaultdict(lambda: "⚠", {"ok": "✓", "⚠ always 0": "✗"})
 
 print()
 for label, value, status in checks:

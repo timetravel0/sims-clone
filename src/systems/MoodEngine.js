@@ -50,7 +50,7 @@ export class MoodEngine {
   compute(sim) {
     // 1. Need satisfaction (each need 0–100 → normalised -1..+1)
     let needScore = 0;
-    const needs = sim.needs?.all ? sim.needs.all() : {};
+    const needs = sim.needs?.getAll ? sim.needs.getAll() : {};
     for (const [name, weight] of Object.entries(NEED_WEIGHTS)) {
       const val = needs[name] ?? 50;
       needScore += ((val / 100) * 2 - 1) * weight;

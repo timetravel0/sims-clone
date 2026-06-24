@@ -1,8 +1,10 @@
 import { bus } from '../core/EventBus.js';
 import { memorySystem } from './MemorySystem.js';
+import { FAMILY_RULES } from '../config/familyRules.js';
 
 const POSITIVE = new Set(['chat', 'joke', 'compliment', 'hug']);
 const ROMANTIC = new Set(['flirt', 'hug', 'compliment']);
+const AUTO_MOVEIN_ROMANCE = 75; // mutual romance at/above which a partner moves in automatically
 
 export class RomanceSystem {
   constructor(sims, graph, population = null) {
@@ -143,19 +145,35 @@ export class RomanceSystem {
       if (a >= 35 && b >= 35) this._population.setPartner?.(idA, idB);
       return;
     }
-    // Cross-household: propose move-in if romance is high enough
+    // Cross-household: a deeply-in-love partner moves in automatically when the
+    // house has room; otherwise fall back to a manual move-in proposal.
     const aH = this._population?.isHouseholdMember?.(idA);
     const bH = this._population?.isHouseholdMember?.(idB);
     if (!aH && !bH) return;
     const [hId, vId] = aH ? [idA, idB] : [idB, idA];
-    if (this._graph.score(hId, vId, 'romance') < 50 || this._graph.score(vId, hId, 'romance') < 50) return;
+    const rH = this._graph.score(hId, vId, 'romance');
+    const rV = this._graph.score(vId, hId, 'romance');
+    // Fully autonomous decision — no player prompt. A partner moves in only when
+    // both are deeply in love AND the house has room. Otherwise we just wait and
+    // re-evaluate later (romance may grow / room may free up), so we deliberately
+    // do NOT mark the pair resolved until the move-in actually happens.
+    if (rH < AUTO_MOVEIN_ROMANCE || rV < AUTO_MOVEIN_ROMANCE || !this._hasRoom()) return;
     const key = `${[hId, vId].sort().join(':')}:movein`;
     if (this._announced.has(key)) return;
     this._announced.add(key);
-    bus.emit('romance:moveInProposal', {
+
+    // Data join happens here (works in any runtime); the visual flip/spawn is
+    // handled by whoever listens to romance:moveInAccepted (Game in the browser).
+    this._population.adoptIntoHousehold?.(vId, hId);
+    bus.emit('romance:moveInAccepted', {
       householdId: hId, householdName: this._name(hId),
       visitorId:   vId, visitorName:   this._name(vId),
     });
+  }
+
+  _hasRoom() {
+    const n = this._population?.householdMembers?.().length ?? 0;
+    return n < FAMILY_RULES.maxHouseholdSize;
   }
 
   _gameSim(id) {

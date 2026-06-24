@@ -76,6 +76,31 @@ describe('DoctorService', () => {
     expect(game._person.health.state).toBe('healthy');
   });
 
+  // Regression (2026-06-24 log): §18.9k of auto-medical drained the household to
+  // §5, then meals (§15) were unaffordable and Chiara starved with a reachable
+  // fridge. Autonomous care must keep a food reserve clear.
+  describe('autonomous spending keeps a food reserve', () => {
+    function gameWith(funds, members = 2) {
+      const g = makeGame({ funds });
+      g.population.householdMembers = () => Array.from({ length: members }, (_, i) => ({ id: 'm' + i }));
+      g._person.health = { state: 'ill', illness: 'cold', severity: 0.3 }; // → cheap medicine §80
+      return g;
+    }
+    it('skips auto-care that would spend below the food reserve', () => {
+      // reserve = 15 * 2 members * 6 = 180; funds 200 → 200-80 < 180 → blocked
+      const d = new DoctorService(gameWith(200, 2));
+      expect(d.book('p1', null, { auto: true })).toBeNull();
+    });
+    it('still auto-cares when funds stay above the reserve', () => {
+      const d = new DoctorService(gameWith(20000, 2));
+      expect(d.book('p1', null, { auto: true })).toBeTruthy();
+    });
+    it('lets the player book manually even below the reserve', () => {
+      const d = new DoctorService(gameWith(200, 2));
+      expect(d.book('p1', 'medicine', { auto: false })).toBeTruthy();
+    });
+  });
+
   it('auto-books when a household member becomes ill above threshold', () => {
     // Re-init to attach the bus listener freshly, then emit an illness event.
     const g = makeGame({ severity: 0.7 });

@@ -21,8 +21,8 @@ export class Furniture {
     this._onUse       = def?.onUse || null;
     this._affordances = affordances || def?.affordances || null;
 
-    // Build procedural mesh
-    this.mesh = FurnitureMeshFactory.build(id, color);
+    // Build procedural mesh (needTarget gives crafted objects a shape by type)
+    this.mesh = FurnitureMeshFactory.build(id, color, this.needTarget);
 
     // Social gold ring
     if (this.social) addSocialRing(this.mesh);

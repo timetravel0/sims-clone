@@ -83,4 +83,28 @@ describe('AutonomousConstructionSystem', () => {
     fresh.restore(snap);
     expect(fresh.roomsBuilt).toBe(1);
   });
+
+  it('scraps handcrafted clutter down to the cap even when broke', () => {
+    // Clutter→starvation→bankruptcy: broke household can't buy land, so it must
+    // reclaim space for free by scrapping crafted objects beyond the count cap.
+    // Count-based so it works regardless of WHERE the objects sit (a global
+    // free-tile metric missed objects clustered in the house core).
+    const broke = makeGame(0);
+    const s = new AutonomousConstructionSystem(broke);
+    for (let i = 0; i < 12; i++)
+      broke.world.placeFurniture({ id: `custom_object_${i}`, gx: 2 + i, gz: 5, needTarget: 'fun', restoreRate: 5 });
+    broke.world.placeFurniture({ id: 'bed_x', gx: 2, gz: 7, needTarget: 'energy', restoreRate: 30 });
+
+    s._consider();
+    const crafted = broke.world.furniture.filter(f => String(f.id).startsWith('custom_object_')).length;
+    expect(crafted).toBe(4); // 16×16 lot → cap 4; scrapped 12 → 4
+    expect(broke.world.furniture.some(f => f.id === 'bed_x')).toBe(true); // only crafted scrapped
+  });
+
+  it('leaves crafted clutter alone while within the cap', () => {
+    game.world.placeFurniture({ id: 'custom_object_1', gx: 3, gz: 3, needTarget: 'fun', restoreRate: 5 });
+    game.world.placeFurniture({ id: 'custom_object_2', gx: 4, gz: 3, needTarget: 'fun', restoreRate: 5 });
+    sys._consider();
+    expect(game.world.furniture.filter(f => String(f.id).startsWith('custom_object_')).length).toBe(2);
+  });
 });

@@ -24,6 +24,14 @@ export class BudgetSystem {
   /** Reset to the starting balance (used to isolate headless runs). */
   reset() { this._funds = STARTING_FUNDS; }
 
+  /** Set the balance directly (used by the household creator's starting budget). */
+  setFunds(amount) {
+    const n = Math.max(0, Math.min(9_999_999, Math.floor(Number(amount) || 0)));
+    const prev = this._funds;
+    this._funds = n;
+    bus.emit('budget:changed', { prev, next: n, delta: n - prev, reason: 'set' });
+  }
+
   /**
    * Attempt to debit § for a purchase.
    * @returns {boolean} true if successful

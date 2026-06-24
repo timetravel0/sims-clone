@@ -27,7 +27,7 @@ const WATCHED_EVENTS = [
   'career:promoted',
   'career:fired',
   'family:childBorn',
-  'romance:moveInProposal',
+  'romance:moveInAccepted',
   'household:furnitureMoved',
   'skill:levelUp',
 ];
@@ -135,7 +135,7 @@ export class SessionLogger {
     // Household-level events — always relevant
     const alwaysShow = new Set([
       'session:start', 'budget:insufficient', 'budget:changed',
-      'household:furnitureMoved', 'family:childBorn', 'romance:moveInProposal',
+      'household:furnitureMoved', 'family:childBorn', 'romance:moveInAccepted',
     ]);
     if (alwaysShow.has(type)) return true;
 

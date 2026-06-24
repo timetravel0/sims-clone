@@ -114,8 +114,11 @@ export class HealthSystem {
           hunger, budget: budgetSystem.funds,
         });
         if (c >= STARVE_DEATH_CYCLES) {
-          this._killSim(person, sim);
-          return;
+          // A reachable fridge means food is available — grab an emergency bite
+          // rather than starving to death (the user's core complaint). Death by
+          // starvation only happens when the household truly has no food source.
+          if (this._emergencyFeed(sim)) { person._starveCycles = 0; }
+          else { this._killSim(person, sim); return; }
         }
         if (c >= STARVE_ILL_CYCLES && health.state === 'healthy') {
           this._setIll(person, 'starvation', 0.75, { cause: 'starvation' });
@@ -210,6 +213,25 @@ export class HealthSystem {
     }
   }
 
+  /**
+   * Last-resort feed when starvation would otherwise kill: if the household has
+   * a fridge (food storage), the Sim grabs an emergency bite instead of dying.
+   * Returns true if fed. This makes starvation death possible only when there
+   * is genuinely no reachable food source.
+   */
+  _emergencyFeed(sim) {
+    const furniture = this._game.world?.furniture ?? [];
+    const hasFood = furniture.some(f => f.id === 'fridge' || f.functionTags?.includes('food_storage'));
+    if (!hasFood) return false;
+    sim.needs?.restore?.('hunger', 45);
+    bus.emit('story:entry', {
+      simId: sim.id,
+      text: `${sim.name} ha rimediato un boccone d'emergenza per non morire di fame.`,
+      cat: 'family', category: 'family',
+    });
+    return true;
+  }
+
   _killSim(person, sim) {
     person.dead = true;
     person._starveCycles = 0;
@@ -233,14 +255,18 @@ export class HealthSystem {
     const hygienePressure = this._pressure(needs.hygiene);
     const energyPressure = this._pressure(needs.energy);
     const hungerPressure = this._pressure(needs.hunger);
-    const weatherBoost = this._game._weather?.current === 'rain' ? 0.01 : 0;
+    const weatherBoost = this._game._weather?.current === 'rain' ? 0.002 : 0;
     // Nutrition (M12): well-fed Sims resist illness; poor nutrition raises risk.
     const nutrition = sim?._nutrition ?? 0.6;
-    const nutritionBoost = (1 - nutrition) * 0.02;
+    const nutritionBoost = (1 - nutrition) * 0.004;
     // Kitchen hygiene (WP8): a dirty kitchen breeds illness.
     const kh = this._game?.world?.kitchenHygiene ?? 100;
-    const kitchenBoost = (100 - kh) / 100 * 0.015;
-    return Math.min(0.1, 0.005 + hygienePressure * 0.03 + energyPressure * 0.02 + hungerPressure * 0.01 + nutritionBoost + kitchenBoost + weatherBoost);
+    const kitchenBoost = (100 - kh) / 100 * 0.003;
+    // Calibration (2026-06-25): this rolls ~51×/game-day, so values are ~7× lower
+    // than the old set, which gave even a perfectly healthy Sim a ~60%/day illness
+    // chance. Now a well-kept Sim is sick a few %/day; sustained neglect caps at
+    // ~0.02/cycle (~1×/day worst case). See tests/IllnessRate.test.js.
+    return Math.min(0.02, 0.0008 + hygienePressure * 0.006 + energyPressure * 0.004 + hungerPressure * 0.002 + nutritionBoost + kitchenBoost + weatherBoost);
   }
 
   _pressure(value = 50) {

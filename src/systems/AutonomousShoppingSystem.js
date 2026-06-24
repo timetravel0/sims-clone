@@ -4,6 +4,23 @@ import { OBJECT_COSTS } from '../config/objectCatalog.js';
 import { skillSystem } from './SkillSystem.js';
 
 const CRAFT_NOUNS = { fun: 'gadget', comfort: 'stool', room: 'sculpture', energy: 'recliner' };
+// Hard ceiling on handcrafted objects, scaled to lot size. A handy Sim crafts
+// one object per cooldown forever; crafted objects CLUSTER in the house core, so
+// a global free-tile gate never tripped (the lot's edges stayed empty) and the
+// core packed solid → blocked paths to fridge/shower → starvation + hygiene 0
+// (2026-06-24 logs, custom_object_147). A COUNT cap is immune to placement and
+// to the household's funds. It scales with the lot, so building rooms/buying
+// land genuinely raises the allowance (≈ 1 object per 64 tiles, min 3).
+const CRAFT_TILES_PER_OBJECT = 64;
+export function craftCapFor(world) {
+  const t = world?.tilemap;
+  return Math.max(3, Math.floor((t?.width ?? 16) * (t?.height ?? 16) / CRAFT_TILES_PER_OBJECT));
+}
+// Crafting costs materials (charged to the household), scaling with the object's
+// quality (handiness). Cheaper than buying the equivalent, but no longer free.
+const CRAFT_COST_BASE = 40;
+const CRAFT_COST_PER_LEVEL = 10;
+export const craftCost = (handiness) => CRAFT_COST_BASE + Math.max(0, handiness) * CRAFT_COST_PER_LEVEL;
 
 const DEFAULT_CHECK_INTERVAL = 38;
 const HOUSEHOLD_RESERVE = 1_000;
@@ -164,19 +181,28 @@ export class AutonomousShoppingSystem {
     if (handiness < 2) return;
     if (Math.random() > 0.15 + handiness * 0.05) return;
 
+    // Stop once the lot already holds its share of handcrafted objects.
+    const crafted = this._game.world.furniture.filter(f => String(f.id).startsWith('custom_object_')).length;
+    if (crafted >= craftCapFor(this._game.world)) { this._craftCd = 600; return; }
+
+    // Crafting costs materials — only when the household can afford it without
+    // dipping below its reserve. (Crafting is no longer free.)
+    const cost = craftCost(handiness);
+    const budget = this._game.budgetSystem;
+    if (!budget || budget.funds < HOUSEHOLD_RESERVE + cost) { this._craftCd = 600; return; }
+
     const need = Object.keys(CRAFT_NOUNS)[Math.floor(Math.random() * 4)];
     const candidate = {
       label: `${sim.name}'s ${CRAFT_NOUNS[need]}`,
       color: 0x8d6e63,
       needTarget: need,
       restoreRate: 6 + handiness,
-      cost: 0,
+      cost,
       description: `Handcrafted by ${sim.name} (handiness ${handiness}).`,
       affordances: [{ verb: 'use', label: 'Use', utility: { [need]: 10 + handiness * 2, fun: 4 }, duration: 4 }],
     };
 
-    // ponytail: skip capacity check for crafted objects — they're free (cost=0)
-    // and expressive; the cooldown + probability gate already prevents spam.
+    // Crafted objects skip the purchase dedup, but the count cap above bounds them.
     const def = this._game.createCustomObject?.(candidate);
     if (!def) return;
 
@@ -189,15 +215,18 @@ export class AutonomousShoppingSystem {
     });
     if (!ok) return;
 
+    // Charge materials only once the object is actually placed.
+    budget.debit(cost, 'craft', { makerId: sim.id, objectId: def.id });
+
     this._craftCd = 600;
-    sim.showBubble?.(`Crafted ${def.label}`, 2.5);
+    sim.showBubble?.(`Crafted ${def.label} (−§${cost})`, 2.5);
     bus.emit('household:crafted', {
       tick: this._game.tick, makerId: sim.id, makerName: sim.name,
-      objectId: def.id, objectLabel: def.label, needTarget: need,
+      objectId: def.id, objectLabel: def.label, needTarget: need, cost,
       restoreRate: def.restoreRate, gx: placement.gx, gz: placement.gz,
     });
     bus.emit('story:entry', {
-      text: `${sim.name} crafted a ${CRAFT_NOUNS[need]} at the workbench.`,
+      text: `${sim.name} crafted a ${CRAFT_NOUNS[need]} at the workbench (−§${cost}).`,
       cat: 'family', category: 'family',
     });
   }
@@ -207,6 +236,9 @@ export class AutonomousShoppingSystem {
     const existing = this._objectCounts();
     const pressures = this._needPressures(household);
     return ObjectRegistry.all()
+      // ponytail: crafted objects are free (cost 0) one-offs — never re-buy them,
+      // or a free crisis-serving recliner dominates every purchase decision.
+      .filter(def => !def.custom)
       .filter(def => this._needsAdditionalInstance(def, household) || this._servesChronicCrisis(def))
       .map(def => {
         const cost = def.cost ?? OBJECT_COSTS[def.id] ?? 600;

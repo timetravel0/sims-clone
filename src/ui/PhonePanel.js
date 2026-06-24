@@ -14,7 +14,13 @@ export class PhonePanel {
     this._game = game;
     this._el   = this._build();
     document.body.appendChild(this._el);
-    bus.on('phone:used', ({ sim }) => this._open(sim));
+    // Only surface the call menu when the PLAYER directed this Sim to the phone.
+    // Autonomous phone use is a Sim's own decision — it already gains social/fun
+    // from the affordance, so no prompt (the user must not be asked what to do).
+    bus.on('phone:used', ({ sim }) => {
+      if (!sim?.brain?._playerOverride) return;
+      this._open(sim);
+    });
   }
 
   _build() {

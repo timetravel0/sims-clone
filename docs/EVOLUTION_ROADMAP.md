@@ -1052,7 +1052,9 @@ After completing M1–M13, a pass implemented the highest-value deferred items:
 - **Bathroom construction trigger (WP4):** `AutonomousConstructionSystem._needReason()` now also returns `'bathroom'` when fixtures are short (`sims > baths*3`), and `build('bathroom')` furnishes a toilet instead of a bed.
 - **Location fields (WP6):** `describeLocation` now includes `lotId`, `roomId`, and `untilTick` (for outings).
 
-Still deferred (lower value): off-lot clinic travel & treatment quality (WP7), upgrade/repair-object & full subsystem routing & outcome-measurement (WP9), multiple expansion shapes & furniture relocation into new rooms (WP4), dedicated roster panel & per-Sim debug overlay & `sinceTick` (WP6), ingredient depletion & meal spoilage (WP3).
+- **Furniture relocation into new rooms (WP4):** `household:roomCreated` now carries the room rect; `LayoutPlanner.furnishNewRoom()` relocates up to 2 `roomTags`-matching items (nearest-first, anchor function skipped, connectivity-checked) into the new interior, so built rooms become real zones (bathroom→shower, bedroom→desk/treadmill). Test: `tests/RoomFurnishing.test.js`.
+
+Still deferred (lower value): off-lot clinic travel & treatment quality (WP7), upgrade/repair-object & full subsystem routing & outcome-measurement (WP9), multiple expansion shapes (WP4), dedicated roster panel & per-Sim debug overlay & `sinceTick` (WP6), ingredient depletion & meal spoilage (WP3).
 
 ## Status
 

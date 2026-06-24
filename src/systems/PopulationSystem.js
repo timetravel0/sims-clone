@@ -410,6 +410,29 @@ export class PopulationSystem {
     return true;
   }
 
+  /**
+   * Move a visitor / external person into the household (canonical join used by
+   * the manual move-in dialog and the autonomous high-romance auto-accept).
+   * Idempotent: only emits the join story the first time. Runtime-agnostic —
+   * the data join (role + partner bond) is what makes them "family"; any visual
+   * follow-up (flip _isVisitor / spawn) is the caller's job.
+   */
+  adoptIntoHousehold(visitorId, partnerId = null) {
+    const rec = this.getPerson(visitorId);
+    if (!rec) return false;
+    const wasMember = rec.role === 'household';
+    rec.role = 'household';
+    rec.householdId = 'home';
+    rec.homeLotId   = 'home';
+    this._active.add(visitorId);
+    if (partnerId && partnerId !== visitorId) this.setPartner(partnerId, visitorId);
+    if (!wasMember) {
+      bus.emit('household:memberJoined', { personId: visitorId, name: rec.name, partnerId });
+      bus.emit('story:entry', { text: `${rec.name} si è unito/a alla famiglia!`, cat: 'family', category: 'family' });
+    }
+    return true;
+  }
+
   clearPartner(personId) {
     const person = this.getPerson(personId);
     if (!person) return false;

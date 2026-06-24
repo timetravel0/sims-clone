@@ -32,6 +32,7 @@ import { AutonomousShoppingSystem } from '../systems/AutonomousShoppingSystem.js
 import { RomanceSystem }       from '../systems/RomanceSystem.js';
 import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
 import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
+import { LifePage }            from '../ui/LifePage.js';
 import { MemoryInspectorPanel } from '../ui/MemoryInspectorPanel.js';
 import { LifecycleNotifier }   from '../ui/LifecycleNotifier.js';
 import { AgeSystem }           from '../systems/AgeSystem.js';
@@ -119,11 +120,63 @@ export class Game {
   _showCreator() {
     const creator = new SimCreator();
     creator.show();
-    bus.on('simcreator:done', ({ householdName, simDefs }) => {
+    bus.on('simcreator:done', ({ householdName, simDefs, relationships, budget }) => {
       this.householdName = householdName;
       const defs = (simDefs ?? []).map(creatorDefToSimDef);
       this._init(defs.length ? defs : SIM_DEFS);
+      this._applyCreatorSetup(simDefs ?? [], relationships ?? [], budget);
     });
+  }
+
+  /**
+   * Apply the household-creator choices that the constructor systems don't take
+   * directly: per-Sim age/education/job, the starting budget, and the chosen
+   * relationships (authoritative — clears any auto-seeded links among founders).
+   * Runs right after _init, so all systems and the founder Sims (in def order)
+   * already exist.
+   */
+  _applyCreatorSetup(simDefs, relationships, budget) {
+    const STAGE_DAYS = { teen: 13, youngAdult: 18, adult: 30, elder: 60 };
+    if (budget != null) this.budgetSystem?.setFunds?.(budget);
+
+    simDefs.forEach((def, i) => {
+      const sim = this.sims[i];
+      if (!sim) return;
+      if (def.age) this.ageSystem?.registerAt?.(sim, STAGE_DAYS[def.age] ?? 18);
+      if (def.career) this.careerSystem?.assign?.(sim.id, def.career);
+      const person = this.population?.getPerson?.(sim.id);
+      if (person && def.education != null) person.education = def.education;
+    });
+
+    if (relationships.length) {
+      // Founders are authored explicitly: drop any auto-seeded links first.
+      for (const sim of this.sims) {
+        const p = this.population?.getPerson?.(sim.id);
+        if (p) { p.partnerId = null; p.parentIds = []; p.childIds = []; }
+      }
+      for (const rel of relationships) {
+        const a = this.sims[rel.a], b = this.sims[rel.b];
+        if (!a || !b) continue;
+        if (rel.type === 'partner') {
+          this.population?.setPartner?.(a.id, b.id);
+          this.relationshipGraph?.adjust?.(a.id, b.id, 'romance', 60);
+          this.relationshipGraph?.adjust?.(b.id, a.id, 'romance', 60);
+        } else if (rel.type === 'sibling') {
+          const pa = this.population?.getPerson?.(a.id), pb = this.population?.getPerson?.(b.id);
+          const fam = `born_${[a.id, b.id].sort().join('_')}`;   // shared phantom parent → isFamily()
+          if (pa && !pa.parentIds.includes(fam)) pa.parentIds.push(fam);
+          if (pb && !pb.parentIds.includes(fam)) pb.parentIds.push(fam);
+          this.population?.logRelationship?.(a.id, 'sibling', { withId: b.id, withName: b.name });
+          this.population?.logRelationship?.(b.id, 'sibling', { withId: a.id, withName: a.name });
+        } else if (rel.type === 'parent_child') {
+          const parent = this.population?.getPerson?.(a.id), child = this.population?.getPerson?.(b.id);
+          if (parent && !parent.childIds.includes(b.id)) parent.childIds.push(b.id);
+          if (child && !child.parentIds.includes(a.id)) child.parentIds.push(a.id);
+          this.population?.logRelationship?.(a.id, 'child_born', { childId: b.id, childName: b.name });
+        }
+      }
+    }
+    bus.emit('sim:selected', { sim: this.selectedSim });
   }
 
   /** Start screen offering to load an existing save or begin a new game. */
@@ -269,7 +322,8 @@ export class Game {
     this._graphPanel = new GraphPanel(this);
     this._phonePanel = new PhonePanel(this);
 
-    this._lifecyclePanel    = new LifeCyclePanel(this);
+    this._lifecyclePanel    = new LifeCyclePanel(this); // fallback overlay if popups blocked
+    this._lifePage          = new LifePage(this);
     this._memoryInspector   = new MemoryInspectorPanel();
     this.householdGoalSystem = new HouseholdGoalSystem(this);
     this.construction        = new AutonomousConstructionSystem(this);
@@ -508,10 +562,11 @@ export class Game {
     q('btn-save')?.addEventListener('click', () => this._saveSlotPanel?.open('save'));
     q('btn-load')?.addEventListener('click', () => this._saveSlotPanel?.open('load'));
 
-    // Sprint 3 — lifecycle panel (LifeCyclePanel owns its visibility via toggle())
+    // "Life" opens a separate page listing every family member's info.
+    // Popup blocked → fall back to the single-Sim LifeCyclePanel overlay.
     q('btn-lifecycle')?.addEventListener('click', () => {
-      this._lifecyclePanel?.toggle();
-      q('btn-lifecycle')?.classList.toggle('active', !!this._lifecyclePanel?._visible);
+      const opened = this._lifePage?.open();
+      if (!opened) this._lifecyclePanel?.toggle();
     });
 
     // Sprint 4 — skill panel
@@ -566,7 +621,9 @@ export class Game {
       bus.emit('story:entry', { text: `${simName} è morto/a di ${cause === 'old_age' ? 'vecchiaia' : cause}.`, cat: 'life_event' });
     });
 
-    bus.on('romance:moveInProposal', e => this._showMoveInDialog(e));
+    // Move-in is fully autonomous (RomanceSystem decides + does the data join);
+    // we just reflect it visually (flip an on-lot visitor, or spawn a partner).
+    bus.on('romance:moveInAccepted', ({ visitorId }) => this._moveInVisual(visitorId));
 
     // Social Core 2.0 — experiment dashboard (opens in its own window)
     q('btn-lab')?.addEventListener('click', () => this._openLab());
@@ -607,47 +664,11 @@ export class Game {
     el.querySelector('#expand-cancel')?.addEventListener('click', () => el.remove());
   }
 
-  _showMoveInDialog({ householdId, householdName, visitorId, visitorName }) {
-    if (document.getElementById('movein-dialog')) return;
-    const el = document.createElement('div');
-    el.id = 'movein-dialog';
-    Object.assign(el.style, {
-      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-      background: 'rgba(15,20,40,0.97)', border: '1px solid #e94560', borderRadius: '10px',
-      zIndex: '250', padding: '22px 26px', textAlign: 'center', color: '#ddd', fontFamily: 'monospace', maxWidth: '320px',
-    });
-    el.innerHTML = `
-      <div style="font-size:22px;margin-bottom:10px">💕</div>
-      <div style="margin-bottom:14px">${householdName} e ${visitorName} si amano.<br><strong>${visitorName}</strong> vuole trasferirsi.</div>
-      <button id="movein-yes" style="margin:4px;padding:8px 18px;background:#e94560;border:none;color:#fff;border-radius:6px;cursor:pointer">Accetta</button>
-      <button id="movein-no"  style="margin:4px;padding:8px 18px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#ddd;border-radius:6px;cursor:pointer">Rifiuta</button>`;
-    document.body.appendChild(el);
-    el.querySelector('#movein-yes').addEventListener('click', () => {
-      // Adopt via population record first (works even if visitor is off-lot)
-      const rec = this.population._people?.get(visitorId);
-      if (rec) {
-        rec.role = 'household';
-        rec.householdId = 'home';
-        rec.homeLotId   = 'home';
-        this.population._active?.add(visitorId);
-      }
-      let vSim = this.sims?.find(s => s.id === visitorId);
-      if (vSim) {
-        // Already on-lot: just flip the flag
-        vSim._isVisitor = false;
-      } else {
-        // Off-lot: spawn them now as household member
-        vSim = this.population.activatePerson(visitorId);
-      }
-      this.population.setPartner?.(householdId, visitorId);
-      bus.emit('story:entry', { text: `${visitorName} si è unito/a alla famiglia!`, cat: 'family' });
-      el.remove();
-    });
-    el.querySelector('#movein-no').addEventListener('click', () => {
-      this.relationshipGraph?.adjust?.(householdId, visitorId, 'romance', -10);
-      bus.emit('story:entry', { text: `${householdName} ha rifiutato ${visitorName}.`, cat: 'drama' });
-      el.remove();
-    });
+  /** Reflect a completed move-in on the lot: flip an on-lot visitor, else spawn. */
+  _moveInVisual(visitorId) {
+    const vSim = this.sims?.find(s => s.id === visitorId);
+    if (vSim) vSim._isVisitor = false;
+    else this.population.activatePerson(visitorId);
   }
 
   /** Open the rich dashboard in a separate window; fall back to inline panel. */

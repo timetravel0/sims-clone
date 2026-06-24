@@ -18,6 +18,10 @@ export { TREATMENTS };
  */
 const AUTO_SEVERITY  = 0.45;  // autonomous care kicks in at/above this severity
 const ARRIVAL_TICKS  = 30;    // delay between booking and the doctor arriving
+// Survival reserve: autonomous care must never spend the household into starvation
+// (the §18.9k medical drain that killed Chiara/Daniele in the 2026-06-24 log).
+const MEAL_COST              = 15; // ponytail: § per meal — parity with CookMealAction's const
+const RESERVE_MEALS_PER_MEMBER = 6; // ~3 meals/day × 2 days kept clear of auto-medical spend
 
 export class DoctorService {
   constructor(game) {
@@ -46,11 +50,15 @@ export class DoctorService {
     const funds = this._game.budgetSystem?.funds ?? 0;
     const ill = illness ?? person.health?.illness ?? '';
     const sev = severity ?? person.health?.severity ?? 0;
+    // Autonomous care may only spend funds above the household's food reserve;
+    // the player booking manually can still spend down to zero.
+    const reserve = auto ? this._foodReserve() : 0;
     const treatment = treatmentId
       ? TREATMENT_BY_ID.get(treatmentId)
-      : pickTreatment(ill, sev, funds);
+      : pickTreatment(ill, sev, Math.max(0, funds - reserve));
     if (!treatment) return null;                 // nothing affordable/appropriate
     if (funds < treatment.cost) return null;
+    if (auto && funds - treatment.cost < reserve) return null; // would breach food reserve
 
     this._pending.set(personId, { treatmentId: treatment.id, dueTick: (this._game.tick ?? 0) + ARRIVAL_TICKS, auto });
     bus.emit('health:treatmentBooked', { personId, personName: person.name, treatmentId: treatment.id, cost: treatment.cost, auto });
@@ -60,6 +68,12 @@ export class DoctorService {
       cat: 'family', category: 'family',
     });
     return treatment.id;
+  }
+
+  /** § kept clear of autonomous medical spend so the household can always eat. */
+  _foodReserve() {
+    const members = (this._game.population?.householdMembers?.() ?? []).length;
+    return MEAL_COST * Math.max(1, members) * RESERVE_MEALS_PER_MEMBER;
   }
 
   /** Immediate treatment (no delay) — used by tests/console. */
