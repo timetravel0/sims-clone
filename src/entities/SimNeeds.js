@@ -6,19 +6,19 @@ export const NEED_KEYS = [
   'social', 'fun', 'comfort', 'room', 'autonomy', 'status',
 ];
 
-const BASE_DECAY  = cfg.needDecay;
-const DECAY_SCALE = cfg.decayScale;
-
 export class SimNeeds {
   constructor(personality) {
     this._personality = personality;
     this._values = {};
     for (const k of NEED_KEYS) this._values[k] = 100;
-    this._decayMults = this._computeDecay();
+    // Personality-only decay factors (cached). The per-need BASE rate and the
+    // global scale are read LIVE from cfg in update(), so the God/Admin page can
+    // retune needDecay/decayScale and it takes effect immediately on every Sim.
+    this._persMult = this._computePersMult();
     this._emit = null;
   }
 
-  _computeDecay() {
+  _computePersMult() {
     const p = this._personality;
     const m = {};
     for (const k of NEED_KEYS) {
@@ -29,14 +29,24 @@ export class SimNeeds {
       if (p.outgoing  > 0 && k === 'social') mult += p.outgoing  * 0.3;
       if (p.nice      > 0 && k === 'status') mult -= p.nice      * 0.2;
       if (p.ambitious > 0) mult -= p.ambitious * 0.1;
-      m[k] = Math.max(0.3, BASE_DECAY[k] * mult);
+      m[k] = mult;
     }
     return m;
   }
 
   update(dt) {
+    const base = cfg.needDecay ?? {};
+    const scale = cfg.decayScale ?? 0.16667;
+    // Decay constants are calibrated to a 1440-unit game-day (the original fixed day
+    // length). dayDurationSec is now tunable for real-time play (default 86400); since
+    // decay is applied per accumulated dt and a game-day now spans dayDurationSec units,
+    // a longer day makes needs drain proportionally faster per game-day. Normalise to
+    // the 1440 reference so decay-per-game-day is invariant — without this, sims at the
+    // 86400 default starve to death within game-minutes even with full funds and food.
+    const dayNorm = 1440 / (cfg.time?.dayDurationSec ?? 1440);
     for (const k of NEED_KEYS) {
-      this._values[k] = Math.max(0, this._values[k] - this._decayMults[k] * DECAY_SCALE * dt);
+      const rate = Math.max(0.3, (base[k] ?? 1) * this._persMult[k]);
+      this._values[k] = Math.max(0, this._values[k] - rate * scale * dt * dayNorm);
     }
     if (this._emit) this._emit(this._values);
   }

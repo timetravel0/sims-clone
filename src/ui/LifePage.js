@@ -139,14 +139,19 @@ export class LifePage {
       h += box(cb);
     }
     if (person) {
+      const nameOf = (id) => game.population?.getPerson?.(id)?.name;
+      const names = (ids) => (ids ?? []).map(nameOf).filter(Boolean).join(', ');
       const partner = game.population?.getPerson?.(person.partnerId)?.name ?? '—';
-      const kids = (person.childIds ?? []).length;
+      const parents  = names(person.parentIds) || '—';
+      const children = names(person.childIds)  || '—';
       const edu = educationLabel(person.education ?? 0);
       const ill = person.health && person.health.state !== 'healthy';
       const hp = ill
         ? `<span style="color:#ffab91">${person.health.state} · ${person.health.illness ?? '?'}</span>`
         : `<span style="color:#9ccc65">Sano</span>`;
-      let fb = `<div style="color:#aaa">Partner: <span style="color:#ddd">${partner}</span> · Figli: ${kids}</div>
+      let fb = `<div style="color:#aaa">Partner: <span style="color:#ddd">${partner}</span></div>
+        <div style="color:#aaa;margin-top:4px">👪 Genitori: <span style="color:#ddd">${parents}</span></div>
+        <div style="color:#aaa;margin-top:4px">🧒 Figli: <span style="color:#ddd">${children}</span></div>
         <div style="color:#aaa;margin-top:4px">🎓 ${edu} · Salute: ${hp}</div>`;
       if (ill) {
         const booked = game.doctor?._pending?.has?.(sim.id);

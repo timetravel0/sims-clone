@@ -1,98 +1,302 @@
 {
+  "time": {
+    "dayDurationSec": 86400,
+    "speeds": [
+      1,
+      60,
+      300,
+      1800
+    ],
+    "defaultSpeed": 60
+  },
+  "health": {
+    "illnessBase": 0.0008,
+    "illnessHygiene": 0.006,
+    "illnessEnergy": 0.004,
+    "illnessHunger": 0.002,
+    "illnessNutrition": 0.004,
+    "illnessKitchen": 0.003,
+    "illnessWeather": 0.002,
+    "illnessCap": 0.02,
+    "recoveryBase": 120,
+    "recoverySeverity": 180
+  },
+  "world": {
+    "meanness": 1
+  },
   "needDecay": {
-    "hunger":   2.0,
-    "energy":   2.0,
-    "bladder":  4.0,
-    "hygiene":  2.0,
-    "social":   2.5,
-    "fun":      2.2,
-    "comfort":  1.8,
-    "room":     0.5,
+    "hunger": 2,
+    "energy": 2,
+    "bladder": 4,
+    "hygiene": 2,
+    "social": 2.5,
+    "fun": 2.2,
+    "comfort": 1.8,
+    "room": 0.5,
     "autonomy": 1.2,
-    "status":   1.0
+    "status": 1
   },
   "decayScale": 0.16667,
   "ai": {
-    "goalBonus":             8,
-    "topK":                  5,
-    "noiseAmplitude":        4.0,
-    "avoidMatchScore":      -3.0,
-    "avoidVerbBonus":        1.5
+    "goalBonus": 8,
+    "topK": 5,
+    "noiseAmplitude": 4,
+    "avoidMatchScore": -3,
+    "avoidVerbBonus": 1.5
   },
   "socialAcceptance": {
-    "energyCenter":                   40,
-    "energyWeight":                   0.4,
-    "familiarityWeight":              0.2,
-    "niceWeight":                     16,
-    "outgoingWeight":                 10,
-    "neuroticPenalty":                8,
-    "lowEnergyThreshold":             25,
-    "lowEnergyPenalty":               8,
-    "strangerFamiliarityThreshold":   15,
-    "strangerPenalty":                12,
-    "flirtLowAttractionThreshold":    15,
-    "flirtLowAttractionPenalty":      24,
-    "flirtHighAttractionPenalty":     8,
-    "lowTrustAskHelpPenalty":         8,
-    "highResentmentThreshold":        20,
-    "highResentmentPenalty":          12
+    "energyCenter": 40,
+    "energyWeight": 0.4,
+    "familiarityWeight": 0.2,
+    "niceWeight": 16,
+    "outgoingWeight": 10,
+    "neuroticPenalty": 8,
+    "lowEnergyThreshold": 25,
+    "lowEnergyPenalty": 8,
+    "strangerFamiliarityThreshold": 15,
+    "strangerPenalty": 12,
+    "flirtLowAttractionThreshold": 15,
+    "flirtLowAttractionPenalty": 24,
+    "flirtHighAttractionPenalty": 8,
+    "lowTrustAskHelpPenalty": 8,
+    "highResentmentThreshold": 20,
+    "highResentmentPenalty": 12
   },
   "socialUtility": {
-    "chat":       { "social": 24, "energy": -5 },
-    "joke":       { "social": 20, "fun": 10, "energy": -4 },
-    "compliment": { "social": 18, "status": 8, "energy": -4 },
-    "hug":        { "social": 30, "comfort": 10, "energy": -4 },
-    "argue":      { "status": 8, "social": -8, "autonomy": 5, "energy": -6 },
-    "insult":     { "status": 16, "social": -8, "autonomy": 5, "energy": -6 },
-    "apologize":  { "social": 14, "status": -4, "energy": -4 },
-    "forgive":    { "social": 16, "comfort": 6, "energy": -4 },
-    "confront":   { "status": 10, "autonomy": 8, "social": -4, "energy": -6 },
-    "avoid":      { "autonomy": 10, "social": -4, "energy": -2 },
-    "ask_help":   { "social": 12, "energy": -3 },
-    "offer_help": { "social": 16, "status": 8, "energy": -5 },
-    "comfort":    { "social": 16, "comfort": 8, "energy": -5 },
-    "gossip":     { "social": 18, "fun": 8, "energy": -4 },
-    "flirt":      { "social": 18, "fun": 10, "energy": -4 }
+    "chat": {
+      "social": 24,
+      "energy": -5
+    },
+    "joke": {
+      "social": 20,
+      "fun": 10,
+      "energy": -4
+    },
+    "compliment": {
+      "social": 18,
+      "status": 8,
+      "energy": -4
+    },
+    "hug": {
+      "social": 30,
+      "comfort": 10,
+      "energy": -4
+    },
+    "argue": {
+      "status": 8,
+      "social": -8,
+      "autonomy": 5,
+      "energy": -6
+    },
+    "insult": {
+      "status": 16,
+      "social": -8,
+      "autonomy": 5,
+      "energy": -6
+    },
+    "apologize": {
+      "social": 14,
+      "status": -4,
+      "energy": -4
+    },
+    "forgive": {
+      "social": 16,
+      "comfort": 6,
+      "energy": -4
+    },
+    "confront": {
+      "status": 10,
+      "autonomy": 8,
+      "social": -4,
+      "energy": -6
+    },
+    "avoid": {
+      "autonomy": 10,
+      "social": -4,
+      "energy": -2
+    },
+    "ask_help": {
+      "social": 12,
+      "energy": -3
+    },
+    "offer_help": {
+      "social": 16,
+      "status": 8,
+      "energy": -5
+    },
+    "comfort": {
+      "social": 16,
+      "comfort": 8,
+      "energy": -5
+    },
+    "gossip": {
+      "social": 18,
+      "fun": 8,
+      "energy": -4
+    },
+    "flirt": {
+      "social": 18,
+      "fun": 10,
+      "energy": -4
+    }
   },
   "emotionTierDelta": {
-    "joy":          1,
-    "anger":       -1,
-    "sadness":     -1,
-    "fear":        -1,
-    "surprise":     0,
-    "embarrassment":-1,
-    "love":         2,
-    "pride":        1,
-    "guilt":       -1
+    "joy": 1,
+    "anger": -1,
+    "sadness": -1,
+    "fear": -1,
+    "surprise": 0,
+    "embarrassment": -1,
+    "love": 2,
+    "pride": 1,
+    "guilt": -1
   },
   "drift": {
-    "trust":      -0.02,
-    "affection":  -0.02,
-    "respect":    -0.015,
+    "trust": -0.02,
+    "affection": -0.02,
+    "respect": -0.015,
     "attraction": -0.03,
     "resentment": -0.05,
-    "fear":       -0.06,
-    "familiarity":-0.005,
+    "fear": -0.06,
+    "familiarity": -0.005,
     "dependency": -0.04
   },
   "objects": {
-    "bed":          { "utility": { "energy": 45, "autonomy": 8 },                           "price": 900 },
-    "fridge":       { "utility": { "hunger": 45, "comfort": 4 },                            "price": 1200 },
-    "toilet":       { "utility": { "bladder": 60, "autonomy": 2 },                          "price": 700 },
-    "shower":       { "utility": { "hygiene": 45, "comfort": 5 },                           "price": 850 },
-    "lamp":         { "utility": { "room": 15, "status": 5 },                               "price": 120 },
-    "treadmill":    {                                                                         "price": 1800 },
-    "desk":         { "utility": { "autonomy": 20, "status": 8, "fun": 8, "energy": -6 },   "price": 450 },
-    "bookshelf":    { "utility": { "autonomy": 25, "fun": 12, "status": 4 },                "price": 550 },
-    "workbench":    { "utility": { "fun": 18, "status": 14, "autonomy": 20, "energy": -5 }, "price": 900 },
-    "couch":        { "utility": { "comfort": 28, "social": 6, "autonomy": 5 },             "price": 800 },
-    "tv":           { "utility": { "fun": 28, "social": 5, "autonomy": 4 },                 "price": 1500 },
-    "bar":          { "utility": { "social": 25, "status": 20, "fun": 12, "energy": -5 },   "price": 1700 },
-    "chess":        { "utility": { "fun": 20, "autonomy": 18, "status": 10 },               "price": 600 },
-    "piano":        { "utility": { "fun": 22, "status": 22, "autonomy": 8 },                "price": 2200 },
-    "hot_tub":      { "utility": { "comfort": 35, "social": 15, "hygiene": 5 },             "price": 3500 },
-    "dining_table": { "utility": { "hunger": 28, "social": 10, "status": 4 },               "price": 650 },
-    "fire_pit":     { "utility": { "social": 28, "fun": 12, "comfort": 8 },                 "price": 900 },
-    "phone":        { "utility": { "social": 8, "fun": 4 },                                 "price": 300 }
+    "bed": {
+      "utility": {
+        "energy": 45,
+        "autonomy": 8
+      },
+      "price": 900
+    },
+    "fridge": {
+      "utility": {
+        "hunger": 45,
+        "comfort": 4
+      },
+      "price": 1200
+    },
+    "toilet": {
+      "utility": {
+        "bladder": 60,
+        "autonomy": 2
+      },
+      "price": 700
+    },
+    "shower": {
+      "utility": {
+        "hygiene": 45,
+        "comfort": 5
+      },
+      "price": 850
+    },
+    "lamp": {
+      "utility": {
+        "room": 15,
+        "status": 5
+      },
+      "price": 120
+    },
+    "treadmill": {
+      "price": 1800
+    },
+    "desk": {
+      "utility": {
+        "autonomy": 20,
+        "status": 8,
+        "fun": 8,
+        "energy": -6
+      },
+      "price": 450
+    },
+    "bookshelf": {
+      "utility": {
+        "autonomy": 25,
+        "fun": 12,
+        "status": 4
+      },
+      "price": 550
+    },
+    "workbench": {
+      "utility": {
+        "fun": 18,
+        "status": 14,
+        "autonomy": 20,
+        "energy": -5
+      },
+      "price": 900
+    },
+    "couch": {
+      "utility": {
+        "comfort": 28,
+        "social": 6,
+        "autonomy": 5
+      },
+      "price": 800
+    },
+    "tv": {
+      "utility": {
+        "fun": 28,
+        "social": 5,
+        "autonomy": 4
+      },
+      "price": 1500
+    },
+    "bar": {
+      "utility": {
+        "social": 25,
+        "status": 20,
+        "fun": 12,
+        "energy": -5
+      },
+      "price": 1700
+    },
+    "chess": {
+      "utility": {
+        "fun": 20,
+        "autonomy": 18,
+        "status": 10
+      },
+      "price": 600
+    },
+    "piano": {
+      "utility": {
+        "fun": 22,
+        "status": 22,
+        "autonomy": 8
+      },
+      "price": 2200
+    },
+    "hot_tub": {
+      "utility": {
+        "comfort": 35,
+        "social": 15,
+        "hygiene": 5
+      },
+      "price": 3500
+    },
+    "dining_table": {
+      "utility": {
+        "hunger": 28,
+        "social": 10,
+        "status": 4
+      },
+      "price": 650
+    },
+    "fire_pit": {
+      "utility": {
+        "social": 28,
+        "fun": 12,
+        "comfort": 8
+      },
+      "price": 900
+    },
+    "phone": {
+      "utility": {
+        "social": 8,
+        "fun": 4
+      },
+      "price": 300
+    }
   }
 }

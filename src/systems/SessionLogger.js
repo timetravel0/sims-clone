@@ -13,8 +13,17 @@
 import { bus } from '../core/EventBus.js';
 
 const STORAGE_KEY  = 'sims-session-log';
+// sessionStorage marker: present for the life of a browser session, wiped when the
+// browser/tab closes. Absent ⇒ a fresh app launch (new `npm run app`); present ⇒ an
+// in-app reload. Used to decide whether to wipe the persisted log (new game) or resume
+// it (same game). See constructor.
+const LAUNCH_KEY   = 'sims-session-launch';
 const MAX_EVENTS   = 3000;
 const SNAPSHOT_INTERVAL = 60; // game-ticks between need snapshots
+// Per-game on-disk log via the desktop launcher's persistence server (launch.mjs).
+// Each game's events are flushed to logs/sims-log-<sessionStart>.json under the
+// app folder and rewritten as play continues, so they can be analysed on the fly.
+const LOG_ENDPOINT = 'http://127.0.0.1:1421/log';
 
 const WATCHED_EVENTS = [
   'story:entry',
@@ -35,9 +44,24 @@ const WATCHED_EVENTS = [
 export class SessionLogger {
   constructor(game) {
     this._game   = game;
-    this._events = this._load();
     this._snapshotTimer = 0;
-    this._session = Date.now();
+
+    // A fresh app launch opens a new browser, so sessionStorage is empty; an in-app
+    // reload keeps it. On a fresh launch we WIPE the persisted log and start a new
+    // session, so each game's log (and its on-disk file) covers exactly one play
+    // session with no cross-session mixing. On a reload we resume the same session
+    // (events + id + startedAt) so the log stays continuous and keeps the same file.
+    const restored = this._freshLaunch() ? null : this._loadSession();
+    if (restored) {
+      this._session   = restored.session;
+      this._startedAt = restored.startedAt;
+      this._events    = restored.events ?? [];
+    } else {
+      try { localStorage.removeItem(STORAGE_KEY); } catch { /* no localStorage */ }
+      this._session   = Date.now();
+      this._startedAt = new Date().toISOString();
+      this._events    = [];
+    }
 
     // Record session start
     this._push('session:start', {
@@ -60,6 +84,19 @@ export class SessionLogger {
     if (this._snapshotTimer < SNAPSHOT_INTERVAL) return;
     this._snapshotTimer = 0;
     this._takeNeedsSnapshot();
+    this._flushToDisk();
+  }
+
+  /**
+   * Best-effort write of this game's full log to the app folder via the launcher's
+   * persistence server. Keyed by session start so the same file updates live; a
+   * no-op (silent) when running plain `npm run dev` without the launcher.
+   */
+  _flushToDisk() {
+    try {
+      const body = JSON.stringify({ session: this._session, startedAt: this._startedAt, events: this._events });
+      fetch(LOG_ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body }).catch(() => {});
+    } catch { /* persistence server not running — localStorage buffer still holds it */ }
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -189,14 +226,33 @@ export class SessionLogger {
     this._push('sim:needsSnapshot', { sims: snap, budget });
   }
 
-  _load() {
+  /** True exactly once per browser launch; marks the session as seen thereafter. */
+  _freshLaunch() {
+    try {
+      if (sessionStorage.getItem(LAUNCH_KEY)) return false; // reload within this launch
+      sessionStorage.setItem(LAUNCH_KEY, String(Date.now()));
+      return true;
+    } catch {
+      return true; // no sessionStorage → treat as fresh (errs toward a clean log)
+    }
+  }
+
+  /** Restore { session, startedAt, events } persisted within this launch, or null. */
+  _loadSession() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch { return []; }
+      if (!raw) return null;
+      const d = JSON.parse(raw);
+      if (Array.isArray(d)) return null; // legacy bare-array format → start fresh
+      return d;
+    } catch { return null; }
   }
 
   _save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this._events)); } catch {}
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        session: this._session, startedAt: this._startedAt, events: this._events,
+      }));
+    } catch {}
   }
 }

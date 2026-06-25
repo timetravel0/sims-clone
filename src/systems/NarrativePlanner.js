@@ -33,7 +33,8 @@ export class NarrativePlanner {
   _nameFor(simId, fallback) {
     const valid = n => n && n !== 'undefined';
     if (valid(fallback)) return fallback;
-    const found = this._sims.find(s => s.id === simId)?.name;
+    const found = this._sims.find(s => s.id === simId)?.name
+      ?? globalThis.window?._game?.population?.getPerson?.(simId)?.name; // off-lot people
     return valid(found) ? found : null;
   }
 

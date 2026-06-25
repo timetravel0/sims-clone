@@ -64,14 +64,18 @@ export class SimStatusLog {
       }
     });
 
-    // Story log entries — filter to household members only for per-sim events
-    const isHH = sim => sim && !sim._isVisitor;
+    // Story log entries — this feed is the HOUSEHOLD's story, so show an entry only
+    // when it involves a household member. population.isHouseholdMember is authoritative
+    // (covers off-lot family, who aren't in game.sims, and excludes neighbours/relatives
+    // /coworkers). Entries that name specific people (any id field) are kept only if at
+    // least one is household; entries with no subject id are household-level/ambient
+    // (budget, weather, plans) and are kept. Fixes neighbour-only beats like
+    // "Eli grows jealous of Dana" leaking into the family story.
+    const isHHId = id => window._game?.population?.isHouseholdMember?.(id) ?? false;
+    const isHH = sim => sim && (isHHId(sim.id) || (!sim._isVisitor && !window._game?.population));
     bus.on('story:entry', e => {
-      // If the event targets a specific sim, skip non-household sims
-      if (e.simId) {
-        const sim = window._game?.sims?.find(s => s.id === e.simId);
-        if (!isHH(sim)) return;
-      }
+      const ids = [e.simId, e.idA, e.idB, e.personId, e.childId].filter(Boolean);
+      if (ids.length && !ids.some(isHHId)) return; // about specific non-household people
       this._addEntry(e);
     });
     bus.on('social:interaction', e => {

@@ -33,6 +33,7 @@ import { RomanceSystem }       from '../systems/RomanceSystem.js';
 import { ExperimentLogger }    from '../systems/ExperimentLogger.js';
 import { LifeCyclePanel }      from '../ui/LifeCyclePanel.js';
 import { LifePage }            from '../ui/LifePage.js';
+import { ControlPage }         from '../ui/ControlPage.js';
 import { MemoryInspectorPanel } from '../ui/MemoryInspectorPanel.js';
 import { LifecycleNotifier }   from '../ui/LifecycleNotifier.js';
 import { AgeSystem }           from '../systems/AgeSystem.js';
@@ -50,6 +51,7 @@ import { SkillPanel }          from '../ui/SkillPanel.js';
 import { ExperimentDashboard } from '../ui/ExperimentDashboard.js';
 import { PhonePanel }          from '../ui/PhonePanel.js';
 import { SIM_DEFS, TRAIT_AXIS, STARTER_CAREERS } from '../config/defaultPopulation.js';
+import cfg                      from '../config/gameConfig.js';
 import { ObjectRegistry }      from '../systems/ObjectRegistry.js';
 import { GameContext }         from './GameContext.js';
 import { initRng }            from './Rng.js';
@@ -72,7 +74,7 @@ export class Game {
     this._persistenceAdapter = opts.persistenceAdapter ?? null;
     this.sims        = [];
     this.selectedSim = null;
-    this.clock       = { hour: 8, speed: 1, paused: false, day: 0, weekday: 0 };
+    this.clock       = { hour: 8, speed: cfg.time?.defaultSpeed ?? 1, paused: false, day: 0, weekday: 0 };
     this.tick        = 0;   // monotonic update counter (used by MemorySystem salience)
     this.ready       = this._boot();
   }
@@ -143,7 +145,10 @@ export class Game {
       const sim = this.sims[i];
       if (!sim) return;
       if (def.age) this.ageSystem?.registerAt?.(sim, STAGE_DAYS[def.age] ?? 18);
-      if (def.career) this.careerSystem?.assign?.(sim.id, def.career);
+      // Set the chosen job, but minors can't work — clear any starter career
+      // assigned during _init (before ages were applied). assign() self-gates too.
+      if (def.age === 'teen') this.careerSystem?.quit?.(sim.id);
+      else if (def.career) this.careerSystem?.assign?.(sim.id, def.career);
       const person = this.population?.getPerson?.(sim.id);
       if (person && def.education != null) person.education = def.education;
     });
@@ -324,6 +329,7 @@ export class Game {
 
     this._lifecyclePanel    = new LifeCyclePanel(this); // fallback overlay if popups blocked
     this._lifePage          = new LifePage(this);
+    this._controlPage       = new ControlPage(this); // unified God/Admin page
     this._memoryInspector   = new MemoryInspectorPanel();
     this.householdGoalSystem = new HouseholdGoalSystem(this);
     this.construction        = new AutonomousConstructionSystem(this);
@@ -527,12 +533,11 @@ export class Game {
     return this.clock.paused;
   }
 
-  setSpeed(label) {
-    // Button label (1/3/5) → in-game minutes elapsed per real second.
-    // 1× = 1 min/s, 3× = 1 hour/3s (20 min/s), 5× = 1 hour/0.5s (120 min/s).
-    const RATES = { 1: 1, 3: 20, 5: 120 };
-    this.clock.speed = RATES[label] ?? label;
-    this.clock.speedLabel = label;
+  setSpeed(mult) {
+    // `mult` is the literal time multiplier: 1× = real-time (cfg.time.dayDurationSec
+    // = 86400 ⇒ a game-day takes 24 real hours), higher presets accelerate play.
+    this.clock.speed = mult;
+    this.clock.speedLabel = mult;
   }
 
   start() {
@@ -545,14 +550,25 @@ export class Game {
       const paused = this.togglePause();
       q('btn-pause').textContent = paused ? '▶ Resume' : '⏸ Pause';
     });
-    ['1','3','5'].forEach(v => {
-      q(`btn-${v}x`)?.addEventListener('click', () => {
-        this.setSpeed(+v);
-        ['1','3','5'].forEach(x => q(`btn-${x}x`)?.classList.remove('active'));
-        q(`btn-${v}x`)?.classList.add('active');
-        q('speed-label').textContent = `Speed: ${v}×`;
+    // Speed presets from cfg.time.speeds mapped onto the three speed buttons.
+    // 1× = real-time; higher presets accelerate. Labels reflect the multiplier.
+    const speeds = cfg.time?.speeds ?? [1, 60, 300];
+    const speedIds = ['btn-1x', 'btn-3x', 'btn-5x'];
+    const applyActive = (mult) => speedIds.forEach((id, i) => {
+      q(id)?.classList.toggle('active', (speeds[i] ?? speeds[speeds.length - 1]) === mult);
+    });
+    speedIds.forEach((id, i) => {
+      const mult = speeds[i] ?? speeds[speeds.length - 1];
+      const btn = q(id);
+      if (!btn) return;
+      btn.textContent = `${mult}×`;
+      btn.addEventListener('click', () => {
+        this.setSpeed(mult);
+        applyActive(mult);
+        const sl = q('speed-label'); if (sl) sl.textContent = `Speed: ${mult}×`;
       });
     });
+    applyActive(this.clock.speed); // reflect the default preset
     q('btn-rel')?.addEventListener('click', () => {
       const el = q('rel-panel');
       if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
@@ -567,6 +583,12 @@ export class Game {
     q('btn-lifecycle')?.addEventListener('click', () => {
       const opened = this._lifePage?.open();
       if (!opened) this._lifecyclePanel?.toggle();
+    });
+
+    // "God" opens the unified God/Admin page; popup blocked → inline GodPanel.
+    q('btn-god')?.addEventListener('click', () => {
+      const opened = this._controlPage?.open();
+      if (!opened) this._godPanel?.toggle();
     });
 
     // Sprint 4 — skill panel

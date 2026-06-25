@@ -1,6 +1,7 @@
 import { bus } from '../core/EventBus.js';
 import { memorySystem } from './MemorySystem.js';
 import { budgetSystem } from './BudgetSystem.js';
+import cfg from '../config/gameConfig.js';
 
 const ILLNESSES = [
   { id: 'cold', label: 'cold' },
@@ -144,7 +145,7 @@ export class HealthSystem {
     }
 
     const elapsed = (this._game.tick ?? 0) - (health.startedAtTick ?? this._game.tick ?? 0);
-    const recoveryDelay = Math.round(120 + (health.severity ?? 0) * 180);
+    const recoveryDelay = Math.round((cfg.health?.recoveryBase ?? 120) + (health.severity ?? 0) * (cfg.health?.recoverySeverity ?? 180));
     if (health.state === 'ill' && elapsed >= recoveryDelay) {
       person.health.state = 'recovering';
       person.health.recoverAtTick = this._game.tick ?? 0;
@@ -255,18 +256,23 @@ export class HealthSystem {
     const hygienePressure = this._pressure(needs.hygiene);
     const energyPressure = this._pressure(needs.energy);
     const hungerPressure = this._pressure(needs.hunger);
-    const weatherBoost = this._game._weather?.current === 'rain' ? 0.002 : 0;
+    // Calibration constants live in cfg.health so the God/Admin page can retune
+    // illness risk live (defaults match the 2026-06-25 calibration: ~51 rolls/day,
+    // a well-kept Sim sick a few %/day, sustained neglect capped at ~0.02/cycle).
+    const h = cfg.health ?? {};
+    const weatherBoost = this._game._weather?.current === 'rain' ? (h.illnessWeather ?? 0.002) : 0;
     // Nutrition (M12): well-fed Sims resist illness; poor nutrition raises risk.
     const nutrition = sim?._nutrition ?? 0.6;
-    const nutritionBoost = (1 - nutrition) * 0.004;
+    const nutritionBoost = (1 - nutrition) * (h.illnessNutrition ?? 0.004);
     // Kitchen hygiene (WP8): a dirty kitchen breeds illness.
     const kh = this._game?.world?.kitchenHygiene ?? 100;
-    const kitchenBoost = (100 - kh) / 100 * 0.003;
-    // Calibration (2026-06-25): this rolls ~51×/game-day, so values are ~7× lower
-    // than the old set, which gave even a perfectly healthy Sim a ~60%/day illness
-    // chance. Now a well-kept Sim is sick a few %/day; sustained neglect caps at
-    // ~0.02/cycle (~1×/day worst case). See tests/IllnessRate.test.js.
-    return Math.min(0.02, 0.0008 + hygienePressure * 0.006 + energyPressure * 0.004 + hungerPressure * 0.002 + nutritionBoost + kitchenBoost + weatherBoost);
+    const kitchenBoost = (100 - kh) / 100 * (h.illnessKitchen ?? 0.003);
+    return Math.min(h.illnessCap ?? 0.02,
+      (h.illnessBase ?? 0.0008)
+      + hygienePressure * (h.illnessHygiene ?? 0.006)
+      + energyPressure  * (h.illnessEnergy  ?? 0.004)
+      + hungerPressure  * (h.illnessHunger  ?? 0.002)
+      + nutritionBoost + kitchenBoost + weatherBoost);
   }
 
   _pressure(value = 50) {

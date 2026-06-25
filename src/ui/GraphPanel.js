@@ -1,4 +1,5 @@
 import { bus } from '../core/EventBus.js';
+import { nameOf } from './nameOf.js';
 
 const COLORS = {
   friendship: '#66bb6a',
@@ -104,6 +105,6 @@ export class GraphPanel {
   }
 
   _name(id) {
-    return this._game.sims.find(sim => sim.id === id)?.name || id;
+    return nameOf(id, this._game);
   }
 }

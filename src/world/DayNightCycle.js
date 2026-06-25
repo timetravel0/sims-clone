@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { bus } from '../core/EventBus.js';
+import cfg from '../config/gameConfig.js';
 
-// One in-game day = 1440 real seconds at 1× (1 in-game minute per real second).
-// Game.setSpeed feeds `scaled` in in-game minutes/sec, so day-fraction advances
-// by minutes/1440 per real second. 1×→1min/s, 3×→1h/3s, 5×→1h/0.5s.
-const DAY_DURATION = 1440;
+// Real seconds per in-game day at 1× speed. Default 86400 ⇒ 1× is literal
+// real-time (a game-day takes 24 real hours); faster presets (cfg.time.speeds)
+// make it playable. Read live from cfg so the God/Admin page can retune it
+// mid-game. (Was a hardcoded 1440 = a day in 24 real minutes.)
+const dayDuration = () => cfg.time?.dayDurationSec ?? 1440;
 
 const SKY_COLORS = [
   { t: 0.00, sky: new THREE.Color(0x0a0a1a), amb: 0.15 }, // midnight
@@ -99,7 +101,7 @@ export class DayNightCycle {
 
   update(dt) {
     const prevTime = this.time;
-    this.time = (this.time + dt / DAY_DURATION) % 1;
+    this.time = (this.time + dt / dayDuration()) % 1;
     if (this.time < prevTime) this.totalDays += 1;
     this._apply();
     bus.emit('daynight:update', { time: this.time, hour: Math.floor(this.time * 24) });

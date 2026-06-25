@@ -1,5 +1,6 @@
 import { socialManager } from '../systems/SocialManager.js';
 import { bus }           from '../core/EventBus.js';
+import { nameOf }        from './nameOf.js';
 
 /**
  * RelationshipPanel — shows relationship scores for the selected Sim.
@@ -27,9 +28,7 @@ export class RelationshipPanel {
   refresh() {
     if (!this._el || !this._simId) return;
     const rels  = socialManager.relationsOf(this._simId);
-    const sims  = window._game?.sims || [];
     const graph = window._game?.relationshipGraph;
-    const nameOf = id => sims.find(s => s.id === id)?.name || id;
 
     let html = `<h3>${this._simName} — Relations</h3>`;
 

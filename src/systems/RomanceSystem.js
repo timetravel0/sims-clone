@@ -68,7 +68,7 @@ export class RomanceSystem {
     const b = this._graph.score(idB, idA, 'romance');
     if (a < 35 || b < 25) return;
     this._announced.add(key);
-    bus.emit('story:entry', { text: `${nameA} and ${nameB} feel a romantic spark`, cat: 'gossip' });
+    bus.emit('story:entry', { idA, idB, text: `${nameA} and ${nameB} feel a romantic spark`, cat: 'gossip' });
   }
 
   _triggerJealousy({ idA, idB, nameA, nameB, type }) {
@@ -91,7 +91,7 @@ export class RomanceSystem {
         type: `jealous_${type}`,
       }, jealousy, -0.7, 0.002);
       this._graph.adjust(watcher.id, targetId, 'rivalry', 8 + jealousy * 10);
-      bus.emit('story:entry', { text: `${watcher.name} grows jealous of ${targetName}`, cat: 'gossip' });
+      bus.emit('story:entry', { simId: watcher.id, text: `${watcher.name} grows jealous of ${targetName}`, cat: 'gossip' });
     }
 
     for (const watcher of this._sims) {
@@ -111,7 +111,7 @@ export class RomanceSystem {
         type: `jealous_${type}`,
       }, jealousy, -0.65, 0.001);
       this._graph.adjust(watcher.id, targetId, 'rivalry', 4 + jealousy * 8);
-      bus.emit('story:entry', { text: `${watcher.name} grows jealous of ${targetName}`, cat: 'gossip' });
+      bus.emit('story:entry', { simId: watcher.id, text: `${watcher.name} grows jealous of ${targetName}`, cat: 'gossip' });
       break;
     }
   }
@@ -130,6 +130,7 @@ export class RomanceSystem {
     this._graph.adjust(idA, idB, 'rivalry', penalty * 0.7);
     this._graph.adjust(idB, idA, 'rivalry', penalty * 0.7);
     bus.emit('story:entry', {
+      idA, idB,
       text: `${this._name(idA)} and ${this._name(idB)} strain a committed bond.`,
       cat: 'drama',
       category: 'drama',

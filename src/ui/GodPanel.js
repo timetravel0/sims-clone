@@ -58,7 +58,8 @@ export class GodPanel {
   }
 
   _bind() {
-    this._btn?.addEventListener('click', () => this.toggle());
+    // btn-god now opens the unified God/Admin page (Game wires it); this inline
+    // panel stays as the popup-blocked fallback, toggled via Game.
     this._el.querySelector('#god-whisper')?.addEventListener('click', () => {
       this._game.godMode.whisper(this._game.selectedSim, this._value('god-intent'));
     });

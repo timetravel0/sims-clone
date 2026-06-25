@@ -1,5 +1,12 @@
 import * as THREE from 'three';
+import cfg from '../config/gameConfig.js';
 import { World } from '../world/World.js';
+
+// The headless harness keeps its documented invariant of 1 tick = 1 game-minute
+// (20 sub-steps × 0.05 == 1.0 scaled ÷ 1440 = one game-minute). The live game now
+// defaults the day to 86400s (real-time at 1×); pin it back to 1440 here so
+// headless clock progression — and every cadence derived from it — is unchanged.
+cfg.time = { ...(cfg.time ?? {}), dayDurationSec: 1440 };
 import { Sim } from '../entities/Sim.js';
 import { bus } from '../core/EventBus.js';
 import { memorySystem } from '../systems/MemorySystem.js';

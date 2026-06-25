@@ -4,7 +4,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const URL = 'http://127.0.0.1:1420/';
@@ -13,6 +13,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const PROFILE = path.join(ROOT, '.chrome-app');
 const DATA_DIR = path.join(ROOT, '.data');
 const SQLITE_FILE = path.join(DATA_DIR, 'sims-clone.sqlite');
+const LOGS_DIR = path.join(ROOT, 'logs');   // per-game session logs (analysable on the fly)
 const CHROME = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   `${process.env.HOME}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`,
@@ -63,6 +64,13 @@ chrome.on('exit', shutdown);
 
 async function startPersistenceServer() {
   await mkdir(DATA_DIR, { recursive: true });
+  await mkdir(LOGS_DIR, { recursive: true });
+  // Fresh launch ⇒ wipe stale per-game logs so logs/ only ever holds the game being
+  // played now (mirrors the SessionLogger clearing localStorage on a new launch).
+  try {
+    const stale = (await readdir(LOGS_DIR)).filter(f => /^sims-log-.*\.json$/.test(f));
+    await Promise.all(stale.map(f => rm(path.join(LOGS_DIR, f), { force: true })));
+  } catch { /* best-effort cleanup */ }
   const server = createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1:1420');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
@@ -101,6 +109,25 @@ async function startPersistenceServer() {
         await rename(tmp, SQLITE_FILE);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ok: true, path: SQLITE_FILE, bytes: size }));
+        return;
+      }
+      if (req.method === 'POST' && req.url === '/log') {
+        const chunks = [];
+        let size = 0;
+        for await (const chunk of req) {
+          size += chunk.length;
+          if (size > 64 * 1024 * 1024) throw new Error('Log payload too large');
+          chunks.push(chunk);
+        }
+        const json = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+        // One file per game, keyed by session start (safe filename), rewritten live.
+        const stamp = String(json.startedAt ?? json.session ?? Date.now()).replace(/[^0-9A-Za-z._-]/g, '-');
+        const file = path.join(LOGS_DIR, `sims-log-${stamp}.json`);
+        const tmp = `${file}.tmp`;
+        await writeFile(tmp, JSON.stringify(json));
+        await rename(tmp, file);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, path: file, events: json.events?.length ?? 0 }));
         return;
       }
       res.writeHead(404); res.end('not found');

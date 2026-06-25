@@ -16,6 +16,7 @@ export const TRAIT_AXIS = {
   Playful: { playful: 0.8 }, Active: { playful: 0.5 }, Serious: { playful: -0.5 },
   Nice: { nice: 0.8 }, Grouchy: { nice: -0.7 }, Romantic: { nice: 0.4 },
   Lazy: { ambitious: -0.6 }, Creative: { playful: 0.4 }, Logical: { neurotic: -0.3 },
+  Mean: { nice: -0.6 }, Evil: { nice: -0.8, neurotic: 0.4 },
 };
 
 // Round-robin starter careers so the career world is alive from launch.

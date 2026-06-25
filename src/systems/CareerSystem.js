@@ -77,7 +77,7 @@ export class CareerSystem {
       }
 
       const inShift = this._isInShift(career, weekday, hour);
-      if (inShift && !state.atWork) this._startShift(sim, state, career);
+      if (inShift && !state.atWork && this._canWork(sim)) this._startShift(sim, state, career);
       if (!inShift && state.atWork) this._endShift(sim, state, career);
     }
   }
@@ -118,9 +118,18 @@ export class CareerSystem {
     return this._setCareer(sim, careerId, { mode: 'assign' });
   }
 
+  /** Only young-adults and older may work; babies/children/teens may not. */
+  _canWork(sim) {
+    const stage = this._game?.ageSystem?.getStage?.(sim);
+    return stage == null || !['baby', 'child', 'teen'].includes(stage);
+  }
+
   _setCareer(sim, careerId, { mode = 'assign' } = {}) {
     const career = this._career(careerId);
     if (!sim || !career) return false;
+    // Minors can't hold a job — only 'unemployed' is allowed for teens/children.
+    // They become employable automatically once they age up to young-adult.
+    if (careerId !== 'unemployed' && !this._canWork(sim)) return false;
     const state = this._data.get(sim.id) ?? this._initSim(sim);
     const previousCareer = this._career(state.careerId) ?? this._career('unemployed');
     const wasUnemployed = state.careerId === 'unemployed';

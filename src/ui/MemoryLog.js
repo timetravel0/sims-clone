@@ -1,5 +1,21 @@
 import { bus }         from '../core/EventBus.js';
 import { EMOTION_DEF } from '../entities/SimEmotions.js';
+import { nameOf }      from './nameOf.js';
+
+// memory:recorded comes from two MemorySystems: the per-Sim one sets a human-readable
+// `description`, but the singleton (systems/MemorySystem) stores only `type` + `data`,
+// so reading `memory.description` printed "undefined". Derive a label from the shape.
+export function memoryText(memory) {
+  if (memory?.description) return memory.description;
+  const d = memory?.data ?? {};
+  switch (memory?.type) {
+    case 'social':      return `${String(d.type ?? 'interaction').replace(/_/g, ' ')} with ${nameOf(d.otherId) ?? d.otherName ?? 'someone'}`;
+    case 'mood_peak':   return d.tier ? `felt ${d.tier}` : null;
+    case 'need_crisis': return d.need ? `${d.need} crisis` : null;
+    case 'life_event':  return d.text ?? d.label ?? d.event ?? null;
+    default:            return memory?.type ? String(memory.type).replace(/_/g, ' ') : null;
+  }
+}
 
 /**
  * MemoryLog — live scrolling feed of notable events.
@@ -181,45 +197,57 @@ export class MemoryLog {
   }
 
   _registerBus() {
+    // Life Events is the household's feed: only show events involving a family member.
+    // population.isHouseholdMember is authoritative (off-lot family included, neighbours
+    // /relatives excluded); when population isn't ready we don't hide. Keeps externals
+    // like the relative Mara out of the family log.
+    const hh = id => {
+      const pop = window._game?.population;
+      return pop?.isHouseholdMember ? pop.isHouseholdMember(id) : true;
+    };
+
     bus.on('social:interaction', ({ idA, idB, delta, type }) => {
-      const nameA = window._game?.sims?.find(s=>s.id===idA)?.name ?? idA;
-      const nameB = window._game?.sims?.find(s=>s.id===idB)?.name ?? idB;
-      const cat   = (delta ?? 0) >= 0 ? 'social_pos' : 'social_neg';
-      this._push(cat, `${nameA} → ${nameB}: ${type ?? 'chat'} (Δ${delta >= 0 ? '+' : ''}${delta})`);
+      if (!hh(idA) && !hh(idB)) return;
+      const cat = (delta ?? 0) >= 0 ? 'social_pos' : 'social_neg';
+      this._push(cat, `${nameOf(idA)} → ${nameOf(idB)}: ${type ?? 'chat'} (Δ${delta >= 0 ? '+' : ''}${delta})`);
     });
 
     bus.on('goal:completed', ({ simId, goal }) => {
-      const name = window._game?.sims?.find(s=>s.id===simId)?.name ?? simId;
-      this._push('goal_done', `${name} achieved: ${goal.label}`);
+      if (!hh(simId)) return;
+      this._push('goal_done', `${nameOf(simId)} achieved: ${goal.label}`);
     });
 
     bus.on('goal:failed', ({ simId, goal }) => {
-      const name = window._game?.sims?.find(s=>s.id===simId)?.name ?? simId;
-      this._push('goal_fail', `${name} failed: ${goal.label}`);
+      if (!hh(simId)) return;
+      this._push('goal_fail', `${nameOf(simId)} failed: ${goal.label}`);
     });
 
     bus.on('sim:moodChanged', ({ simId, from, to }) => {
       if (to !== 'ecstatic' && to !== 'miserable') return; // only extremes
-      const name = window._game?.sims?.find(s=>s.id===simId)?.name ?? simId;
-      const cat  = to === 'ecstatic' ? 'mood_up' : 'mood_down';
-      this._push(cat, `${name} is now ${to}`);
+      if (!hh(simId)) return;
+      const cat = to === 'ecstatic' ? 'mood_up' : 'mood_down';
+      this._push(cat, `${nameOf(simId)} is now ${to}`);
     });
 
     bus.on('emotion:spike', ({ simId, type, intensity }) => {
       if ((intensity ?? 0) < 0.65) return; // only intense spikes
-      const name = window._game?.sims?.find(s=>s.id===simId)?.name ?? simId;
-      const def  = EMOTION_DEF[type] ?? { emoji:'✨', label: type };
-      this._push('emotion', `${name} feels ${def.emoji} ${def.label}`);
+      if (!hh(simId)) return;
+      const def = EMOTION_DEF[type] ?? { emoji:'✨', label: type };
+      this._push('emotion', `${nameOf(simId)} feels ${def.emoji} ${def.label}`);
     });
 
     bus.on('memory:recorded', ({ simId, memory }) => {
       if ((memory?.intensity ?? 0) < 0.65) return; // only strong memories
-      const name = window._game?.sims?.find(s=>s.id===simId)?.name ?? simId;
-      this._push('memory', `${name}: "${memory.description}"`);
+      if (!hh(simId)) return;
+      const text = memoryText(memory);
+      if (!text) return; // nothing meaningful → don't print "undefined"
+      this._push('memory', `${nameOf(simId)}: "${text}"`);
     });
 
-    bus.on('story:entry', ({ text }) => {
-      this._push('story', text);
+    bus.on('story:entry', e => {
+      const ids = [e.simId, e.idA, e.idB, e.personId, e.childId].filter(Boolean);
+      if (ids.length && !ids.some(hh)) return; // about specific non-household people
+      this._push('story', e.text);
     });
   }
 }

@@ -24,7 +24,10 @@ const OUTING_STORY = {
   other: 'stepped out for a while.',
 };
 const OUTING_REWARD = {
-  meal_out: { hunger: 35, fun: 12, social: 8 },
+  // A meal out should actually fill a Sim, like a real cooked meal (CookMeal floors
+  // hunger at ~75). At +35 they returned still half-hungry and slid straight back into
+  // the starvation zone, so going out barely helped. restore() caps at 100.
+  meal_out: { hunger: 75, fun: 12, social: 8 },
   trip: { fun: 22, social: 10, comfort: 6 },
   visit_friend: { social: 28, fun: 12 },
   other: { fun: 8 },

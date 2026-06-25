@@ -21,6 +21,7 @@ const ALL_TRAITS  = [
   'Neat','Outgoing','Active','Playful','Nice',
   'Sloppy','Shy','Lazy','Serious','Grouchy',
   'Creative','Logical','Foodie','Bookworm','Romantic',
+  'Mean','Evil',
 ];
 const GENDERS = ['♂ Male','♀ Female','⚧ Other'];
 // Playable founder life stages → representative age in days (AgeSystem.registerAt).

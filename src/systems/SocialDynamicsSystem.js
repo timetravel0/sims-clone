@@ -208,6 +208,12 @@ export class SocialDynamicsSystem {
 
   // ── Human-readable explanation ───────────────────────────────────────────────
 
+  /**
+   * Rich relationship read-out for the Lab dashboards. Returns an OBJECT
+   * { fromName, toName, label, affinity, summary, dims } — the dashboards render
+   * `dims` as bars and show label/affinity/summary. (Previously returned a bare
+   * string, which made the Lab "Relationship" tab crash on `ex.dims.trust`.)
+   */
   explainRelation(fromId, toId) {
     const d = this.get(fromId, toId);
     const fromName = this._name(fromId), toName = this._name(toId);
@@ -223,11 +229,20 @@ export class SocialDynamicsSystem {
     note(d.fear     >= 25, `is wary of ${toName} (${Math.round(d.fear)})`);
     note(d.dependency>=40, `leans on ${toName} for support (${Math.round(d.dependency)})`);
     note(d.familiarity< 10, `barely knows ${toName}`);
-    return reasons.length ? reasons.join('; ') : `${fromName} feels neutral toward ${toName}`;
+    const summary = reasons.length ? reasons.join('; ') : `${fromName} feels neutral toward ${toName}`;
+
+    const aff = Math.round(this.affinity(fromId, toId));
+    const label = aff >= 60 ? 'Close' : aff >= 25 ? 'Friendly' : aff > -10 ? 'Neutral'
+                : aff > -40 ? 'Tense' : 'Hostile';
+    return { fromName, toName, label, affinity: aff, summary, dims: { ...d } };
   }
 
   _name(id) {
-    return this._sims.find(s => s.id === id)?.name ?? id;
+    // population is authoritative for off-lot people (relatives/neighbours/coworkers);
+    // sims only holds on-lot Sims, so without this off-lot ids showed as raw p_<uuid>.
+    return globalThis.window?._game?.population?.getPerson?.(id)?.name
+        ?? this._sims.find(s => s.id === id)?.name
+        ?? id;
   }
 
   serialise() {

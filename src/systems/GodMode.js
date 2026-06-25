@@ -53,6 +53,15 @@ export class GodMode {
     return this._shiftTrait(sim, trait, 0.25, 'bless');
   }
 
+  /** Set a personality trait to an exact value (God/Admin "Make Evil/Good"). */
+  setTrait(sim, trait, value) {
+    if (!sim || !TRAITS.includes(trait)) return false;
+    sim.personality[trait] = Math.max(-1, Math.min(1, value));
+    bus.emit('god:action', { mode: 'setTrait', simId: sim.id, simName: sim.name, intent: `${trait}=${value}`, accepted: true });
+    bus.emit('sim:selected', { sim });
+    return true;
+  }
+
   curse(sim, trait) {
     return this._shiftTrait(sim, trait, -0.25, 'curse');
   }

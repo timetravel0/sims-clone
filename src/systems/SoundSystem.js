@@ -60,15 +60,16 @@ export class SoundSystem {
 
     this._startAmbient();
 
-    // SFX subscriptions
-    bus.on('social:interaction',  ({ type })   => this._sfxSocial(type));
-    bus.on('skill:levelUp',       ()           => this._sfxSkillUp());
-    bus.on('budget:changed',      ({ delta })  => { if (delta > 0) this._sfxCoin(); });
-    bus.on('budget:insufficient', ()           => this._sfxThud());
-    bus.on('mood:changed',        ({ next })   => this._sfxMood(next));
-    bus.on('wall:placed',         ()           => this._sfxThump(120, 0.15));
-    bus.on('door:placed',         ()           => this._sfxKnock());
-    bus.on('weather:changed',     ()           => {
+    // SFX subscriptions. Persistent so they survive bus.clear() — this is a
+    // module singleton subscribed once at import (same reasoning as BudgetSystem).
+    bus.onPersistent('social:interaction',  ({ type })   => this._sfxSocial(type));
+    bus.onPersistent('skill:levelUp',       ()           => this._sfxSkillUp());
+    bus.onPersistent('budget:changed',      ({ delta })  => { if (delta > 0) this._sfxCoin(); });
+    bus.onPersistent('budget:insufficient', ()           => this._sfxThud());
+    bus.onPersistent('mood:changed',        ({ next })   => this._sfxMood(next));
+    bus.onPersistent('wall:placed',         ()           => this._sfxThump(120, 0.15));
+    bus.onPersistent('door:placed',         ()           => this._sfxKnock());
+    bus.onPersistent('weather:changed',     ()           => {
       this._stopAmbient();
       setTimeout(() => this._startAmbient(), 400);
     });

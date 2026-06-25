@@ -67,6 +67,14 @@ export class RelationshipGraph {
 
   adjust(from, to, type, amount) {
     if (!from || !to || from === to || !EDGE_TYPES.includes(type)) return null;
+    // One relationship at a time: a partnered Sim grows romance ONLY with their
+    // own partner. Positive romance toward anyone else is blocked (souring it,
+    // amount < 0, is always allowed). Keeps Sims from being "in love" with many.
+    if (type === 'romance' && amount > 0 && this._population) {
+      const fromP = this._population.getPerson?.(from)?.partnerId;
+      const toP   = this._population.getPerson?.(to)?.partnerId;
+      if ((fromP && fromP !== to) || (toP && toP !== from)) return null;
+    }
     const edge = this._edge(from, to, type);
     edge.strength = Math.max(0, Math.min(100, edge.strength + amount));
     edge.events += 1;

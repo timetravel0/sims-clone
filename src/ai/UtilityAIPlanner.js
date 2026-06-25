@@ -164,7 +164,14 @@ export class UtilityAIPlanner {
         const affinity = dyn.affinity(this._sim.id, affordance.target.id);
         const verb    = affordance.verb;
         if (POSITIVE_SOCIAL.has(verb)) score += affinity * 0.06 + ab.affection * 0.08 + ab.trust * 0.05;
-        if (NEGATIVE_SOCIAL.has(verb)) score += ab.resentment * 0.16 - ab.affection * 0.04;
+        if (NEGATIVE_SOCIAL.has(verb)) {
+          score += ab.resentment * 0.16 - ab.affection * 0.04;
+          // Mean/"evil" Sims lash out unprompted: low `nice` (per-sim) and a global
+          // world-meanness lever (cfg.world.meanness, set in God/Admin) both push
+          // hostile interactions up, and a kind Sim is held back from them.
+          const meanness = Math.max(0, -(this._sim.personality?.nice ?? 0)) + (cfg.world?.meanness ?? 0);
+          score += meanness * 14;
+        }
         if (verb === 'flirt') {
           score += ab.attraction * 0.25 + ab.affection * 0.05;
           const partner = GameContext.population?.getPartner?.(this._sim.id);

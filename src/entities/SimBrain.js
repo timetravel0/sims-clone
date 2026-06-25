@@ -126,6 +126,22 @@ export class SimBrain {
     }
     this._lastMoodTier = tier;
 
+    // Critical physical needs interrupt long autonomous social/idle actions. Without
+    // this a Sim locked in a multi-tick SocialAction (e.g. the household-bonding loop)
+    // keeps chatting while hunger/bladder/energy crash to 0 — it only re-plans when the
+    // queue empties. Clearing the queue lets the critical-need branch below run NOW.
+    // CookMeal/sleep/WalkTo etc. are not interrupted, so this can't thrash an in-progress
+    // fix; once the need is met, bonding resumes on its normal cooldown.
+    if (!this._playerOverride && !this._queue.isEmpty()) {
+      const label = this._queue._current?.label ?? '';
+      if (label.startsWith('Social') || label.startsWith('Idle')) {
+        const n = this._sim.needs.getAll();
+        if ((n.hunger ?? 100) < 16 || (n.bladder ?? 100) < 14 || (n.energy ?? 100) < 12) {
+          this._queue.clear();
+        }
+      }
+    }
+
     if (this._playerOverride)   return;
     if (!this._queue.isEmpty())  return;
 

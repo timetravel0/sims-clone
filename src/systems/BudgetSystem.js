@@ -15,8 +15,12 @@ const STARTING_FUNDS = 20_000;
 export class BudgetSystem {
   constructor() {
     this._funds = STARTING_FUNDS;
-    // Listen for career salary events
-    bus.on('career:salary', ({ amount }) => this.credit(amount, 'salary'));
+    // Listen for career salary events. MUST be persistent: this singleton is
+    // created once at import, but headless runs call bus.clear() between runs
+    // (HeadlessRuntime.dispose) — a plain bus.on() listener would be wiped after
+    // run 1, leaving every later run with no income → bankruptcy → starvation
+    // loop. onPersistent survives clear(), like SkillSystem/MemorySystem.
+    bus.onPersistent('career:salary', ({ amount }) => this.credit(amount, 'salary'));
   }
 
   get funds() { return this._funds; }
